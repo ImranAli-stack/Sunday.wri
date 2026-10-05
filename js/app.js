@@ -180,6 +180,91 @@
         writeStore("sunday.bookmarks.v1", all);
       }
 
+      async function renderFollowSuggestions() {
+        const container = document.getElementById("writerSuggestions");
+        if (!container) return;
+        const user = currentUser();
+        const writers = [...new Map(posts()
+          .filter((post) => post.status === "published" && post.authorId && post.authorName)
+          .filter((post) => !user || post.authorId !== user.id)
+          .map((post) => [post.authorId, post])).values()].slice(0, 3);
+
+        if (!writers.length) {
+          container.innerHTML = '<p class="sidebar-promo-copy">No other writers to follow yet. Check back after more stories are published.</p>';
+          return;
+        }
+
+        let followingIds = new Set();
+        if (user) {
+          try {
+            const client = await getSupabaseClient();
+            const { data: authData, error: authError } = await client.auth.getUser();
+            if (authError) throw authError;
+            if (!authData.user || authData.user.id !== user.id) {
+              throw new Error("Your Supabase session has expired. Log in again to follow writers.");
+            }
+            const { data, error } = await client.from("follows")
+              .select("following_id")
+              .eq("follower_id", user.id);
+            if (error) throw error;
+            followingIds = new Set(data.map((follow) => follow.following_id));
+          } catch (error) {
+            console.error("Unable to load followed writers.", error);
+            container.innerHTML = '<p class="sidebar-promo-copy">Following could not be loaded. Please refresh and try again.</p>';
+            return;
+          }
+        }
+
+        container.innerHTML = writers.map((writer) => {
+          const following = followingIds.has(writer.authorId);
+          const button = user
+            ? `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`
+            : '<a class="follow-button" href="login.html">Log in</a>';
+          return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${escapeHTML(writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
+        }).join("");
+      }
+
+      async function toggleFollow(followButton) {
+        const user = currentUser();
+        if (!user) {
+          navigate("login.html");
+          return;
+        }
+        const targetId = followButton.dataset.followUser;
+        if (!targetId || targetId === user.id) return;
+
+        followButton.disabled = true;
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to follow writers.");
+          }
+
+          const isFollowing = followButton.getAttribute("aria-pressed") === "true";
+          if (isFollowing) {
+            const { error } = await client.from("follows")
+              .delete()
+              .eq("follower_id", user.id)
+              .eq("following_id", targetId);
+            if (error) throw error;
+          } else {
+            const { error } = await client.from("follows")
+              .insert({ follower_id: user.id, following_id: targetId });
+            if (error) throw error;
+          }
+
+          await renderFollowSuggestions();
+          notify(isFollowing ? "You unfollowed this writer" : "You’re now following this writer");
+        } catch (error) {
+          console.error("Unable to update followed writers.", error);
+          notify(error instanceof Error ? error.message : "Following could not be updated.");
+        } finally {
+          followButton.disabled = false;
+        }
+      }
+
       function escapeHTML(value) {
         return String(value).replace(/[&<>"']/g, (char) => ({
           "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -315,10 +400,7 @@
           feed.querySelectorAll("[data-topic]").forEach((item) => item.classList.toggle("selected", item === button));
           filter();
         }));
-        feed.querySelectorAll(".follow-button").forEach((button) => button.addEventListener("click", () => {
-          const following = button.classList.toggle("following");
-          button.textContent = following ? "Following" : "Follow";
-        }));
+        renderFollowSuggestions();
         document.querySelectorAll(".top-nav a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === "#home"));
       }
 
@@ -601,6 +683,12 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const followButton = event.target.closest("[data-follow-user]");
+        if (followButton) {
+          event.preventDefault();
+          await toggleFollow(followButton);
+          return;
+        }
         const sideLink = event.target.closest("[data-side-link]");
         if (sideLink) {
           event.preventDefault();

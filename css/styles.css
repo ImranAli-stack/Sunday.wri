@@ -317,6 +317,7 @@
     .person-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
     .person-info span { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
     .follow-button {
+      display: inline-block;
       border: 1px solid #e6e0ff;
       color: var(--purple);
       background: #faf9ff;
@@ -324,6 +325,7 @@
       border-radius: 7px;
       font-size: 8px;
       font-weight: 750;
+      text-decoration: none;
       cursor: pointer;
     }
     .follow-button.following { color: #718273; border-color: #dcebe0; background: #f0f8f1; }
