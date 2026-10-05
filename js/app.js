@@ -3,11 +3,25 @@
 
       const SUPABASE_URL = "https://xjdrqktoeodohyoynphg.supabase.co";
       const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+      const SUPABASE_SDK_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
       let supabaseClient;
+      let supabaseLoadPromise;
 
-      function getSupabaseClient() {
+      async function getSupabaseClient() {
         if (!window.supabase?.createClient) {
-          throw new Error("Authentication could not load. Refresh the page and try again.");
+          if (!supabaseLoadPromise) {
+            supabaseLoadPromise = new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = SUPABASE_SDK_URL;
+              script.onload = resolve;
+              script.onerror = () => reject(new Error("Supabase could not load. Check your connection and try again."));
+              document.head.appendChild(script);
+            });
+          }
+          await supabaseLoadPromise;
+        }
+        if (!window.supabase?.createClient) {
+          throw new Error("Supabase could not initialize. Refresh the page and try again.");
         }
         if (!supabaseClient) {
           supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -80,6 +94,34 @@
       function posts() {
         const value = readStore(STORAGE.posts, []);
         return Array.isArray(value) ? value : [];
+      }
+
+      function normalizeRemotePost(post) {
+        return {
+          id: String(post.id),
+          title: post.title || "Untitled story",
+          category: post.category || "Lifestyle",
+          body: post.content || post.body || "",
+          authorId: post.user_id || post.author_id || "",
+          authorName: post.author_name || post.full_name || "Writer",
+          status: post.status || "published",
+          likes: Number(post.likes) || 0,
+          createdAt: post.created_at || post.createdAt || new Date().toISOString()
+        };
+      }
+
+      async function syncRemotePosts() {
+        const { data, error } = await (await getSupabaseClient())
+          .from("posts")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+
+        const remotePosts = data.map(normalizeRemotePost);
+        const localPosts = posts();
+        const mergedPosts = new Map(localPosts.map((post) => [post.id, post]));
+        remotePosts.forEach((post) => mergedPosts.set(post.id, post));
+        writeStore(STORAGE.posts, [...mergedPosts.values()]);
       }
 
       function currentUser() {
@@ -473,7 +515,7 @@
         if (signup && password !== form.elements.confirmPassword.value) { setAuthError("The passwords do not match. Please confirm your password."); return; }
         if (signup && !["reader", "writer", "both"].includes(form.elements.role.value)) { setAuthError("Choose whether you are here as a reader, writer, or both."); return; }
         try {
-          const auth = getSupabaseClient().auth;
+          const auth = (await getSupabaseClient()).auth;
           if (signup) {
             const { data, error } = await auth.signUp({
               email,
@@ -526,16 +568,52 @@
           notify("You’re logged out");
           return;
         }
-        if (path === "home" || path === "") { showHome(); return; }
-        if (path === "bookmarks") { renderBookmarks(); return; }
+        if (path === "home" || path === "") {
+          showHome();
+          syncRemotePosts().then(() => {
+            if (routeParts().path === "home") showHome();
+          }).catch((error) => {
+            console.error("Unable to fetch published posts from Supabase.", error);
+            notify("Stories could not be refreshed from the server.");
+          });
+          return;
+        }
+        if (path === "bookmarks") {
+          renderBookmarks();
+          syncRemotePosts().then(() => {
+            if (routeParts().path === "bookmarks") renderBookmarks();
+          }).catch((error) => {
+            console.error("Unable to fetch published posts from Supabase.", error);
+            notify("Stories could not be refreshed from the server.");
+          });
+          return;
+        }
         if (path === "about") { renderAbout(); return; }
         if (path === "contact") { renderContact(); return; }
         if (path === "competitions") { renderCompetitions(); return; }
-        if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
+        if (path === "dashboard") {
+          renderDashboard(params.get("tab") || "all");
+          syncRemotePosts().then(() => {
+            if (routeParts().path === "dashboard") renderDashboard(params.get("tab") || "all");
+          }).catch((error) => {
+            console.error("Unable to fetch published posts from Supabase.", error);
+            notify("Stories could not be refreshed from the server.");
+          });
+          return;
+        }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") { renderWriter("", params.get("edit") || ""); return; }
         if (path === "login" || path === "signup") { renderAuth(path); return; }
-        if (path === "post") { renderDetail(params.get("id") || ""); return; }
+        if (path === "post") {
+          renderDetail(params.get("id") || "");
+          syncRemotePosts().then(() => {
+            if (routeParts().path === "post") renderDetail(new URLSearchParams(location.search).get("id") || "");
+          }).catch((error) => {
+            console.error("Unable to fetch published posts from Supabase.", error);
+            notify("Stories could not be refreshed from the server.");
+          });
+          return;
+        }
         if (path === "auth-next") { navigate(`#${params.get("to") || "dashboard"}`); return; }
         navigate("#home");
       }
@@ -650,14 +728,40 @@
             const editId = form.dataset.editId;
             const existing = editId && savedPosts.find((post) => post.id === editId && post.authorId === user.id && post.status === "draft");
             if (editId && !existing) { setAuthError("This private draft is no longer available."); return; }
-            const post = existing
-              ? { ...existing, title, category: form.elements.category.value, body, status, createdAt: new Date().toISOString() }
-              : {
-                id: crypto.randomUUID(), authorId: user.id, authorName: user.poeticName || user.name,
-                title, category: form.elements.category.value, body,
-                status, likes: 0, createdAt: new Date().toISOString()
-              };
-            const nextPosts = existing ? savedPosts.map((item) => item.id === existing.id ? post : item) : [...savedPosts, post];
+            let post;
+            let nextPosts;
+            if (status === "draft") {
+              post = existing
+                ? { ...existing, title, category: form.elements.category.value, body, createdAt: new Date().toISOString() }
+                : {
+                  id: crypto.randomUUID(), authorId: user.id, authorName: user.poeticName || user.name,
+                  title, category: form.elements.category.value, body,
+                  status: "draft", likes: 0, createdAt: new Date().toISOString()
+                };
+              nextPosts = existing ? savedPosts.map((item) => item.id === existing.id ? post : item) : [...savedPosts, post];
+            } else {
+              const { data: authData, error: authError } = await (await getSupabaseClient()).auth.getUser();
+              if (authError) throw authError;
+              if (!authData.user || authData.user.id !== user.id) {
+                throw new Error("Your Supabase session is no longer active. Log in again before publishing.");
+              }
+              const { data, error } = await (await getSupabaseClient())
+                .from("posts")
+                .insert({
+                  title,
+                  category: form.elements.category.value,
+                  content: body,
+                  user_id: authData.user.id,
+                  author_name: user.poeticName || user.name,
+                  status: "published"
+                })
+                .select("*")
+                .single();
+              if (error) throw error;
+              if (!data) throw new Error("The server did not return the published story. Please refresh and check your dashboard.");
+              post = normalizeRemotePost(data);
+              nextPosts = [...savedPosts.filter((item) => item.id !== existing?.id && item.id !== post.id), post];
+            }
             writeStore(STORAGE.posts, nextPosts);
             notify(status === "draft" ? "Saved privately to your dashboard" : "Published to your dashboard and the public feed");
             navigate("#dashboard");
