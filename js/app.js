@@ -40,22 +40,6 @@
       const toast = document.getElementById("toast");
       const authLink = document.getElementById("authLink");
       const headerProfile = document.getElementById("headerProfile");
-      const seedStories = [
-        { title: "The tiny rituals that make an ordinary day feel like yours", category: "Lifestyle", authorName: "Avery Morgan", createdAt: "2026-10-04T12:00:00.000Z", likes: 248 },
-        { title: "A love letter to making things badly", category: "Creativity", authorName: "Leo Chen", createdAt: "2026-10-03T12:00:00.000Z", likes: 186 },
-        { title: "The neighborhood café that taught me how to slow down", category: "Lifestyle", authorName: "Nina Shah", createdAt: "2026-10-02T12:00:00.000Z", likes: 152 },
-        { title: "Getting wonderfully lost in a city that wasn't on the list", category: "Travel", authorName: "Oliver Tate", createdAt: "2026-10-01T12:00:00.000Z", likes: 129 },
-        { title: "Why the best rooms leave a little room for life", category: "Design", authorName: "Rory Kim", createdAt: "2026-09-30T12:00:00.000Z", likes: 98 },
-        { title: "An unambitious guide to feeling a little better", category: "Wellness", authorName: "Freya Park", createdAt: "2026-09-29T12:00:00.000Z", likes: 84 }
-      ];
-      const staticBodies = [
-        "A slower morning, a proper cup of tea, five minutes with the window open. Small ways to make everyday life feel a little more like living.\n\nI used to think a good day had to begin with a perfect plan. The mornings that stay with me are the quieter ones: opening the curtains, watering the basil, and letting the kettle take its time.\n\nThese little rituals don't fix everything. They simply make a bit of space to notice where I am and what I need. That is a lovely place to begin.",
-        "What if the point isn't to be good at it? On giving yourself permission to make a mess, follow the fun, and create without an audience in mind.\n\nFor years I saved my sketchbooks for the days when I had a good idea. The blank pages got more intimidating every week. Then I started filling one page a day with deliberately imperfect things: crooked buildings, strange little creatures, color combinations that probably shouldn't work.\n\nSomewhere in the mess, making things became fun again. You don't have to be good at something for it to belong to you.",
-        "I went in for a quick coffee and found a new favorite table, a friendly hello, and a reminder that not every moment needs to be optimized.\n\nThe café on the corner has one table by the front window that catches the afternoon sun. I started stopping there between errands, telling myself I had ten minutes. The owner learned my order; I learned which plants were real and which were painted on the wall.\n\nNothing dramatic happened. I just found a place where I could sit without having to earn the pause. Now I take the long way home.",
-        "No itinerary, no must-see checklist—just one long afternoon of turning down streets because they looked interesting. My favorite kind of trip.\n\nI missed the tram on purpose after spotting a narrow lane full of laundry and flowerpots. It led to a bookshop, which led to lunch, which led to a conversation with a woman who had lived on that block for fifty years.\n\nI came home with no photographs of the famous landmarks and a pocket full of tiny details I would have missed if I had kept to the plan.",
-        "A home isn't a finished photograph. It's the book left open, the afternoon light, and the chair that never stays where you put it.\n\nThe rooms I love most are not the ones where nothing is out of place. They have a surface for unfinished things, a soft lamp for the evenings, and enough clear space to move around in. They change as the people in them change.\n\nA home can be thoughtfully designed and still leave room for life to happen.",
-        "Drink a glass of water. Step outside. Text someone back. No grand reinvention required—sometimes a gentle nudge is more than enough.\n\nWhen I feel overwhelmed, ambitious routines can start to look like another list I'm failing to complete. So I try one small thing instead: open a window, stretch my shoulders, or put a song on while the kettle boils.\n\nA little better is still better. You are allowed to start there."
-      ];
       let toastTimer;
       let activeDashboardTab = "all";
 
@@ -111,17 +95,17 @@
       }
 
       async function syncRemotePosts() {
+        writeStore(STORAGE.posts, posts().filter((post) => post.status === "draft"));
         const { data, error } = await (await getSupabaseClient())
           .from("posts")
           .select("*")
+          .eq("status", "published")
           .order("created_at", { ascending: false });
         if (error) throw error;
 
         const remotePosts = data.map(normalizeRemotePost);
-        const localPosts = posts();
-        const mergedPosts = new Map(localPosts.map((post) => [post.id, post]));
-        remotePosts.forEach((post) => mergedPosts.set(post.id, post));
-        writeStore(STORAGE.posts, [...mergedPosts.values()]);
+        const localDrafts = posts().filter((post) => post.status === "draft");
+        writeStore(STORAGE.posts, [...localDrafts, ...remotePosts]);
       }
 
       async function deleteUserPost(postId) {
@@ -286,14 +270,10 @@
         layout.classList.remove("content-only", "detail-only");
         feed.innerHTML = originalHome;
         const cardList = feed.querySelector("#postList");
-        [...cardList.querySelectorAll(".post-card")].forEach((card, index) => {
-          card.dataset.postId = `seed-${index}`;
-          card.dataset.fullBody = staticBodies[index] || card.querySelector(".post-excerpt").textContent;
-          card.tabIndex = 0;
-          card.setAttribute("aria-label", `Read story: ${card.querySelector(".post-title").textContent}`);
-        });
-        posts().filter((post) => post.status === "published").sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-          .reverse().forEach((post) => cardList.prepend(createPostCard(post)));
+        cardList.replaceChildren();
+        posts().filter((post) => post.status === "published")
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .forEach((post) => cardList.appendChild(createPostCard(post)));
         const savedBookmarks = bookmarkList();
         cardList.querySelectorAll(".post-card").forEach((card) => {
           const button = card.querySelector(".bookmark-button");
@@ -366,23 +346,13 @@
       }
 
       function fullBodyFor(post) {
-        if (post.id.startsWith("seed-")) {
-          const seedIndex = Number(post.id.slice(5));
-          return staticBodies[seedIndex] || post.body;
-        }
         return post.body;
-      }
-
-      function seedPost(index) {
-        const story = seedStories[index];
-        return story ? { id: `seed-${index}`, ...story, body: staticBodies[index], status: "published" } : null;
       }
 
       function findPost(id) {
         const saved = posts().find((post) => post.id === id);
         if (saved) return saved;
         const card = [...document.querySelectorAll(".post-card")].find((item) => item.dataset.postId === id);
-        if (!card && id.startsWith("seed-")) return seedPost(Number(id.slice(5)));
         if (!card) return null;
         return {
           id, title: card.querySelector(".post-title").textContent,
@@ -435,9 +405,7 @@
 
       function renderBookmarks() {
         const savedPosts = posts();
-        const stories = bookmarkList().map((id) => id.startsWith("seed-")
-          ? seedPost(Number(id.slice(5)))
-          : savedPosts.find((post) => post.id === id))
+        const stories = bookmarkList().map((id) => savedPosts.find((post) => post.id === id))
           .filter((post) => post && (post.status === "published" || post.authorId === currentUser()?.id));
         const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${escapeHTML(post.authorName)}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div>`).join("")
           : '<div class="empty-dashboard">Your reading list is waiting. Bookmark a story from the public feed and it will be saved here.</div>';
@@ -615,66 +583,19 @@
           notify("You’re logged out");
           return;
         }
-        if (path === "home" || path === "") {
-          showHome();
-          syncRemotePosts().then(() => {
-            if (routeParts().path === "home") showHome();
-          }).catch((error) => {
-            console.error("Unable to fetch published posts from Supabase.", error);
-            notify("Stories could not be refreshed from the server.");
-          });
-          return;
-        }
-        if (path === "bookmarks") {
-          renderBookmarks();
-          syncRemotePosts().then(() => {
-            if (routeParts().path === "bookmarks") renderBookmarks();
-          }).catch((error) => {
-            console.error("Unable to fetch published posts from Supabase.", error);
-            notify("Stories could not be refreshed from the server.");
-          });
-          return;
-        }
+        if (path === "home" || path === "") { showHome(); return; }
+        if (path === "bookmarks") { renderBookmarks(); return; }
         if (path === "about") { renderAbout(); return; }
         if (path === "contact") { renderContact(); return; }
         if (path === "competitions") { renderCompetitions(); return; }
-        if (path === "dashboard") {
-          renderDashboard(params.get("tab") || "all");
-          syncRemotePosts().then(() => {
-            if (routeParts().path === "dashboard") renderDashboard(params.get("tab") || "all");
-          }).catch((error) => {
-            console.error("Unable to fetch published posts from Supabase.", error);
-            notify("Stories could not be refreshed from the server.");
-          });
-          return;
-        }
+        if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") {
-          const editId = params.get("edit") || "";
-          if (editId && !posts().some((post) => post.id === editId)) {
-            setPage('<div class="page-view"><section class="page-hero"><h1>Loading your story…</h1></section></div>', { contentOnly: true });
-            syncRemotePosts().then(() => {
-              if (routeParts().path === "write" && routeParts().params.get("edit") === editId) renderWriter("", editId);
-            }).catch((error) => {
-              console.error("Unable to load your story for editing.", error);
-              renderWriter(error instanceof Error ? error.message : "Your story could not be loaded.", editId);
-            });
-            return;
-          }
-          renderWriter("", editId);
+          renderWriter("", params.get("edit") || "");
           return;
         }
         if (path === "login" || path === "signup") { renderAuth(path); return; }
-        if (path === "post") {
-          renderDetail(params.get("id") || "");
-          syncRemotePosts().then(() => {
-            if (routeParts().path === "post") renderDetail(new URLSearchParams(location.search).get("id") || "");
-          }).catch((error) => {
-            console.error("Unable to fetch published posts from Supabase.", error);
-            notify("Stories could not be refreshed from the server.");
-          });
-          return;
-        }
+        if (path === "post") { renderDetail(params.get("id") || ""); return; }
         if (path === "auth-next") { navigate(`#${params.get("to") || "dashboard"}`); return; }
         navigate("#home");
       }
@@ -881,5 +802,8 @@
           document.querySelectorAll(".modal-backdrop.open").forEach((modal) => modal.classList.remove("open"));
         }
       });
-      renderRoute();
+      syncRemotePosts().catch((error) => {
+        console.error("Unable to fetch published posts from Supabase.", error);
+        notify("Stories could not be refreshed from the server.");
+      }).finally(renderRoute);
     })();
