@@ -124,6 +124,50 @@
         writeStore(STORAGE.posts, [...mergedPosts.values()]);
       }
 
+      async function deleteUserPost(postId) {
+        const user = currentUser();
+        const post = posts().find((item) => item.id === postId);
+        if (!user || !post || post.authorId !== user.id) {
+          throw new Error("You can only delete stories from your own account.");
+        }
+
+        if (post.status === "published") {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session is no longer active. Log in again before deleting.");
+          }
+          const { data, error } = await client.from("posts")
+            .delete()
+            .eq("id", post.id)
+            .eq("user_id", authData.user.id)
+            .select("id")
+            .maybeSingle();
+          if (error) throw error;
+          if (!data) throw new Error("The story could not be deleted. It may no longer exist or you may not own it.");
+        }
+
+        writeStore(STORAGE.posts, posts().filter((item) => item.id !== post.id));
+        const savedBookmarks = readStore("sunday.bookmarks.v1", {});
+        const bookmarks = savedBookmarks && typeof savedBookmarks === "object" && !Array.isArray(savedBookmarks)
+          ? savedBookmarks
+          : {};
+        Object.keys(bookmarks).forEach((key) => {
+          if (Array.isArray(bookmarks[key])) bookmarks[key] = bookmarks[key].filter((id) => id !== post.id);
+        });
+        writeStore("sunday.bookmarks.v1", bookmarks);
+
+        if (routeParts().path === "post") {
+          navigate("dashboard.html");
+        } else if (routeParts().path === "dashboard") {
+          renderDashboard(activeDashboardTab);
+        } else if (routeParts().path === "home") {
+          showHome();
+        }
+        notify("Your story has been deleted");
+      }
+
       function currentUser() {
         const id = readStore(STORAGE.session, null);
         return id ? users().find((user) => user.id === id) || null : null;
@@ -360,7 +404,7 @@
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
           <div class="detail-cover art-journal" aria-hidden="true">✍️</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a></div></article></div>`;
+          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div></article></div>`;
         setPage(content, { detailOnly: true });
       }
 
@@ -380,7 +424,9 @@
         const list = own.length ? own.map((post) => `<div class="dashboard-post">
           <div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${escapeHTML(formatDate(post.createdAt))}</span></div>
           <span class="status-pill ${post.status === "draft" ? "draft" : ""}">${post.status === "draft" ? "Private draft" : "Published"}</span>
-          <a class="dashboard-open" href="${post.status === "draft" ? `write.html?edit=${encodeURIComponent(post.id)}` : `post.html?id=${encodeURIComponent(post.id)}`}">${post.status === "draft" ? "Resume draft" : "Open"}</a></div>`).join("")
+          <div class="dashboard-post-actions">${post.status === "published" ? `<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Open</a>` : ""}
+            <a class="dashboard-action" href="write.html?edit=${encodeURIComponent(post.id)}">${post.status === "draft" ? "Edit draft" : "Edit"}</a>
+            <button class="dashboard-action delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button></div></div>`).join("")
           : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
         setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Your private space · ${escapeHTML(user.role || "writer")}</div><h1>Writer dashboard</h1><p>Welcome back, ${escapeHTML(displayName(user))}. Your drafts stay private; published stories appear here and in the public feed.</p><div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
           <div class="dashboard-stats"><div class="dashboard-stat"><strong>${allCount}</strong><span>Your stories</span></div><div class="dashboard-stat"><strong>${publishedCount}</strong><span>Public posts</span></div><div class="dashboard-stat"><strong>${posts().filter((post) => post.authorId === user.id && post.status === "draft").length}</strong><span>Private drafts</span></div></div>
@@ -446,20 +492,21 @@
           setPage(`<div class="page-view">${pageHero("Reader account", "Your next chapter can include writing.", "Your account is set up for reading. Change your account type to Writer or Both in settings to publish stories.")}<section class="page-card"><a class="primary-button" href="settings.html">Update account type</a> <a class="secondary-button" href="index.html">Browse stories</a></section></div>`, { contentOnly: true });
           return;
         }
-        const draft = draftId ? posts().find((post) => post.id === draftId && post.authorId === user.id && post.status === "draft") : null;
-        if (draftId && !draft) {
-          renderWriter("That private draft could not be found.");
+        const editingPost = draftId ? posts().find((post) => post.id === draftId && post.authorId === user.id) : null;
+        if (draftId && !editingPost) {
+          setPage(`<div class="page-view">${pageHero("Story unavailable", "This isn’t one of your stories", message || "Only the author can edit a story.")}<section class="page-card"><a class="primary-button" href="dashboard.html">Back to your dashboard</a></section></div>`, { contentOnly: true });
           return;
         }
-        const title = draft?.title || "";
-        const body = draft?.body || "";
-        const category = draft?.category || "Lifestyle";
-        setPage(`<div class="page-view">${pageHero(draft ? "Pick up where you left off" : "Make something yours", draft ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
-          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(draft?.id || "")}" novalidate>
+        const isPublishedEdit = editingPost?.status === "published";
+        const title = editingPost?.title || "";
+        const body = editingPost?.body || "";
+        const category = editingPost?.category || "Lifestyle";
+        setPage(`<div class="page-view">${pageHero(isPublishedEdit ? "Update your story" : editingPost ? "Pick up where you left off" : "Make something yours", isPublishedEdit ? "Edit published story" : editingPost ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
+          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(editingPost?.id || "")}" data-edit-status="${escapeHTML(editingPost?.status || "")}" novalidate>
           <div class="form-field"><label for="postTitle">Story title</label><input id="postTitle" name="title" maxlength="120" required placeholder="Give your story a title" value="${escapeHTML(title)}"></div>
           <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${["Lifestyle", "Creativity", "Travel", "Design", "Wellness"].map((option) => `<option${category === option ? " selected" : ""}>${option}</option>`).join("")}</select></div>
           <div class="form-field"><label for="postBody">Your story</label><textarea id="postBody" name="body" maxlength="12000" required placeholder="Start with the detail you can't stop thinking about...">${escapeHTML(body)}</textarea></div>
-          <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">Publish to the community</button><button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button></div>
+          <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">${isPublishedEdit ? "Save changes" : "Publish to the community"}</button>${isPublishedEdit ? '<a class="secondary-button" href="dashboard.html">Cancel</a>' : '<button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>'}</div>
           </form><p class="form-note">Published stories appear on the home page and your dashboard. Private drafts are visible only in your dashboard in this browser.</p></section></div>`, { contentOnly: true });
       }
 
@@ -602,7 +649,21 @@
           return;
         }
         if (path === "settings") { renderSettings(); return; }
-        if (path === "write") { renderWriter("", params.get("edit") || ""); return; }
+        if (path === "write") {
+          const editId = params.get("edit") || "";
+          if (editId && !posts().some((post) => post.id === editId)) {
+            setPage('<div class="page-view"><section class="page-hero"><h1>Loading your story…</h1></section></div>', { contentOnly: true });
+            syncRemotePosts().then(() => {
+              if (routeParts().path === "write" && routeParts().params.get("edit") === editId) renderWriter("", editId);
+            }).catch((error) => {
+              console.error("Unable to load your story for editing.", error);
+              renderWriter(error instanceof Error ? error.message : "Your story could not be loaded.", editId);
+            });
+            return;
+          }
+          renderWriter("", editId);
+          return;
+        }
         if (path === "login" || path === "signup") { renderAuth(path); return; }
         if (path === "post") {
           renderDetail(params.get("id") || "");
@@ -618,7 +679,7 @@
         navigate("#home");
       }
 
-      document.addEventListener("click", (event) => {
+      document.addEventListener("click", async (event) => {
         const sideLink = event.target.closest("[data-side-link]");
         if (sideLink) {
           event.preventDefault();
@@ -639,6 +700,18 @@
         }
         const signout = event.target.closest("[data-signout]");
         if (signout) { navigate("#logout"); return; }
+        const deletePost = event.target.closest("[data-delete-post]");
+        if (deletePost) {
+          event.preventDefault();
+          if (!confirm("Delete this story? This cannot be undone.")) return;
+          try {
+            await deleteUserPost(deletePost.dataset.deletePost);
+          } catch (error) {
+            console.error("Unable to delete story.", error);
+            notify(error instanceof Error ? error.message : "The story could not be deleted.");
+          }
+          return;
+        }
         const tab = event.target.closest("[data-dashboard-tab]");
         if (tab) { renderDashboard(tab.dataset.dashboardTab); return; }
         const detailLike = event.target.closest("[data-like-detail]");
@@ -726,11 +799,15 @@
           try {
             const savedPosts = posts();
             const editId = form.dataset.editId;
-            const existing = editId && savedPosts.find((post) => post.id === editId && post.authorId === user.id && post.status === "draft");
-            if (editId && !existing) { setAuthError("This private draft is no longer available."); return; }
+            const existing = editId && savedPosts.find((post) => post.id === editId && post.authorId === user.id);
+            if (editId && !existing) { setAuthError("This story is no longer available in your account."); return; }
             let post;
             let nextPosts;
             if (status === "draft") {
+              if (existing?.status === "published") {
+                setAuthError("Published stories must be saved as published.");
+                return;
+              }
               post = existing
                 ? { ...existing, title, category: form.elements.category.value, body, createdAt: new Date().toISOString() }
                 : {
@@ -740,30 +817,31 @@
                 };
               nextPosts = existing ? savedPosts.map((item) => item.id === existing.id ? post : item) : [...savedPosts, post];
             } else {
-              const { data: authData, error: authError } = await (await getSupabaseClient()).auth.getUser();
+              const client = await getSupabaseClient();
+              const { data: authData, error: authError } = await client.auth.getUser();
               if (authError) throw authError;
               if (!authData.user || authData.user.id !== user.id) {
                 throw new Error("Your Supabase session is no longer active. Log in again before publishing.");
               }
-              const { data, error } = await (await getSupabaseClient())
-                .from("posts")
-                .insert({
-                  title,
-                  category: form.elements.category.value,
-                  content: body,
-                  user_id: authData.user.id,
-                  author_name: user.poeticName || user.name,
-                  status: "published"
-                })
-                .select("*")
-                .single();
+              const postValues = {
+                title,
+                category: form.elements.category.value,
+                content: body,
+                user_id: authData.user.id,
+                author_name: user.poeticName || user.name,
+                status: "published"
+              };
+              const query = existing?.status === "published"
+                ? client.from("posts").update(postValues).eq("id", existing.id).eq("user_id", authData.user.id)
+                : client.from("posts").insert(postValues);
+              const { data, error } = await query.select("*").single();
               if (error) throw error;
-              if (!data) throw new Error("The server did not return the published story. Please refresh and check your dashboard.");
+              if (!data) throw new Error("The server did not return the saved story. Please refresh and check your dashboard.");
               post = normalizeRemotePost(data);
               nextPosts = [...savedPosts.filter((item) => item.id !== existing?.id && item.id !== post.id), post];
             }
             writeStore(STORAGE.posts, nextPosts);
-            notify(status === "draft" ? "Saved privately to your dashboard" : "Published to your dashboard and the public feed");
+            notify(status === "draft" ? "Saved privately to your dashboard" : existing?.status === "published" ? "Your story has been updated" : "Published to your dashboard and the public feed");
             navigate("#dashboard");
           } catch (error) {
             setAuthError(error instanceof Error ? error.message : "Your story could not be saved.");

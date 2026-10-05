@@ -427,6 +427,9 @@
     .dashboard-post-main { flex: 1; min-width: 0; }
     .dashboard-post-main strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
     .dashboard-post-main span { display: block; margin-top: 5px; color: var(--muted); font-size: 9px; }
+    .dashboard-post-actions { display: flex; align-items: center; gap: 11px; }
+    .dashboard-action { padding: 0; color: var(--purple); background: none; border: 0; font: inherit; font-size: 10px; font-weight: 750; text-decoration: none; cursor: pointer; }
+    .dashboard-action.delete, .delete-action { color: #a1364d; }
     .status-pill { padding: 5px 8px; color: #397657; background: #eaf7ef; border-radius: 20px; font-size: 9px; font-weight: 750; }
     .status-pill.draft { color: #95712d; background: #fff6df; }
     .dashboard-open { color: var(--purple); font-size: 10px; font-weight: 750; }
