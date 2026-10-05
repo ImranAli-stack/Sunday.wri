@@ -1,6 +1,20 @@
     (() => {
       "use strict";
 
+      const SUPABASE_URL = "https://xjdrqktoeodohyoynphg.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+      let supabaseClient;
+
+      function getSupabaseClient() {
+        if (!window.supabase?.createClient) {
+          throw new Error("Authentication could not load. Refresh the page and try again.");
+        }
+        if (!supabaseClient) {
+          supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+        }
+        return supabaseClient;
+      }
+
       const STORAGE = {
         users: "sunday.users.v1",
         posts: "sunday.posts.v1",
@@ -367,7 +381,7 @@
         const formTitle = signup ? "Create your writer account" : "Welcome back";
         const intro = signup ? "Join Sunday to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
         setPage(`<div class="page-view">${pageHero(signup ? "A page of your own" : "Your words are waiting", formTitle, intro)}
-          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div><form id="authForm" novalidate>
+          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div><form id="authForm" data-auth-mode="${mode}" novalidate>
           ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
           ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
           <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"></div>
@@ -375,7 +389,7 @@
           ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"></div>' : ""}
           ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
           <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
-          <p class="form-note">Demo account data is stored only in this browser. This standalone page has no server, account recovery, or cross-device sync; do not use a real password here.</p>
+          <p class="form-note">Authentication is handled by Supabase. Profile details, drafts, and stories are stored only in this browser and do not sync between devices.</p>
           </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Sunday? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
       }
 
@@ -428,11 +442,22 @@
         }
       }
 
-      async function passwordVerifier(password, salt) {
-        if (!globalThis.crypto?.subtle) throw new Error("Secure password hashing is unavailable in this browser. Open this page in a modern browser over localhost to sign up.");
-        const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-        const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 210000, hash: "SHA-256" }, key, 256);
-        return Array.from(new Uint8Array(bits), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      function localProfile(authUser, details = {}) {
+        const existing = users().find((user) => user.id === authUser.id);
+        if (existing) return existing;
+
+        const metadata = authUser.user_metadata || {};
+        const email = authUser.email || "";
+        const name = details.name || metadata.full_name || email.split("@")[0] || "Writer";
+        const poeticName = details.poeticName || metadata.poetic_name || name;
+        const requestedRole = details.role || metadata.role;
+        const role = ["reader", "writer", "both"].includes(requestedRole) ? requestedRole : "both";
+        const account = {
+          id: authUser.id, name, poeticName, role, handle: `@${email.split("@")[0]}`,
+          email, followers: 0, following: 0
+        };
+        writeStore(STORAGE.users, [...users(), account]);
+        return account;
       }
 
       async function handleAuth(form, signup) {
@@ -448,29 +473,31 @@
         if (signup && password !== form.elements.confirmPassword.value) { setAuthError("The passwords do not match. Please confirm your password."); return; }
         if (signup && !["reader", "writer", "both"].includes(form.elements.role.value)) { setAuthError("Choose whether you are here as a reader, writer, or both."); return; }
         try {
-          const accountList = users();
+          const auth = getSupabaseClient().auth;
           if (signup) {
-            if (accountList.some((user) => user.email === email)) { setAuthError("An account with this email already exists. Try logging in."); return; }
-            const salt = crypto.getRandomValues(new Uint8Array(16));
-            const saltText = Array.from(salt, (byte) => byte.toString(16).padStart(2, "0")).join("");
-            const verifier = await passwordVerifier(password, salt);
-            const account = {
-              id: crypto.randomUUID(), name, poeticName, role: form.elements.role.value,
-              handle: `@${email.split("@")[0]}`,
-              email, salt: saltText, verifier, followers: 0, following: 0
-            };
-            writeStore(STORAGE.users, [...accountList, account]);
+            const { data, error } = await auth.signUp({
+              email,
+              password,
+              options: { data: { full_name: name, poetic_name: poeticName, role: form.elements.role.value } }
+            });
+            if (error) throw error;
+            if (!data.user) throw new Error("Supabase did not return the new account. Please try again.");
+            const account = localProfile(data.user, { name, poeticName, role: form.elements.role.value });
+            if (!data.session) {
+              notify("Check your email to confirm your account, then log in.");
+              renderAuth("login");
+              return;
+            }
             writeStore(STORAGE.session, account.id);
             sessionStorage.removeItem("sunday.next");
             updateHeader();
             navigate(account.role === "reader" ? "dashboard.html" : "write.html");
             return;
           }
-          const account = accountList.find((user) => user.email === email);
-          if (!account) { setAuthError("No account found for that email. Create an account to get started."); return; }
-          const salt = Uint8Array.from(account.salt.match(/.{2}/g), (byte) => parseInt(byte, 16));
-          const verifier = await passwordVerifier(password, salt);
-          if (verifier !== account.verifier) { setAuthError("That password doesn’t match this account."); return; }
+          const { data, error } = await auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          if (!data.user || !data.session) throw new Error("Sign-in did not return an active session. Please try again.");
+          const account = localProfile(data.user);
           writeStore(STORAGE.session, account.id);
           const next = sessionStorage.getItem("sunday.next") || "dashboard";
           sessionStorage.removeItem("sunday.next");
@@ -605,7 +632,7 @@
         const form = event.target;
         if (form.id === "authForm") {
           event.preventDefault();
-          await handleAuth(form, routeParts().path === "signup");
+          await handleAuth(form, form.dataset.authMode === "signup");
           return;
         }
         if (form.id === "writerForm") {
