@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc"><meta name="description" content="Sunday stories for the curious.">
+  <title>Read a Sunday story</title><link rel="stylesheet" href="css/styles.css"><script src="js/app.js" defer></script>
+</head><body data-page="post">
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="Sunday home"><span class="brand-mark" aria-hidden="true">s</span><span>sunday<span class="brand-dot">.</span></span></a>
+  <nav class="top-nav" aria-label="Main navigation"><a href="index.html">Home</a><a href="contact.html">Contact</a><a href="about.html">About</a><a href="competitions.html">Competitions</a></nav>
+  <div class="topbar-spacer"></div>
+  <label class="search-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg><input id="searchInput" type="search" placeholder="Search stories..." aria-label="Search stories"></label>
+  <a class="write-button" id="writeLink" href="write.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Write</a>
+  <a class="auth-link" id="authLink" href="login.html">Log in</a>
+  <a class="header-profile" id="headerProfile" href="dashboard.html" hidden aria-label="Open your dashboard"><span class="avatar purple" id="headerAvatar">?</span><span class="header-profile-copy"><strong id="headerName">Writer</strong><span id="headerStats">Your stories - 0</span></span></a>
+</header>
+<div class="layout">
+  <aside class="left-sidebar" aria-label="Sidebar navigation"><div class="sidebar-label">Your space</div>
+    <a class="side-link" href="index.html" data-side-link><span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"></path></svg></span> Home</a>
+    <a class="side-link" href="dashboard.html" data-side-link><span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"></circle><path d="M5 21a7 7 0 0 1 14 0"></path></svg></span> Profile</a>
+    <a class="side-link" href="bookmarks.html" data-side-link><span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17l-6-4-6 4z"></path></svg></span> Bookmarks</a>
+    <a class="side-link" href="settings.html" data-side-link><span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="m19 15 2 1-2 3-2-1-2 1v2h-4v-2l-2-1-2 1-2-3 2-1v-2l-2-1 2-3 2 1 2-1V7h4v2l2 1 2-1 2 3-2 1z"></path></svg></span> Settings</a>
+    <hr class="side-divider"><div class="sidebar-label">Explore topics</div><div class="topics" id="topicList"><a class="topic-chip" href="index.html">All stories</a><a class="topic-chip" href="index.html">Lifestyle</a><a class="topic-chip" href="index.html">Creativity</a><a class="topic-chip" href="index.html">Travel</a><a class="topic-chip" href="index.html">Design</a><a class="topic-chip" href="index.html">Wellness</a></div>
+  </aside>
+  <main class="feed"></main>
+  <aside class="right-sidebar" aria-label="Community highlights">
+    <section class="panel challenge-panel"><div class="challenge-icon" aria-hidden="true">&#127942;</div><h3>October writing prompt</h3><p>Write about a place that feels like home. Share your story with the community.</p><div class="challenge-date">Entries close October 31</div><a href="competitions.html" class="panel-link">Explore the prompt</a></section>
+    <section class="panel"><div class="panel-heading"><h3>Keep writing</h3></div><p class="sidebar-promo-copy">Every story starts with a first line. Make a little space for yours today.</p><a class="panel-link" href="write.html">Start a story</a></section>
+    <section class="panel"><div class="panel-heading"><h3>Find your people</h3></div><p class="sidebar-promo-copy">Read a new perspective, save a favorite, and make this corner of the internet your own.</p><a class="panel-link" href="index.html">Browse stories</a></section>
+  </aside>
+</div>
+<footer class="site-footer"><div class="footer-decoration" aria-hidden="true">&#10047;</div><div class="footer-grid">
+  <section><a class="footer-brand" href="index.html">sunday<span>.</span></a><p class="footer-blurb">A small, bright corner for the stories we tell, the things we make, and the people we meet along the way.</p><div aria-label="A little encouragement for writers" class="footer-motifs">&#9997; &#10024; &#127807;</div></section>
+  <section><h2 class="footer-heading">Explore</h2><div class="footer-links"><a href="index.html">Latest stories</a><a href="about.html">About Sunday</a><a href="competitions.html">Writing prompt</a></div></section>
+  <section><h2 class="footer-heading">Your writing</h2><div class="footer-links"><a href="write.html">Write a story</a><a href="dashboard.html">Writer dashboard</a><a href="signup.html">Create an account</a></div></section>
+  <section><h2 class="footer-heading">Say hello</h2><div class="footer-links"><a href="contact.html">Contact the team</a><a href="mailto:hello@sunday.example">hello@sunday.example</a><span>Be kind. Stay curious. Keep writing.</span></div></section>
+</div><div class="footer-signoff"><span>Made for the love of a good story. &copy; 2026 Sunday</span><span>Keep a little <span class="sparkle">&#10022;</span> for the page.</span></div></footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body></html>

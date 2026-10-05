@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc">
+  <meta name="description" content="A thoughtful place for fresh stories, good ideas, and curious minds.">
+  <title>Sunday — Stories for the curious</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body data-page="home">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Sunday home">
+      <span class="brand-mark" aria-hidden="true">s</span>
+      <span>sunday<span class="brand-dot">.</span></span>
+    </a>
+    <nav class="top-nav" aria-label="Main navigation">
+      <a class="active" href="index.html">Home</a>
+      <a href="contact.html">Contact</a>
+      <a href="about.html">About</a>
+      <a href="competitions.html">Competitions</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <label class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg>
+      <input id="searchInput" type="search" placeholder="Search stories..." aria-label="Search stories">
+    </label>
+    <a class="write-button" id="writeLink" href="write.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Write
+    </a>
+    <a class="auth-link" id="authLink" href="login.html">Log in</a>
+    <a class="header-profile" id="headerProfile" href="dashboard.html" hidden aria-label="Open your dashboard">
+      <span class="avatar purple" id="headerAvatar">?</span>
+      <span class="header-profile-copy"><strong id="headerName">Writer</strong><span id="headerStats">Your stories · 0</span></span>
+    </a>
+  </header>
+
+  <div class="layout" id="home">
+    <aside class="left-sidebar" aria-label="Sidebar navigation">
+      <div class="sidebar-label">Your space</div>
+      <a class="side-link selected" href="index.html" data-side-link>
+        <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"></path></svg></span> Home
+      </a>
+      <a class="side-link" href="dashboard.html" data-side-link>
+        <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="8" r="4"></circle><path d="M5 21a7 7 0 0 1 14 0"></path></svg></span> Profile
+      </a>
+      <a class="side-link" href="bookmarks.html" data-side-link id="bookmarksLink">
+        <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17l-6-4-6 4z"></path></svg></span> Bookmarks
+      </a>
+      <a class="side-link" href="settings.html" data-side-link>
+        <span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.7 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.7-1l-1.7.6-1.4-2.4L7.3 15a8 8 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.7-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.7 1l1.7-.6 1.4 2.4-1.4 1.1a8 8 0 0 1-.1 2z"></path></svg></span> Settings
+      </a>
+      <hr class="side-divider">
+      <div class="sidebar-label">Explore topics</div>
+      <div class="topics" id="topicList">
+        <button class="topic-chip selected" type="button" data-topic="All">✦ All stories</button>
+        <button class="topic-chip" type="button" data-topic="Lifestyle">☁ Lifestyle</button>
+        <button class="topic-chip" type="button" data-topic="Creativity">✎ Creativity</button>
+        <button class="topic-chip" type="button" data-topic="Travel">⌁ Travel</button>
+        <button class="topic-chip" type="button" data-topic="Design">◈ Design</button>
+        <button class="topic-chip" type="button" data-topic="Wellness">♡ Wellness</button>
+      </div>
+    </aside>
+
+    <main class="feed">
+      <section class="welcome-banner" id="about" aria-label="Welcome">
+        <div class="welcome-copy">
+          <div class="eyebrow">A little corner of the internet</div>
+          <h1>Good stories live here.</h1>
+          <p>Fresh ideas, honest words, and perspectives worth sharing.</p>
+        </div>
+        <div class="banner-decoration" aria-hidden="true">✿</div>
+      </section>
+
+      <div class="section-heading">
+        <div>
+          <h2 id="feedHeading">Public dashboard</h2>
+          <p id="resultCount" aria-live="polite">Stories shared by the Sunday community.</p>
+        </div>
+        <label>
+          <span class="sr-only">Sort stories</span>
+          <select class="sort-select" id="sortSelect" aria-label="Sort stories">
+            <option value="latest">Most recent</option>
+            <option value="popular">Most loved</option>
+          </select>
+        </label>
+      </div>
+
+      <section class="post-list" id="postList" aria-label="All blog posts">
+        <article class="post-card" data-category="Lifestyle" data-likes="248" data-date="2026-10-04" data-title="The tiny rituals that make an ordinary day feel like yours">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar green">AM</div><span class="author-name">Avery Morgan</span><span class="post-date">· Today</span></div>
+            <span class="category-label">LIFESTYLE</span>
+            <h3 class="post-title">The tiny rituals that make an ordinary day feel like yours</h3>
+            <p class="post-excerpt">A slower morning, a proper cup of tea, five minutes with the window open. Small ways to make everyday life feel a little more like living.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">248</span></span><span>◷ 5 min read</span><span>◯ 18</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-garden" aria-label="Illustration of a potted plant"><span>🪴</span></div>
+        </article>
+        <article class="post-card" data-category="Creativity" data-likes="186" data-date="2026-10-03" data-title="A love letter to making things badly">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar gold">LC</div><span class="author-name">Leo Chen</span><span class="post-date">· Yesterday</span></div>
+            <span class="category-label">CREATIVITY</span>
+            <h3 class="post-title">A love letter to making things badly</h3>
+            <p class="post-excerpt">What if the point isn't to be good at it? On giving yourself permission to make a mess, follow the fun, and create without an audience in mind.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">186</span></span><span>◷ 4 min read</span><span>◯ 12</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-journal" aria-label="Illustration of an open journal"><span>📖</span></div>
+        </article>
+        <article class="post-card" data-category="Lifestyle" data-likes="152" data-date="2026-10-02" data-title="The neighborhood café that taught me how to slow down">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar blue">NS</div><span class="author-name">Nina Shah</span><span class="post-date">· Oct 2</span></div>
+            <span class="category-label">LIFESTYLE</span>
+            <h3 class="post-title">The neighborhood café that taught me how to slow down</h3>
+            <p class="post-excerpt">I went in for a quick coffee and found a new favorite table, a friendly hello, and a reminder that not every moment needs to be optimized.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">152</span></span><span>◷ 6 min read</span><span>◯ 9</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-coffee" aria-label="Illustration of a cup of coffee"><span>☕</span></div>
+        </article>
+        <article class="post-card" data-category="Travel" data-likes="129" data-date="2026-10-01" data-title="Getting wonderfully lost in a city that wasn't on the list">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar purple">OT</div><span class="author-name">Oliver Tate</span><span class="post-date">· Oct 1</span></div>
+            <span class="category-label">TRAVEL</span>
+            <h3 class="post-title">Getting wonderfully lost in a city that wasn't on the list</h3>
+            <p class="post-excerpt">No itinerary, no must-see checklist—just one long afternoon of turning down streets because they looked interesting. My favorite kind of trip.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">129</span></span><span>◷ 7 min read</span><span>◯ 15</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-travel" aria-label="Illustration of a seaside landscape"><span>🌊</span></div>
+        </article>
+        <article class="post-card" data-category="Design" data-likes="98" data-date="2026-09-30" data-title="Why the best rooms leave a little room for life">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar green">RK</div><span class="author-name">Rory Kim</span><span class="post-date">· Sep 30</span></div>
+            <span class="category-label">DESIGN</span>
+            <h3 class="post-title">Why the best rooms leave a little room for life</h3>
+            <p class="post-excerpt">A home isn't a finished photograph. It's the book left open, the afternoon light, and the chair that never stays where you put it.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">98</span></span><span>◷ 5 min read</span><span>◯ 7</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-design" aria-label="Illustration of a cozy interior"><span>🛋️</span></div>
+        </article>
+        <article class="post-card" data-category="Wellness" data-likes="84" data-date="2026-09-29" data-title="An unambitious guide to feeling a little better">
+          <div class="post-content">
+            <div class="post-author"><div class="avatar gold">FP</div><span class="author-name">Freya Park</span><span class="post-date">· Sep 29</span></div>
+            <span class="category-label">WELLNESS</span>
+            <h3 class="post-title">An unambitious guide to feeling a little better</h3>
+            <p class="post-excerpt">Drink a glass of water. Step outside. Text someone back. No grand reinvention required—sometimes a gentle nudge is more than enough.</p>
+            <div class="post-footer">
+              <div class="post-meta"><span>♡ <span class="like-count">84</span></span><span>◷ 3 min read</span><span>◯ 11</span></div>
+              <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div>
+            </div>
+          </div>
+          <div class="post-image art-city" aria-label="Illustration of a quiet city"><span>🌤️</span></div>
+        </article>
+      </section>
+      <div class="empty-state" id="emptyState">No stories found. Try a different search or topic.</div>
+    </main>
+
+    <aside class="right-sidebar" aria-label="Community highlights">
+      <section class="panel challenge-panel" id="competitions">
+        <div class="challenge-icon" aria-hidden="true">🏆</div>
+        <h3>October writing prompt</h3>
+        <p>Write about a place that feels like home. Share your story with the community.</p>
+        <div class="challenge-date">Entries close October 31</div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h3>Writers to follow</h3><a href="contact.html" class="panel-link">See all</a></div>
+        <div class="person"><div class="avatar blue">EC</div><div class="person-info"><strong>Emery Cole</strong><span>Culture &amp; little things</span></div><button class="follow-button" type="button">Follow</button></div>
+        <div class="person"><div class="avatar green">MJ</div><div class="person-info"><strong>Micah James</strong><span>Designing a slower life</span></div><button class="follow-button" type="button">Follow</button></div>
+        <div class="person"><div class="avatar gold">SA</div><div class="person-info"><strong>Sofia Alvarez</strong><span>Notes from the road</span></div><button class="follow-button" type="button">Follow</button></div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading"><h3>Trending this week</h3><span class="trending-arrow">↗</span></div>
+        <div class="trending-item"><span class="trend-number">01</span><div><strong>Finding joy in the things you already have</strong><span>Wellness · 2.4k reads</span></div></div>
+        <div class="trending-item"><span class="trend-number">02</span><div><strong>What I learned from a month offline</strong><span>Lifestyle · 1.8k reads</span></div></div>
+        <div class="trending-item"><span class="trend-number">03</span><div><strong>The case for taking the scenic route</strong><span>Travel · 1.2k reads</span></div></div>
+      </section>
+      <div class="footer-note"><a href="about.html">About</a> · <a href="mailto:hello@sunday.example">Contact</a> · <a href="competitions.html">Guidelines</a><br>Made for the love of a good story. © 2026 Sunday</div>
+    </aside>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-decoration" aria-hidden="true">✿</div>
+    <div class="footer-grid">
+      <section>
+        <a class="footer-brand" href="index.html">sunday<span>.</span></a>
+        <p class="footer-blurb">A small, bright corner for the stories we tell, the things we make, and the people we meet along the way.</p>
+        <div class="footer-motifs" aria-label="A little encouragement for writers">✍️ ✨ 🌱</div>
+      </section>
+      <section><h2 class="footer-heading">Explore</h2><div class="footer-links"><a href="index.html">Latest stories</a><a href="about.html">About Sunday</a><a href="competitions.html">Writing prompt</a></div></section>
+      <section><h2 class="footer-heading">Your writing</h2><div class="footer-links"><a href="write.html">Write a story</a><a href="dashboard.html">Writer dashboard</a><a href="signup.html">Create an account</a></div></section>
+      <section><h2 class="footer-heading">Say hello</h2><div class="footer-links"><a href="contact.html">Contact the team</a><a href="mailto:hello@sunday.example">hello@sunday.example</a><span>Be kind. Stay curious. Keep writing.</span></div></section>
+    </div>
+    <div class="footer-signoff"><span>Made for the love of a good story. © 2026 Sunday</span><span>Keep a little <span class="sparkle">✦</span> for the page.</span></div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
