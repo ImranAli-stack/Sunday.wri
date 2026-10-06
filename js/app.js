@@ -753,27 +753,42 @@
           return;
         }
         if (likeButton) {
-          const card = likeButton.closest(".post-card");
-          const post = posts().find((item) => item.id === card.dataset.postId);
-          const wasLiked = likeButton.getAttribute("aria-pressed") === "true";
-          const change = wasLiked ? -1 : 1;
-          if (post) {
-            const savedPosts = posts();
-            const target = savedPosts.find((item) => item.id === post.id);
-            target.likes = Math.max(0, Number(target.likes || 0) + change);
-            writeStore(STORAGE.posts, savedPosts);
-            const count = card.querySelector(".like-count");
-            if (count) count.textContent = String(target.likes);
-          } else {
-            const count = card.querySelector(".like-count");
-            if (count) {
-              count.textContent = String(Math.max(0, Number(count.textContent) + change));
-              card.dataset.likes = count.textContent;
-            }
+          const user = currentUser();
+          if (!user) {
+            notify("Please log in to like stories.");
+            return;
           }
-          likeButton.setAttribute("aria-pressed", String(!wasLiked));
-          likeButton.textContent = wasLiked ? "♡" : "♥";
-          likeButton.classList.toggle("liked", !wasLiked);
+
+          const card = likeButton.closest(".post-card");
+          const postId = card.dataset.postId;
+          const wasLiked = likeButton.getAttribute("aria-pressed") === "true";
+
+          likeButton.disabled = true;
+          try {
+            const client = await getSupabaseClient();
+            if (wasLiked) {
+              const { error } = await client
+                .from("likes_table")
+                .delete()
+                .eq("post_id", postId)
+                .eq("user_id", user.id);
+              if (error) throw error;
+            } else {
+              const { error } = await client
+                .from("likes_table")
+                .insert({ post_id: postId, user_id: user.id });
+              if (error) throw error;
+            }
+
+            likeButton.setAttribute("aria-pressed", String(!wasLiked));
+            likeButton.textContent = wasLiked ? "♡" : "♥";
+            likeButton.classList.toggle("liked", !wasLiked);
+          } catch (error) {
+            console.error("Failed to update like in Supabase:", error);
+            notify("Could not update like. Please try again.");
+          } finally {
+            likeButton.disabled = false;
+          }
           return;
         }
         const card = event.target.closest(".post-card[data-post-id]");
