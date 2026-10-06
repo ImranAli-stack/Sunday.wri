@@ -118,8 +118,20 @@
           status: post.status || "published",
           likes: likesCount,
           commentCount: commentsCount,
+          imagePath: post.image_path || "",
           createdAt: post.created_at || post.createdAt || new Date().toISOString()
         };
+      }
+
+      function postImageUrl(imagePath) {
+        if (!imagePath) return "";
+        const encodedPath = imagePath.split("/").map(encodeURIComponent).join("/");
+        return `${SUPABASE_URL}/storage/v1/object/public/post-images/${encodedPath}`;
+      }
+
+      function safePostImageUrl(imagePath) {
+        const imageUrl = postImageUrl(imagePath);
+        return imageUrl.startsWith(`${SUPABASE_URL}/storage/v1/object/public/post-images/`) ? imageUrl : "";
       }
 
       async function syncRemotePosts() {
@@ -440,10 +452,12 @@
         card.dataset.likes = String(post.likes || 0);
         card.dataset.date = post.createdAt.slice(0, 10);
         card.dataset.title = post.title;
+        card.dataset.imagePath = post.imagePath || "";
         card.tabIndex = 0;
         card.setAttribute("aria-label", `Read story: ${post.title}`);
         card.dataset.fullBody = post.body;
         const readingMinutes = Math.max(1, Math.ceil(post.body.trim().split(/\s+/).length / 200));
+        const imageUrl = safePostImageUrl(post.imagePath);
         card.innerHTML = `<div class="post-content">
           <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><span class="author-name">${escapeHTML(post.authorName)}</span><span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
           <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
@@ -451,7 +465,14 @@
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
           <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span aria-label="Comments">◯ <span class="comment-count">${Number(post.commentCount) || 0}</span></span></div>
           <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div></div></div>
-          <div class="post-image art-journal" aria-label="Illustration for this story"><span>✍️</span></div>`;
+          <div class="post-image art-journal" aria-label="${imageUrl ? "Story picture" : "Illustration for this story"}">${imageUrl ? "" : "<span>✍️</span>"}</div>`;
+        if (imageUrl) {
+          const image = document.createElement("img");
+          image.className = "post-image-source";
+          image.src = imageUrl;
+          image.alt = `Picture for ${post.title}`;
+          card.querySelector(".post-image").appendChild(image);
+        }
         return card;
       }
 
@@ -468,7 +489,8 @@
           id, title: card.querySelector(".post-title").textContent,
           body: card.dataset.fullBody || card.querySelector(".post-excerpt").textContent,
           category: card.dataset.category, authorName: card.querySelector(".author-name").textContent,
-          createdAt: new Date(card.dataset.date).toISOString(), likes: Number(card.dataset.likes), status: "published"
+          createdAt: new Date(card.dataset.date).toISOString(), likes: Number(card.dataset.likes),
+          imagePath: card.dataset.imagePath || "", status: "published"
         };
       }
 
@@ -480,10 +502,11 @@
           setPage('<div class="page-view"><section class="page-hero"><div class="page-kicker">Story unavailable</div><h1>We couldn’t find that story.</h1><p>It may have been removed or is not public.</p><a class="primary-button" href="index.html">Back to stories</a></section></div>', { detailOnly: true });
           return;
         }
+        const imageUrl = safePostImageUrl(post.imagePath);
         const content = `<div class="page-view"><a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
-          <div class="detail-cover art-journal" aria-hidden="true">✍️</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
+          <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
           <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
             <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
@@ -496,6 +519,12 @@
             </form>
           </section>` : ""}</article></div>`;
         setPage(content, { detailOnly: true });
+        if (imageUrl) {
+          const image = document.createElement("img");
+          image.src = imageUrl;
+          image.alt = `Picture for ${post.title}`;
+          feed.querySelector(".detail-cover").appendChild(image);
+        }
         if (post.status === "published") loadPostComments(post.id);
       }
 
@@ -633,10 +662,12 @@
         const title = editingPost?.title || "";
         const body = editingPost?.body || "";
         const category = editingPost?.category || "Lifestyle";
+        const currentImageUrl = safePostImageUrl(editingPost?.imagePath);
         setPage(`<div class="page-view">${pageHero(isPublishedEdit ? "Update your story" : editingPost ? "Pick up where you left off" : "Make something yours", isPublishedEdit ? "Edit published story" : editingPost ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
           <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(editingPost?.id || "")}" data-edit-status="${escapeHTML(editingPost?.status || "")}" novalidate>
           <div class="form-field"><label for="postTitle">Story title</label><input id="postTitle" name="title" maxlength="120" required placeholder="Give your story a title" value="${escapeHTML(title)}"></div>
           <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${["Lifestyle", "Creativity", "Travel", "Design", "Wellness"].map((option) => `<option${category === option ? " selected" : ""}>${option}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="postImage">Story picture <span class="form-label-note">(optional, JPG, PNG, WebP or GIF; up to 5 MB)</span></label><input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><div class="image-preview${currentImageUrl ? " visible" : ""}" data-image-preview data-current-image="${escapeHTML(currentImageUrl)}">${currentImageUrl ? `<img src="${escapeHTML(currentImageUrl)}" alt="Current story picture preview">` : ""}</div>${currentImageUrl ? '<label class="remove-image-option"><input name="removeImage" type="checkbox"> Remove current picture</label>' : ""}<span class="form-label-note">Pictures are uploaded when published; a selected picture is not saved with a private draft.</span></div>
           <div class="form-field"><label for="postBody">Your story</label><textarea id="postBody" name="body" maxlength="12000" required placeholder="Start with the detail you can't stop thinking about...">${escapeHTML(body)}</textarea></div>
           <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">${isPublishedEdit ? "Save changes" : "Publish to the community"}</button>${isPublishedEdit ? '<a class="secondary-button" href="dashboard.html">Cancel</a>' : '<button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>'}</div>
           </form><p class="form-note">Published stories appear on the home page and your dashboard. Private drafts are visible only in your dashboard in this browser.</p></section></div>`, { contentOnly: true });
@@ -890,6 +921,62 @@
         navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
       });
 
+      document.addEventListener("change", (event) => {
+        const imageInput = event.target.closest("#postImage");
+        const removeImage = event.target.closest('[name="removeImage"]');
+        if (!imageInput && !removeImage) return;
+
+        const form = (imageInput || removeImage).form;
+        const preview = form.querySelector("[data-image-preview]");
+        const image = preview.querySelector("img");
+
+        if (imageInput) {
+          const file = imageInput.files[0];
+          if (file && (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 5 * 1024 * 1024)) {
+            imageInput.value = "";
+            setAuthError("Choose a JPG, PNG, WebP, or GIF picture that is no larger than 5 MB.");
+            return;
+          }
+        }
+        if (image?.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
+
+        if (imageInput) {
+          const file = imageInput.files[0];
+          if (file) {
+            if (form.elements.removeImage) form.elements.removeImage.checked = false;
+            const objectUrl = URL.createObjectURL(file);
+            if (image) {
+              image.src = objectUrl;
+              image.dataset.objectUrl = objectUrl;
+            } else {
+              const previewImage = document.createElement("img");
+              previewImage.src = objectUrl;
+              previewImage.alt = "Selected story picture preview";
+              previewImage.dataset.objectUrl = objectUrl;
+              preview.appendChild(previewImage);
+            }
+            preview.classList.add("visible");
+          } else if (preview.dataset.currentImage && image) {
+            image.src = preview.dataset.currentImage;
+            delete image.dataset.objectUrl;
+            preview.classList.add("visible");
+          } else {
+            image?.remove();
+            preview.classList.remove("visible");
+          }
+        } else if (removeImage.checked) {
+          form.elements.image.value = "";
+          preview.classList.remove("visible");
+        } else {
+          const currentImage = preview.dataset.currentImage;
+          if (currentImage && image) {
+            image.src = currentImage;
+            delete image.dataset.objectUrl;
+            preview.classList.add("visible");
+          }
+        }
+      });
+
       document.addEventListener("submit", async (event) => {
         const form = event.target;
         if (form.id === "authForm") {
@@ -974,6 +1061,14 @@
           if (!title || body.length < 10) { setAuthError("Add a title and at least 10 characters to your story."); return; }
           const submitter = event.submitter;
           const status = submitter?.value === "draft" ? "draft" : "published";
+          const imageFile = form.elements.image.files[0];
+          if (imageFile && (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(imageFile.type) || imageFile.size > 5 * 1024 * 1024)) {
+            setAuthError("Choose a JPG, PNG, WebP, or GIF picture that is no larger than 5 MB.");
+            return;
+          }
+          let uploadedImagePath = "";
+          let remotePostSaved = false;
+          let imagePathToRemove = "";
           try {
             const savedPosts = posts();
             const editId = form.dataset.editId;
@@ -1001,13 +1096,34 @@
               if (!authData.user || authData.user.id !== user.id) {
                 throw new Error("Your Supabase session is no longer active. Log in again before publishing.");
               }
+              const postId = existing?.id || crypto.randomUUID();
+              const previousImagePath = existing?.imagePath || "";
+              let imagePath = form.elements.removeImage?.checked ? "" : previousImagePath;
+              if (imageFile) {
+                const extension = {
+                  "image/jpeg": "jpg",
+                  "image/png": "png",
+                  "image/webp": "webp",
+                  "image/gif": "gif"
+                }[imageFile.type];
+                const newImagePath = `${authData.user.id}/${postId}/${crypto.randomUUID()}.${extension}`;
+                const { error: uploadError } = await client.storage
+                  .from("post-images")
+                  .upload(newImagePath, imageFile, { contentType: imageFile.type, upsert: false });
+                if (uploadError) throw uploadError;
+                uploadedImagePath = newImagePath;
+                imagePath = newImagePath;
+              }
+              if (previousImagePath && previousImagePath !== imagePath) imagePathToRemove = previousImagePath;
               const postValues = {
+                id: postId,
                 title,
                 category: form.elements.category.value,
                 content: body,
                 user_id: authData.user.id,
                 author_name: user.poeticName || user.name,
-                status: "published"
+                status: "published",
+                image_path: imagePath || null
               };
               const query = existing?.status === "published"
                 ? client.from("posts").update(postValues).eq("id", existing.id).eq("user_id", authData.user.id)
@@ -1015,13 +1131,34 @@
               const { data, error } = await query.select("*").single();
               if (error) throw error;
               if (!data) throw new Error("The server did not return the saved story. Please refresh and check your dashboard.");
+              remotePostSaved = true;
               post = normalizeRemotePost(data);
               nextPosts = [...savedPosts.filter((item) => item.id !== existing?.id && item.id !== post.id), post];
             }
             writeStore(STORAGE.posts, nextPosts);
+            if (imagePathToRemove) {
+              try {
+                const { error: removeError } = await (await getSupabaseClient()).storage
+                  .from("post-images")
+                  .remove([imagePathToRemove]);
+                if (removeError) console.error("Unable to remove the previous story picture.", removeError);
+              } catch (removeError) {
+                console.error("Unable to remove the previous story picture.", removeError);
+              }
+            }
             notify(status === "draft" ? "Saved privately to your dashboard" : existing?.status === "published" ? "Your story has been updated" : "Published to your dashboard and the public feed");
             navigate("#dashboard");
           } catch (error) {
+            if (uploadedImagePath && !remotePostSaved) {
+              try {
+                const { error: cleanupError } = await (await getSupabaseClient()).storage
+                  .from("post-images")
+                  .remove([uploadedImagePath]);
+                if (cleanupError) console.error("Unable to clean up the picture after the story save failed.", cleanupError);
+              } catch (cleanupError) {
+                console.error("Unable to clean up the picture after the story save failed.", cleanupError);
+              }
+            }
             setAuthError(error instanceof Error ? error.message : "Your story could not be saved.");
           }
           return;
