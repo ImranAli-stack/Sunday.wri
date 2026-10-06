@@ -81,6 +81,9 @@
       }
 
       function normalizeRemotePost(post) {
+        const likesCount = Array.isArray(post.likes_table) && post.likes_table[0]
+          ? Number(post.likes_table[0].count)
+          : Number(post.likes) || 0;
         return {
           id: String(post.id),
           title: post.title || "Untitled story",
@@ -89,7 +92,7 @@
           authorId: post.user_id || post.author_id || "",
           authorName: post.author_name || post.full_name || "Writer",
           status: post.status || "published",
-          likes: Number(post.likes) || 0,
+          likes: likesCount,
           createdAt: post.created_at || post.createdAt || new Date().toISOString()
         };
       }
@@ -98,7 +101,7 @@
         writeStore(STORAGE.posts, posts().filter((post) => post.status === "draft"));
         const { data, error } = await (await getSupabaseClient())
           .from("posts")
-          .select("*")
+          .select("*, likes_table(count)")
           .eq("status", "published")
           .order("created_at", { ascending: false });
         if (error) throw error;
@@ -780,6 +783,11 @@
               if (error) throw error;
             }
 
+            const countSpan = card.querySelector(".like-count");
+            const currentCount = Number(countSpan.textContent) || 0;
+            const newCount = wasLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
+            countSpan.textContent = String(newCount);
+            card.dataset.likes = String(newCount);
             likeButton.setAttribute("aria-pressed", String(!wasLiked));
             likeButton.textContent = wasLiked ? "♡" : "♥";
             likeButton.classList.toggle("liked", !wasLiked);
