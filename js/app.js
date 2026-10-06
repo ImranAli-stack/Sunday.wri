@@ -80,10 +80,34 @@
         return Array.isArray(value) ? value : [];
       }
 
+      function updatePostCommentCount(postId, count) {
+        const savedPosts = posts();
+        const post = savedPosts.find((item) => item.id === postId);
+        if (post) {
+          post.commentCount = count;
+          try {
+            writeStore(STORAGE.posts, savedPosts);
+          } catch (error) {
+            console.error("Unable to save the updated comment count locally.", error);
+            notify("Your comment was posted, but the story count may not refresh until the next page load.");
+          }
+        }
+
+        document.querySelectorAll(".post-card[data-post-id]").forEach((card) => {
+          if (card.dataset.postId !== postId) return;
+          card.dataset.comments = String(count);
+          const commentCount = card.querySelector(".comment-count");
+          if (commentCount) commentCount.textContent = String(count);
+        });
+      }
+
       function normalizeRemotePost(post) {
         const likesCount = Array.isArray(post.likes_table) && post.likes_table[0]
           ? Number(post.likes_table[0].count)
           : Number(post.likes) || 0;
+        const commentsCount = Array.isArray(post.comments) && post.comments[0]
+          ? Number(post.comments[0].count)
+          : Number(post.commentCount) || 0;
         return {
           id: String(post.id),
           title: post.title || "Untitled story",
@@ -93,6 +117,7 @@
           authorName: post.author_name || post.full_name || "Writer",
           status: post.status || "published",
           likes: likesCount,
+          commentCount: commentsCount,
           createdAt: post.created_at || post.createdAt || new Date().toISOString()
         };
       }
@@ -101,7 +126,7 @@
         writeStore(STORAGE.posts, posts().filter((post) => post.status === "draft"));
         const { data, error } = await (await getSupabaseClient())
           .from("posts")
-          .select("*, likes_table(count)")
+          .select("*, likes_table(count), comments(count)")
           .eq("status", "published")
           .order("created_at", { ascending: false });
         if (error) throw error;
@@ -424,7 +449,7 @@
           <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
           <h3 class="post-title">${escapeHTML(post.title)}</h3>
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
-          <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span>◯ 0</span></div>
+          <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span aria-label="Comments">◯ <span class="comment-count">${Number(post.commentCount) || 0}</span></span></div>
           <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div></div></div>
           <div class="post-image art-journal" aria-label="Illustration for this story"><span>✍️</span></div>`;
         return card;
@@ -510,6 +535,7 @@
           list.replaceChildren(...data.map(createCommentElement));
           count.textContent = `(${data.length})`;
           status.textContent = data.length ? "" : "No comments yet. Start the conversation.";
+          updatePostCommentCount(postId, data.length);
         } catch (error) {
           console.error("Unable to load comments for story.", error);
           if (section.isConnected) status.textContent = "Comments could not be loaded. Please refresh and try again.";
@@ -912,7 +938,19 @@
             const section = form.closest("[data-comment-section]");
             const list = section.querySelector("[data-comment-list]");
             list.appendChild(createCommentElement(comment));
-            section.querySelector("[data-comment-count]").textContent = `(${list.children.length})`;
+            let commentCount = list.children.length;
+            try {
+              const { count, error: countError } = await client
+                .from("comments")
+                .select("id", { count: "exact", head: true })
+                .eq("post_id", form.dataset.postId);
+              if (countError) throw countError;
+              if (count !== null) commentCount = count;
+            } catch (error) {
+              console.error("Unable to refresh the comment count after posting.", error);
+            }
+            section.querySelector("[data-comment-count]").textContent = `(${commentCount})`;
+            updatePostCommentCount(form.dataset.postId, commentCount);
             status.textContent = "Your comment was posted.";
             form.reset();
           } catch (error) {
