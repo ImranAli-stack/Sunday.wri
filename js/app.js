@@ -101,6 +101,100 @@
         });
       }
 
+      function updatePostLikeCount(postId, count, liked) {
+        const savedPosts = posts();
+        const post = savedPosts.find((item) => item.id === postId);
+        if (post) {
+          post.likes = count;
+          try {
+            writeStore(STORAGE.posts, savedPosts);
+          } catch (error) {
+            console.error("Unable to save the updated like count locally.", error);
+          }
+        }
+
+        document.querySelectorAll(".post-card[data-post-id]").forEach((card) => {
+          if (card.dataset.postId !== postId) return;
+          card.dataset.likes = String(count);
+          const countSpan = card.querySelector(".like-count");
+          if (countSpan) countSpan.textContent = String(count);
+          const button = card.querySelector(".like-button");
+          if (button) {
+            button.setAttribute("aria-pressed", String(liked));
+            button.textContent = liked ? "♥" : "♡";
+            button.classList.toggle("liked", liked);
+          }
+        });
+
+        document.querySelectorAll("[data-like-detail]").forEach((button) => {
+          if (button.dataset.likeDetail !== postId) return;
+          button.setAttribute("aria-pressed", String(liked));
+          button.textContent = `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"} · ${count}`;
+        });
+      }
+
+      async function handleLike(postId, button) {
+        const user = currentUser();
+        if (!user) {
+          notify("Please log in to like stories.");
+          return;
+        }
+
+        button.disabled = true;
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session is no longer active. Log in again before liking stories.");
+          }
+
+          const { data: existingLike, error: fetchError } = await client
+            .from("likes_table")
+            .select("id")
+            .eq("post_id", postId)
+            .eq("user_id", authData.user.id)
+            .maybeSingle();
+          if (fetchError) throw fetchError;
+
+          const wasLiked = Boolean(existingLike);
+          if (wasLiked) {
+            const { error } = await client
+              .from("likes_table")
+              .delete()
+              .eq("id", existingLike.id)
+              .eq("user_id", authData.user.id);
+            if (error) throw error;
+          } else {
+            const { error } = await client
+              .from("likes_table")
+              .insert({ post_id: postId, user_id: authData.user.id });
+            if (error) throw error;
+          }
+
+          const savedPost = posts().find((post) => post.id === postId);
+          let likeCount = Math.max(0, Number(savedPost?.likes) || 0) + (wasLiked ? -1 : 1);
+          try {
+            const { count, error: countError } = await client
+              .from("likes_table")
+              .select("id", { count: "exact", head: true })
+              .eq("post_id", postId);
+            if (countError) throw countError;
+            if (count !== null) likeCount = count;
+          } catch (error) {
+            console.error("Unable to refresh the like count after updating a like.", error);
+          }
+          updatePostLikeCount(postId, likeCount, !wasLiked);
+        } catch (error) {
+          console.error("Failed to update like in Supabase:", error);
+          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
+            ? error.message
+            : "Could not update like. Please try again.");
+        } finally {
+          button.disabled = false;
+        }
+      }
+
       function normalizeRemotePost(post) {
         const likesCount = Array.isArray(post.likes_table) && post.likes_table[0]
           ? Number(post.likes_table[0].count)
@@ -507,7 +601,7 @@
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
+          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
             <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
             <p class="comment-status" data-comment-status role="status">Loading comments…</p>
@@ -894,19 +988,7 @@
         if (tab) { renderDashboard(tab.dataset.dashboardTab); return; }
         const detailLike = event.target.closest("[data-like-detail]");
         if (detailLike) {
-          const savedPosts = posts();
-          const post = savedPosts.find((item) => item.id === detailLike.dataset.likeDetail);
-          if (post) {
-            post.likes = Number(post.likes || 0) + 1;
-            writeStore(STORAGE.posts, savedPosts);
-            renderDetail(post.id);
-          } else {
-            const card = [...document.querySelectorAll(".post-card")].find((item) => item.dataset.postId === detailLike.dataset.likeDetail);
-            if (card) {
-              card.dataset.likes = String(Number(card.dataset.likes) + 1);
-              detailLike.textContent = `♡ Like · ${card.dataset.likes}`;
-            }
-          }
+          await handleLike(detailLike.dataset.likeDetail, detailLike);
           return;
         }
         const likeButton = event.target.closest(".like-button");
@@ -922,47 +1004,8 @@
           return;
         }
         if (likeButton) {
-          const user = currentUser();
-          if (!user) {
-            notify("Please log in to like stories.");
-            return;
-          }
-
           const card = likeButton.closest(".post-card");
-          const postId = card.dataset.postId;
-          const wasLiked = likeButton.getAttribute("aria-pressed") === "true";
-
-          likeButton.disabled = true;
-          try {
-            const client = await getSupabaseClient();
-            if (wasLiked) {
-              const { error } = await client
-                .from("likes_table")
-                .delete()
-                .eq("post_id", postId)
-                .eq("user_id", user.id);
-              if (error) throw error;
-            } else {
-              const { error } = await client
-                .from("likes_table")
-                .insert({ post_id: postId, user_id: user.id });
-              if (error) throw error;
-            }
-
-            const countSpan = card.querySelector(".like-count");
-            const currentCount = Number(countSpan.textContent) || 0;
-            const newCount = wasLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
-            countSpan.textContent = String(newCount);
-            card.dataset.likes = String(newCount);
-            likeButton.setAttribute("aria-pressed", String(!wasLiked));
-            likeButton.textContent = wasLiked ? "♡" : "♥";
-            likeButton.classList.toggle("liked", !wasLiked);
-          } catch (error) {
-            console.error("Failed to update like in Supabase:", error);
-            notify("Could not update like. Please try again.");
-          } finally {
-            likeButton.disabled = false;
-          }
+          await handleLike(card.dataset.postId, likeButton);
           return;
         }
         const card = event.target.closest(".post-card[data-post-id]");
