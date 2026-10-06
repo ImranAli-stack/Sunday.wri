@@ -459,8 +459,61 @@
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
           <div class="detail-cover art-journal" aria-hidden="true">✍️</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div></article></div>`;
+          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
+          ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
+            <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
+            <p class="comment-status" data-comment-status role="status">Loading comments…</p>
+            <div class="comment-list" data-comment-list></div>
+            <form class="comment-form" data-comment-form data-post-id="${escapeHTML(post.id)}">
+              <label for="commentContent">Join the conversation</label>
+              <textarea id="commentContent" name="content" rows="3" maxlength="1000" required placeholder="Share a thoughtful response…"></textarea>
+              <div class="comment-form-footer"><span>${user ? "Be kind and constructive." : "Log in to leave a comment."}</span><button class="primary-button" type="submit">Post comment</button></div>
+            </form>
+          </section>` : ""}</article></div>`;
         setPage(content, { detailOnly: true });
+        if (post.status === "published") loadPostComments(post.id);
+      }
+
+      function createCommentElement(comment) {
+        const item = document.createElement("article");
+        item.className = "comment-item";
+        const header = document.createElement("div");
+        header.className = "comment-header";
+        const author = document.createElement("strong");
+        author.textContent = comment.author_name || "Sunday reader";
+        const date = document.createElement("time");
+        date.dateTime = comment.created_at;
+        date.textContent = formatDate(comment.created_at);
+        const body = document.createElement("p");
+        body.textContent = comment.content;
+        header.append(author, date);
+        item.append(header, body);
+        return item;
+      }
+
+      async function loadPostComments(postId) {
+        const section = document.querySelector("[data-comment-section]");
+        if (!section || section.dataset.postId !== postId) return;
+
+        const status = section.querySelector("[data-comment-status]");
+        const list = section.querySelector("[data-comment-list]");
+        const count = section.querySelector("[data-comment-count]");
+        try {
+          const { data, error } = await (await getSupabaseClient())
+            .from("comments")
+            .select("id, post_id, user_id, author_name, content, created_at")
+            .eq("post_id", postId)
+            .order("created_at", { ascending: true });
+          if (error) throw error;
+          if (!section.isConnected || section.dataset.postId !== postId) return;
+
+          list.replaceChildren(...data.map(createCommentElement));
+          count.textContent = `(${data.length})`;
+          status.textContent = data.length ? "" : "No comments yet. Start the conversation.";
+        } catch (error) {
+          console.error("Unable to load comments for story.", error);
+          if (section.isConnected) status.textContent = "Comments could not be loaded. Please refresh and try again.";
+        }
       }
 
       function renderDashboard(tab = "all") {
@@ -816,6 +869,61 @@
         if (form.id === "authForm") {
           event.preventDefault();
           await handleAuth(form, form.dataset.authMode === "signup");
+          return;
+        }
+        if (form.matches("[data-comment-form]")) {
+          event.preventDefault();
+          const user = currentUser();
+          if (!user) {
+            notify("Please log in to leave a comment.");
+            return;
+          }
+
+          const content = form.elements.content.value.trim();
+          const status = form.closest("[data-comment-section]").querySelector("[data-comment-status]");
+          if (!content) {
+            status.textContent = "Write a comment before posting.";
+            return;
+          }
+
+          const submitButton = form.querySelector('button[type="submit"]');
+          submitButton.disabled = true;
+          try {
+            const client = await getSupabaseClient();
+            const { data: authData, error: authError } = await client.auth.getUser();
+            if (authError) throw authError;
+            if (!authData.user || authData.user.id !== user.id) {
+              throw new Error("Your Supabase session is no longer active. Log in again before commenting.");
+            }
+
+            const { data: comment, error } = await client
+              .from("comments")
+              .insert({
+                post_id: form.dataset.postId,
+                user_id: authData.user.id,
+                author_name: user.poeticName || user.name,
+                content
+              })
+              .select("id, post_id, user_id, author_name, content, created_at")
+              .single();
+            if (error) throw error;
+            if (!comment) throw new Error("The comment was not returned by the server. Please refresh and check the story.");
+
+            const section = form.closest("[data-comment-section]");
+            const list = section.querySelector("[data-comment-list]");
+            list.appendChild(createCommentElement(comment));
+            section.querySelector("[data-comment-count]").textContent = `(${list.children.length})`;
+            status.textContent = "Your comment was posted.";
+            form.reset();
+          } catch (error) {
+            console.error("Unable to post comment.", error);
+            status.textContent = error instanceof Error && error.message.startsWith("Your Supabase session")
+              ? error.message
+              : "Your comment could not be posted. Please try again.";
+            notify("Could not post your comment. Please try again.");
+          } finally {
+            submitButton.disabled = false;
+          }
           return;
         }
         if (form.id === "writerForm") {
