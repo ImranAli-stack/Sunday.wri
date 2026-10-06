@@ -14,7 +14,7 @@ alter table public.comments enable row level security;
 
 revoke all on public.comments from anon, authenticated;
 grant select on public.comments to anon, authenticated;
-grant insert on public.comments to authenticated;
+grant insert, delete on public.comments to authenticated;
 
 drop policy if exists "Anyone can read comments on published posts" on public.comments;
 create policy "Anyone can read comments on published posts"
@@ -42,3 +42,9 @@ create policy "Authenticated users can comment on published posts"
         and posts.status = 'published'
     )
   );
+
+drop policy if exists "Users can delete their own comments" on public.comments;
+create policy "Users can delete their own comments"
+  on public.comments for delete
+  to authenticated
+  using (user_id = (select auth.uid()));

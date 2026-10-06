@@ -531,6 +531,7 @@
       function createCommentElement(comment) {
         const item = document.createElement("article");
         item.className = "comment-item";
+        item.dataset.commentId = comment.id;
         const header = document.createElement("div");
         header.className = "comment-header";
         const author = document.createElement("strong");
@@ -542,6 +543,15 @@
         body.textContent = comment.content;
         header.append(author, date);
         item.append(header, body);
+        if (currentUser()?.id === comment.user_id) {
+          const removeButton = document.createElement("button");
+          removeButton.className = "comment-delete";
+          removeButton.type = "button";
+          removeButton.dataset.deleteComment = comment.id;
+          removeButton.textContent = "Delete";
+          removeButton.setAttribute("aria-label", "Delete your comment");
+          header.appendChild(removeButton);
+        }
         return item;
       }
 
@@ -822,6 +832,52 @@
         }
         const signout = event.target.closest("[data-signout]");
         if (signout) { navigate("#logout"); return; }
+        const deleteComment = event.target.closest("[data-delete-comment]");
+        if (deleteComment) {
+          event.preventDefault();
+          if (!confirm("Delete your comment? This cannot be undone.")) return;
+
+          const user = currentUser();
+          if (!user) {
+            notify("Please log in to delete your comment.");
+            return;
+          }
+
+          deleteComment.disabled = true;
+          try {
+            const client = await getSupabaseClient();
+            const { data: authData, error: authError } = await client.auth.getUser();
+            if (authError) throw authError;
+            if (!authData.user || authData.user.id !== user.id) {
+              throw new Error("Your Supabase session is no longer active. Log in again before deleting comments.");
+            }
+
+            const comment = deleteComment.closest(".comment-item");
+            const section = deleteComment.closest("[data-comment-section]");
+            const postId = section.dataset.postId;
+            const { data, error } = await client
+              .from("comments")
+              .delete()
+              .eq("id", deleteComment.dataset.deleteComment)
+              .eq("user_id", authData.user.id)
+              .select("id")
+              .maybeSingle();
+            if (error) throw error;
+            if (!data) throw new Error("The comment could not be deleted. It may already be gone or not belong to your account.");
+
+            comment.remove();
+            const count = section.querySelector("[data-comment-count]");
+            const commentCount = section.querySelector("[data-comment-list]").children.length;
+            count.textContent = `(${commentCount})`;
+            section.querySelector("[data-comment-status]").textContent = commentCount ? "" : "No comments yet. Start the conversation.";
+            updatePostCommentCount(postId, commentCount);
+          } catch (error) {
+            console.error("Unable to delete comment.", error);
+            notify(error instanceof Error ? error.message : "Your comment could not be deleted. Please try again.");
+            deleteComment.disabled = false;
+          }
+          return;
+        }
         const deletePost = event.target.closest("[data-delete-post]");
         if (deletePost) {
           event.preventDefault();
