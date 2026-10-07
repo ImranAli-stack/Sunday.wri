@@ -34,6 +34,11 @@
         posts: "sunday.posts.v1",
         session: "sunday.session.v1"
       };
+      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Other"];
+      const LEGACY_CATEGORY_GROUPS = {
+        Life: ["travel", "wellness"],
+        Skill: ["design"]
+      };
       const feed = document.querySelector(".feed");
       const layout = document.querySelector(".layout");
       const originalHome = feed.innerHTML;
@@ -700,12 +705,18 @@
         });
         const queryInput = document.getElementById("searchInput");
         const sortSelect = document.getElementById("sortSelect");
-        let topic = "All";
+        const requestedTopic = routeParts().params.get("topic");
+        let topic = STORY_CATEGORIES.find((category) => category.toLowerCase() === requestedTopic?.toLowerCase()) || "All";
+        document.querySelectorAll("[data-topic]").forEach((button) => {
+          button.classList.toggle("selected", button.dataset.topic.toLowerCase() === topic.toLowerCase());
+        });
         function filter() {
           const query = queryInput.value.trim().toLowerCase();
           let count = 0;
           cardList.querySelectorAll(".post-card").forEach((card) => {
-            const matches = (topic === "All" || card.dataset.category === topic)
+            const category = card.dataset.category.toLowerCase();
+            const legacyCategories = LEGACY_CATEGORY_GROUPS[topic] || [];
+            const matches = (topic === "All" || category === topic.toLowerCase() || legacyCategories.includes(category))
               && (!query || card.textContent.toLowerCase().includes(query));
             card.hidden = !matches;
             if (matches) count++;
@@ -725,11 +736,16 @@
         }
         queryInput.addEventListener("input", filter);
         sortSelect.addEventListener("change", sort);
-        feed.querySelectorAll("[data-topic]").forEach((button) => button.addEventListener("click", () => {
+        document.querySelectorAll("[data-topic]").forEach((button) => button.addEventListener("click", () => {
           topic = button.dataset.topic;
-          feed.querySelectorAll("[data-topic]").forEach((item) => item.classList.toggle("selected", item === button));
+          const url = new URL(location.href);
+          if (topic === "All") url.searchParams.delete("topic");
+          else url.searchParams.set("topic", topic);
+          history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+          document.querySelectorAll("[data-topic]").forEach((item) => item.classList.toggle("selected", item === button));
           filter();
         }));
+        filter();
         renderFollowSuggestions();
         document.querySelectorAll(".top-nav a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === "#home"));
       }
@@ -920,7 +936,7 @@
       }
 
       function renderCompetitions() {
-        setPage(`<div class="page-view">${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. There is no single right answer: a kitchen, a bus route, a borrowed room, or a person can all be home.")}<section class="page-card"><h2>Your prompt</h2><p>“Write about a place that feels like home.”</p><p>Try writing for ten minutes without editing. Begin with a detail you can see, hear, or smell. When your story is ready, publish it with the topic “Lifestyle” and include “October prompt” in your title or opening paragraph.</p><p><strong>Entries close October 31, 2026.</strong> The community will celebrate a few favorite stories in November.</p><a class="primary-button" href="write.html">✎ Write your entry</a></section><section class="page-card"><h2>Friendly guidelines</h2><p>Stories should be your own work, respectful of others’ privacy, and no longer than 1,200 characters in this demo. Sharing is optional; saving a draft keeps your entry private until you decide to publish.</p></section></div>`, { contentOnly: true });
+        setPage(`<div class="page-view">${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. There is no single right answer: a kitchen, a bus route, a borrowed room, or a person can all be home.")}<section class="page-card"><h2>Your prompt</h2><p>“Write about a place that feels like home.”</p><p>Try writing for ten minutes without editing. Begin with a detail you can see, hear, or smell. When your story is ready, publish it with the topic “Life” and include “October prompt” in your title or opening paragraph.</p><p><strong>Entries close October 31, 2026.</strong> The community will celebrate a few favorite stories in November.</p><a class="primary-button" href="write.html">✎ Write your entry</a></section><section class="page-card"><h2>Friendly guidelines</h2><p>Stories should be your own work, respectful of others’ privacy, and no longer than 1,200 characters in this demo. Sharing is optional; saving a draft keeps your entry private until you decide to publish.</p></section></div>`, { contentOnly: true });
       }
 
       function renderAuth(mode, message = "") {
@@ -968,7 +984,7 @@
         setPage(`<div class="page-view">${pageHero(isPublishedEdit ? "Update your story" : editingPost ? "Pick up where you left off" : "Make something yours", isPublishedEdit ? "Edit published story" : editingPost ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
           <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(editingPost?.id || "")}" data-edit-status="${escapeHTML(editingPost?.status || "")}" novalidate>
           <div class="form-field"><label for="postTitle">Story title</label><input id="postTitle" name="title" maxlength="120" required placeholder="Give your story a title" value="${escapeHTML(title)}"></div>
-          <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${["Lifestyle", "Creativity", "Travel", "Design", "Wellness"].map((option) => `<option${category === option ? " selected" : ""}>${option}</option>`).join("")}</select></div>
+          <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${STORY_CATEGORIES.map((option) => `<option${category.toLowerCase() === option.toLowerCase() ? " selected" : ""}>${option}</option>`).join("")}${STORY_CATEGORIES.some((option) => option.toLowerCase() === category.toLowerCase()) ? "" : `<option selected>${escapeHTML(category)}</option>`}</select></div>
           <div class="form-field"><label for="postImage">Story picture <span class="form-label-note">(optional, JPG, PNG, WebP or GIF; up to 5 MB)</span></label><input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><div class="image-preview${currentImageUrl ? " visible" : ""}" data-image-preview data-current-image="${escapeHTML(currentImageUrl)}">${currentImageUrl ? `<img src="${escapeHTML(currentImageUrl)}" alt="Current story picture preview">` : ""}</div>${currentImageUrl ? '<label class="remove-image-option"><input name="removeImage" type="checkbox"> Remove current picture</label>' : ""}<span class="form-label-note">Pictures are uploaded when published; a selected picture is not saved with a private draft.</span></div>
           <div class="form-field"><label for="postBody">Your story</label><textarea id="postBody" name="body" maxlength="12000" required placeholder="Start with the detail you can't stop thinking about...">${escapeHTML(body)}</textarea></div>
           <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">${isPublishedEdit ? "Save changes" : "Publish to the community"}</button>${isPublishedEdit ? '<a class="secondary-button" href="dashboard.html">Cancel</a>' : '<button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>'}</div>
