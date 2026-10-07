@@ -48,6 +48,8 @@
       let toastTimer;
       let activeDashboardTab = "all";
       let likedPostIds = new Set();
+      let followedUserIds = new Set();
+      let friendUserIds = new Set();
 
       function notify(message) {
         toast.textContent = message;
@@ -378,12 +380,42 @@
       }
 
       function updateFollowButtons(followingIds) {
+        followedUserIds = new Set(followingIds);
         document.querySelectorAll("[data-follow-user]").forEach((button) => {
-          const following = followingIds.has(button.dataset.followUser);
+          const targetId = button.dataset.followUser;
+          const following = followedUserIds.has(targetId);
+          const friends = following && friendUserIds.has(targetId);
           button.setAttribute("aria-pressed", String(following));
+          button.setAttribute("aria-label", friends ? "Friends" : following ? "Unfollow" : "Follow");
           button.classList.toggle("following", following);
-          button.textContent = following ? "Following" : "Follow";
+          button.classList.toggle("friends", friends);
+          button.textContent = friends ? "Friends" : following ? "Following" : "Follow";
         });
+      }
+
+      async function refreshFollowState() {
+        const user = currentUser();
+        if (!user) {
+          friendUserIds = new Set();
+          updateFollowButtons(new Set());
+          return;
+        }
+        const client = await getSupabaseClient();
+        const { data: authData, error: authError } = await client.auth.getUser();
+        if (authError) throw authError;
+        if (!authData.user || authData.user.id !== user.id) {
+          throw new Error("Your Supabase session has expired. Log in again to view followed writers.");
+        }
+        const { data, error } = await client.from("follows").select("follower_id, following_id");
+        if (error) throw error;
+        if (currentUser()?.id !== user.id) return;
+        const followingIds = new Set(data
+          .filter((follow) => follow.follower_id === user.id)
+          .map((follow) => follow.following_id));
+        friendUserIds = new Set(data
+          .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
+          .map((follow) => follow.follower_id));
+        updateFollowButtons(followingIds);
       }
 
       async function renderFollowSuggestions() {
@@ -405,10 +437,13 @@
               throw new Error("Your Supabase session has expired. Log in again to follow writers.");
             }
             const { data, error } = await client.from("follows")
-              .select("following_id")
-              .eq("follower_id", user.id);
+              .select("follower_id, following_id");
             if (error) throw error;
-            followingIds = new Set(data.map((follow) => follow.following_id));
+            followingIds = new Set(data.filter((follow) => follow.follower_id === user.id)
+              .map((follow) => follow.following_id));
+            friendUserIds = new Set(data
+              .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
+              .map((follow) => follow.follower_id));
           } catch (error) {
             console.error("Unable to load followed writers.", error);
             if (!container.isConnected) return;
@@ -443,14 +478,25 @@
         const targetId = followButton.dataset.followUser;
         if (!targetId || targetId === user.id) return;
 
-        const isFollowing = followButton.getAttribute("aria-pressed") === "true";
+        const isFollowing = followedUserIds.has(targetId) || followButton.getAttribute("aria-pressed") === "true";
         const targetButtons = () => [...document.querySelectorAll("[data-follow-user]")]
           .filter((button) => button.dataset.followUser === targetId);
-        const updateButtons = (following) => targetButtons().forEach((button) => {
-          button.setAttribute("aria-pressed", String(following));
-          button.classList.toggle("following", following);
-          button.textContent = following ? "Following" : "Follow";
-        });
+        const previousFollowingIds = new Set(followedUserIds);
+        const previousFriendUserIds = new Set(friendUserIds);
+        const updateButtons = (following) => {
+          if (following) followedUserIds.add(targetId);
+          else followedUserIds.delete(targetId);
+          if (!following) friendUserIds.delete(targetId);
+          else if (previousFriendUserIds.has(targetId)) friendUserIds.add(targetId);
+          targetButtons().forEach((button) => {
+            const friends = following && friendUserIds.has(targetId);
+            button.setAttribute("aria-pressed", String(following));
+            button.setAttribute("aria-label", friends ? "Friends" : following ? "Unfollow" : "Follow");
+            button.classList.toggle("following", following);
+            button.classList.toggle("friends", friends);
+            button.textContent = friends ? "Friends" : following ? "Following" : "Follow";
+          });
+        };
         targetButtons().forEach((button) => { button.disabled = true; });
         updateButtons(!isFollowing);
         try {
@@ -461,6 +507,7 @@
             throw new Error("Your Supabase session has expired. Log in again to follow writers.");
           }
 
+          let becameFriends = false;
           if (isFollowing) {
             const { error } = await client.from("follows")
               .delete()
@@ -468,15 +515,26 @@
               .eq("following_id", targetId);
             if (error) throw error;
           } else {
+            const { data: reciprocal, error: reciprocalError } = await client.from("follows")
+              .select("follower_id")
+              .eq("follower_id", targetId)
+              .eq("following_id", user.id)
+              .maybeSingle();
+            if (reciprocalError) throw reciprocalError;
             const { error } = await client.from("follows")
               .insert({ follower_id: user.id, following_id: targetId });
             if (error) throw error;
+            if (reciprocal) friendUserIds.add(targetId);
+            becameFriends = Boolean(reciprocal);
+            updateButtons(true);
           }
 
-          notify(isFollowing ? "You unfollowed this writer" : "You’re now following this writer");
+          notify(isFollowing ? "You unfollowed this writer" : becameFriends ? "You’re now friends" : "You’re now following this writer");
           loadHeaderFollowCounts(user);
           if (routeParts().path === "dashboard") renderDashboard(activeDashboardTab);
         } catch (error) {
+          followedUserIds = previousFollowingIds;
+          friendUserIds = previousFriendUserIds;
           updateButtons(isFollowing);
           console.error("Unable to update followed writers.", error);
           notify(error instanceof Error ? error.message : "Following could not be updated.");
@@ -537,6 +595,7 @@
             return;
           }
           results.innerHTML = `${writerSection}${postSection}`;
+          updateFollowButtons(followedUserIds);
           results.hidden = false;
           input.setAttribute("aria-expanded", "true");
         };
@@ -583,12 +642,19 @@
                 throw new Error("Your Supabase session has expired. Log in again to search followed writers.");
               }
               const { data: follows, error: followsError } = await client.from("follows")
-                .select("following_id")
-                .eq("follower_id", user.id)
-                .in("following_id", writers.map((writer) => writer.id));
+                .select("follower_id, following_id");
               if (followsError) throw followsError;
-              const followingIds = new Set((follows || []).map((follow) => follow.following_id));
-              writers.forEach((writer) => { writer.following = followingIds.has(writer.id); });
+              const followingIds = new Set((follows || [])
+                .filter((follow) => follow.follower_id === user.id)
+                .map((follow) => follow.following_id));
+              followedUserIds = followingIds;
+              friendUserIds = new Set((follows || [])
+                .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
+                .map((follow) => follow.follower_id));
+              writers.forEach((writer) => {
+                writer.following = followingIds.has(writer.id);
+                writer.friends = friendUserIds.has(writer.id);
+              });
             }
             if (currentRequest === requestId) renderResults(writers, matchingPosts);
           } catch (error) {
@@ -630,6 +696,8 @@
       function updateHeader() {
         const user = currentUser();
         if (!user) {
+          followedUserIds = new Set();
+          friendUserIds = new Set();
           authLink.hidden = false;
           authLink.href = "login.html";
           authLink.textContent = "Log in";
@@ -879,6 +947,10 @@
         setPage(content, { detailOnly: true });
         renderLikeStates();
         refreshLikedPosts();
+        refreshFollowState().catch((error) => {
+          console.error("Unable to load followed state for this story author.", error);
+          if (currentUser()) notify("Follow status could not be loaded. Please refresh and try again.");
+        });
         renderFollowSuggestions();
         if (imageUrl) {
           const image = document.createElement("img");
@@ -1006,6 +1078,8 @@
           const followerIds = [...new Set(relationships
             .filter((relationship) => relationship.following_id === user.id)
             .map((relationship) => relationship.follower_id))];
+          followedUserIds = new Set(followingIds);
+          friendUserIds = new Set(followingIds.filter((id) => followerIds.includes(id)));
           const names = new Map([[user.id, displayName(user)]]);
           const relatedIds = [...new Set([...followingIds, ...followerIds])];
           relatedIds.forEach((id) => {
@@ -1076,7 +1150,13 @@
       }
 
       function renderContact() {
-        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card"><h2>Get in touch</h2><p>Email the Sunday team and we’ll get back to you as soon as we can.</p><p><a class="primary-button" href="mailto:hello@sunday.example">✉ hello@sunday.example</a></p><p class="form-note">For this demo, the address is a placeholder. Replace it with your real contact email before publishing the site.</p></section><section class="page-card"><h2>Community &amp; story questions</h2><p>For writing prompts, submissions, or help with your account, include “Sunday community” in the subject line so we can point you in the right direction.</p></section></div>`, { contentOnly: true });
+        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Fill in the details below and Send will open a message in your email app.</p><form id="contactForm" data-contact-form>
+          <div class="form-field"><label for="contactName">Name</label><input id="contactName" name="name" autocomplete="name" maxlength="80" required></div>
+          <div class="form-field"><label for="contactFatherName">Father name</label><input id="contactFatherName" name="fatherName" maxlength="80" required></div>
+          <div class="form-field"><label for="contactEmail">Email</label><input id="contactEmail" name="email" type="email" autocomplete="email" maxlength="254" required></div>
+          <div class="form-field"><label for="contactPurpose">Purpose</label><input id="contactPurpose" name="purpose" maxlength="120" required placeholder="How can we help?"></div>
+          <button class="primary-button" type="submit">Send</button><p class="form-note" data-contact-status role="status">Your email app will address the message to hello@sunday.com.</p>
+        </form></section></div>`, { contentOnly: true });
       }
 
       function renderCompetitions() {
@@ -1436,6 +1516,26 @@
 
       document.addEventListener("submit", async (event) => {
         const form = event.target;
+        if (form.matches("[data-contact-form]")) {
+          event.preventDefault();
+          const formData = new FormData(form);
+          const name = String(formData.get("name") || "").trim();
+          const fatherName = String(formData.get("fatherName") || "").trim();
+          const email = String(formData.get("email") || "").trim();
+          const purpose = String(formData.get("purpose") || "").trim();
+          const subject = `Sunday contact: ${purpose}`;
+          const body = [
+            `Name: ${name}`,
+            `Father name: ${fatherName}`,
+            `Email: ${email}`,
+            `Purpose: ${purpose}`
+          ].join("\n");
+          const mailto = `mailto:hello@sunday.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          const status = form.querySelector("[data-contact-status]");
+          status.textContent = "Opening your email app with your message. Send it there to contact Sunday.";
+          window.location.href = mailto;
+          return;
+        }
         if (form.id === "authForm") {
           event.preventDefault();
           await handleAuth(form, form.dataset.authMode === "signup");

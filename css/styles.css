@@ -363,6 +363,7 @@
       cursor: pointer;
     }
     .follow-button.following { color: #718273; border-color: #dcebe0; background: #f0f8f1; }
+    .follow-button.friends { color: #5c4cae; border-color: #ddd5ff; background: #f2efff; }
     .trending-item { display: flex; gap: 9px; margin: 12px 0 3px; }
     .trend-number { color: #c6c6d1; font-size: 13px; font-weight: 800; }
     .trending-item strong { display: block; font-size: 9px; line-height: 1.45; }
