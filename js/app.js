@@ -474,6 +474,7 @@
           }
 
           notify(isFollowing ? "You unfollowed this writer" : "You’re now following this writer");
+          loadHeaderFollowCounts(user);
           if (routeParts().path === "dashboard") renderDashboard(activeDashboardTab);
         } catch (error) {
           updateButtons(isFollowing);
@@ -636,16 +637,49 @@
           document.getElementById("writeLink").href = "write.html";
           return;
         }
-        const ownPosts = posts().filter((post) => post.authorId === user.id);
+        const publishedCount = posts().filter((post) => post.authorId === user.id && post.status === "published").length;
         authLink.hidden = false;
         authLink.href = "index.html?logout=1";
         authLink.textContent = "Log out";
         headerProfile.hidden = false;
-        headerProfile.href = "dashboard.html";
         document.getElementById("headerName").textContent = displayName(user);
-        document.getElementById("headerStats").textContent = `${ownPosts.length} stories · ${user.followers || 0} followers · ${user.following || 0} following`;
+        document.querySelector("[data-header-stories]").textContent = String(publishedCount);
+        document.querySelector("[data-header-followers]").textContent = "…";
+        document.querySelector("[data-header-following]").textContent = "…";
         document.getElementById("headerAvatar").textContent = initials(user.name);
         document.getElementById("writeLink").href = "write.html";
+        loadHeaderFollowCounts(user);
+      }
+
+      async function loadHeaderFollowCounts(user) {
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to view profile counts.");
+          }
+
+          const [followers, following] = await Promise.all([
+            client.from("follows")
+              .select("follower_id", { count: "exact", head: true })
+              .eq("following_id", user.id),
+            client.from("follows")
+              .select("following_id", { count: "exact", head: true })
+              .eq("follower_id", user.id)
+          ]);
+          if (followers.error) throw followers.error;
+          if (following.error) throw following.error;
+          if (currentUser()?.id !== user.id) return;
+
+          document.querySelector("[data-header-followers]").textContent = String(followers.count || 0);
+          document.querySelector("[data-header-following]").textContent = String(following.count || 0);
+        } catch (error) {
+          console.error("Unable to load profile follow counts.", error);
+          if (currentUser()?.id !== user.id) return;
+          document.querySelector("[data-header-followers]").textContent = "—";
+          document.querySelector("[data-header-following]").textContent = "—";
+        }
       }
 
       function navigate(route) {
@@ -941,6 +975,10 @@
           </section>
           <section class="page-card" id="userStories"><h2>Your stories</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
         loadDashboardConnections(user);
+        const targetId = location.hash.slice(1);
+        if (["userStories", "userFollowers", "userFollowing"].includes(targetId)) {
+          requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ block: "start" }));
+        }
       }
 
       async function loadDashboardConnections(user) {

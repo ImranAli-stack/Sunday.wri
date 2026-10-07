@@ -12,7 +12,7 @@
   <label class="search-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg><input id="searchInput" type="search" placeholder="Search stories..." aria-label="Search stories"></label>
   <a class="write-button" id="writeLink" href="write.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Write</a>
   <a class="auth-link" id="authLink" href="login.html">Log in</a>
-  <a class="header-profile" id="headerProfile" href="dashboard.html" hidden aria-label="Open your dashboard"><span class="avatar purple" id="headerAvatar">?</span><span class="header-profile-copy"><strong id="headerName">Writer</strong><span id="headerStats">Your stories - 0</span></span></a>
+  <div class="header-profile" id="headerProfile" hidden><span class="avatar purple" id="headerAvatar">?</span><span class="header-profile-copy"><a class="header-profile-name" id="headerName" href="dashboard.html">Writer</a><span class="header-profile-stats" id="headerStats" aria-label="Profile statistics"><a href="dashboard.html#userStories"><strong data-header-stories>0</strong> stories</a><a href="dashboard.html#userFollowers"><strong data-header-followers>—</strong> followers</a><a href="dashboard.html#userFollowing"><strong data-header-following>—</strong> following</a></span></span></div>
 </header>
 <div class="layout">
   <aside class="left-sidebar" aria-label="Sidebar navigation"><div class="sidebar-label">Your space</div>

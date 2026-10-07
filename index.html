@@ -30,10 +30,16 @@
       Write
     </a>
     <a class="auth-link" id="authLink" href="login.html">Log in</a>
-    <a class="header-profile" id="headerProfile" href="dashboard.html" hidden aria-label="Open your dashboard">
+    <div class="header-profile" id="headerProfile" hidden>
       <span class="avatar purple" id="headerAvatar">?</span>
-      <span class="header-profile-copy"><strong id="headerName">Writer</strong><span id="headerStats">Your stories · 0</span></span>
-    </a>
+      <span class="header-profile-copy"><a class="header-profile-name" id="headerName" href="dashboard.html">Writer</a>
+        <span class="header-profile-stats" id="headerStats" aria-label="Profile statistics">
+          <a href="dashboard.html#userStories"><strong data-header-stories>0</strong> stories</a>
+          <a href="dashboard.html#userFollowers"><strong data-header-followers>—</strong> followers</a>
+          <a href="dashboard.html#userFollowing"><strong data-header-following>—</strong> following</a>
+        </span>
+      </span>
+    </div>
   </header>
 
   <div class="layout" id="home">
