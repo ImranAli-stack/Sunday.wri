@@ -928,13 +928,18 @@
             <a class="dashboard-action" href="write.html?edit=${encodeURIComponent(post.id)}">${post.status === "draft" ? "Edit draft" : "Edit"}</a>
             <button class="dashboard-action delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button></div></div>`).join("")
           : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
-        setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Your private space · ${escapeHTML(user.role || "writer")}</div><h1>Writer dashboard</h1><p>Welcome back, ${escapeHTML(displayName(user))}. Your drafts stay private; published stories appear here and in the public feed.</p><div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
-          <div class="dashboard-stats"><div class="dashboard-stat"><strong>${allCount}</strong><span>Your stories</span></div><div class="dashboard-stat"><strong>${publishedCount}</strong><span>Public posts</span></div><div class="dashboard-stat"><strong>${posts().filter((post) => post.authorId === user.id && post.status === "draft").length}</strong><span>Private drafts</span></div></div>
+        setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile · ${escapeHTML(user.role || "writer")}</div><h1>${escapeHTML(displayName(user))}</h1><p>${escapeHTML(user.handle || "Your Sunday profile")} · Your published stories and community connections.</p>
+          <div class="dashboard-stats profile-stats" aria-label="Profile statistics">
+            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-stories>${publishedCount}</strong><span>Stories</span></a>
+            <a class="dashboard-stat profile-stat-link" href="#userFollowers"><strong data-profile-followers>…</strong><span>Followers</span></a>
+            <a class="dashboard-stat profile-stat-link" href="#userFollowing"><strong data-profile-following>…</strong><span>Following</span></a>
+          </div>
+          <div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
           <section class="community-lists" aria-label="Your community">
-            <section class="page-card"><h2>Following <span class="community-count" data-following-count>…</span></h2><div data-following-list><p class="community-status" role="status">Loading following…</p></div></section>
-            <section class="page-card"><h2>Followers <span class="community-count" data-followers-count>…</span></h2><div data-followers-list><p class="community-status" role="status">Loading followers…</p></div></section>
+            <section class="page-card" id="userFollowing"><h2>Following <span class="community-count" data-following-count>…</span></h2><div data-following-list><p class="community-status" role="status">Loading following…</p></div></section>
+            <section class="page-card" id="userFollowers"><h2>Followers <span class="community-count" data-followers-count>…</span></h2><div data-followers-list><p class="community-status" role="status">Loading followers…</p></div></section>
           </section>
-          <section class="page-card"><h2>Your writing</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
+          <section class="page-card" id="userStories"><h2>Your stories</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
         loadDashboardConnections(user);
       }
 
@@ -995,6 +1000,8 @@
 
           document.querySelector("[data-following-count]").textContent = String(followingIds.length);
           document.querySelector("[data-followers-count]").textContent = String(followerIds.length);
+          document.querySelector("[data-profile-following]").textContent = String(followingIds.length);
+          document.querySelector("[data-profile-followers]").textContent = String(followerIds.length);
           followingList.innerHTML = renderPeople(followingIds, "You’re not following anyone yet.");
           followersList.innerHTML = renderPeople(followerIds, "You don’t have any followers yet.");
           updateFollowButtons(new Set(followingIds));
@@ -1008,6 +1015,8 @@
           followersList.innerHTML = `<p class="community-status" role="alert">${escapeHTML(message)}</p>`;
           document.querySelector("[data-following-count]").textContent = "—";
           document.querySelector("[data-followers-count]").textContent = "—";
+          document.querySelector("[data-profile-following]").textContent = "—";
+          document.querySelector("[data-profile-followers]").textContent = "—";
         }
       }
 
