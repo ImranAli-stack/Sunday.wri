@@ -42,6 +42,7 @@
       const headerProfile = document.getElementById("headerProfile");
       let toastTimer;
       let activeDashboardTab = "all";
+      let likedPostIds = new Set();
 
       function notify(message) {
         toast.textContent = message;
@@ -119,17 +120,69 @@
           const countSpan = card.querySelector(".like-count");
           if (countSpan) countSpan.textContent = String(count);
           const button = card.querySelector(".like-button");
-          if (button) {
-            button.setAttribute("aria-pressed", String(liked));
-            button.textContent = liked ? "♥" : "♡";
-            button.classList.toggle("liked", liked);
-          }
+          if (button) updateLikeButton(button, liked);
         });
 
         document.querySelectorAll("[data-like-detail]").forEach((button) => {
           if (button.dataset.likeDetail !== postId) return;
-          button.setAttribute("aria-pressed", String(liked));
-          button.textContent = `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"} · ${count}`;
+          button.dataset.likeCount = String(count);
+          updateLikeButton(button, liked);
+        });
+        if (liked) likedPostIds.add(postId);
+        else likedPostIds.delete(postId);
+      }
+
+      function updateLikeButton(button, liked) {
+        button.setAttribute("aria-pressed", String(liked));
+        button.setAttribute("aria-label", liked ? "Unlike this story" : "Like this story");
+        button.classList.toggle("liked", liked);
+        button.textContent = button.hasAttribute("data-like-detail")
+          ? `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"} · ${button.dataset.likeCount || "0"}`
+          : `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"}`;
+      }
+
+      async function refreshLikedPosts() {
+        const user = currentUser();
+        if (!user) {
+          likedPostIds = new Set();
+          renderLikeStates();
+          return;
+        }
+
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session is no longer active. Log in again to view your likes.");
+          }
+          const { data, error } = await client
+            .from("likes_table")
+            .select("post_id")
+            .eq("user_id", authData.user.id);
+          if (error) throw error;
+          if (currentUser()?.id !== user.id) return;
+          likedPostIds = new Set(data.map((like) => String(like.post_id)));
+          renderLikeStates();
+        } catch (error) {
+          console.error("Unable to load your liked stories.", error);
+          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
+            ? error.message
+            : "Your liked stories could not be loaded. Please refresh and try again.");
+        }
+      }
+
+      function renderLikeStates() {
+        document.querySelectorAll(".like-button[data-post-id], [data-like-detail]").forEach((button) => {
+          const postId = button.dataset.postId || button.dataset.likeDetail;
+          const card = button.closest(".post-card");
+          if (button.hasAttribute("data-like-detail")) {
+            button.dataset.likeCount = String(posts().find((post) => post.id === postId)?.likes || 0);
+          }
+          if (card) {
+            button.dataset.likeCount = card.dataset.likes || "0";
+          }
+          updateLikeButton(button, likedPostIds.has(postId));
         });
       }
 
@@ -368,7 +421,16 @@
         const targetId = followButton.dataset.followUser;
         if (!targetId || targetId === user.id) return;
 
-        followButton.disabled = true;
+        const isFollowing = followButton.getAttribute("aria-pressed") === "true";
+        const targetButtons = () => [...document.querySelectorAll("[data-follow-user]")]
+          .filter((button) => button.dataset.followUser === targetId);
+        const updateButtons = (following) => targetButtons().forEach((button) => {
+          button.setAttribute("aria-pressed", String(following));
+          button.classList.toggle("following", following);
+          button.textContent = following ? "Following" : "Follow";
+        });
+        targetButtons().forEach((button) => { button.disabled = true; });
+        updateButtons(!isFollowing);
         try {
           const client = await getSupabaseClient();
           const { data: authData, error: authError } = await client.auth.getUser();
@@ -377,7 +439,6 @@
             throw new Error("Your Supabase session has expired. Log in again to follow writers.");
           }
 
-          const isFollowing = followButton.getAttribute("aria-pressed") === "true";
           if (isFollowing) {
             const { error } = await client.from("follows")
               .delete()
@@ -390,14 +451,146 @@
             if (error) throw error;
           }
 
-          await renderFollowSuggestions();
           notify(isFollowing ? "You unfollowed this writer" : "You’re now following this writer");
         } catch (error) {
+          updateButtons(isFollowing);
           console.error("Unable to update followed writers.", error);
           notify(error instanceof Error ? error.message : "Following could not be updated.");
         } finally {
-          followButton.disabled = false;
+          targetButtons().forEach((button) => { button.disabled = false; });
         }
+      }
+
+      function setupSearch() {
+        const input = document.getElementById("searchInput");
+        if (!input) return;
+
+        const searchBox = input.closest(".search-box");
+        const wrapper = document.createElement("div");
+        wrapper.className = "search-container";
+        searchBox.parentNode.insertBefore(wrapper, searchBox);
+        wrapper.appendChild(searchBox);
+
+        const results = document.createElement("div");
+        results.className = "search-results";
+        results.id = "searchResults";
+        results.hidden = true;
+        results.setAttribute("role", "region");
+        results.setAttribute("aria-label", "Search results");
+        wrapper.appendChild(results);
+        input.setAttribute("aria-controls", results.id);
+        input.placeholder = "Search writers and stories...";
+        input.setAttribute("aria-label", "Search writers and stories");
+        input.setAttribute("aria-expanded", "false");
+
+        let debounceTimer;
+        let requestId = 0;
+        const close = () => {
+          results.hidden = true;
+          input.setAttribute("aria-expanded", "false");
+        };
+        const showMessage = (message, isError = false) => {
+          results.innerHTML = `<p class="search-message${isError ? " search-error" : ""}" role="${isError ? "alert" : "status"}">${escapeHTML(message)}</p>`;
+          results.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        };
+        const renderResults = (writers, matchingPosts) => {
+          const writerSection = writers.length
+            ? `<section class="search-result-section"><h2>Writers</h2>${writers.map((writer) => {
+              const isSelf = writer.id === currentUser()?.id;
+              const following = writer.following;
+              const followControl = isSelf
+                ? ""
+                : `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.id)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`;
+              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(writer.name))}</span><span class="search-person-name">${escapeHTML(writer.name)}</span>${followControl}</div>`;
+            }).join("")}</section>`
+            : "";
+          const postSection = matchingPosts.length
+            ? `<section class="search-result-section"><h2>Stories</h2>${matchingPosts.map((post) => `<a class="search-post" href="post.html?id=${encodeURIComponent(post.id)}"><strong>${escapeHTML(post.title)}</strong><span>By ${escapeHTML(post.authorName)} · ${escapeHTML(post.category)}</span></a>`).join("")}</section>`
+            : "";
+          if (!writerSection && !postSection) {
+            showMessage("No matching writers or stories found.");
+            return;
+          }
+          results.innerHTML = `${writerSection}${postSection}`;
+          results.hidden = false;
+          input.setAttribute("aria-expanded", "true");
+        };
+
+        const runSearch = async (query, currentRequest) => {
+          const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
+          const pattern = `%${escapedQuery}%`;
+          try {
+            const client = await getSupabaseClient();
+            const columns = ["title", "content", "author_name"];
+            const responses = await Promise.all(columns.map((column) => client.from("posts")
+              .select("*")
+              .eq("status", "published")
+              .ilike(column, pattern)
+              .limit(8)));
+            const failedResponse = responses.find((response) => response.error);
+            if (failedResponse) throw failedResponse.error;
+            if (currentRequest !== requestId) return;
+
+            const remotePosts = [...new Map(responses.flatMap((response) => response.data || [])
+              .map((post) => [String(post.id), post])).values()].map(normalizeRemotePost);
+            const matchingPosts = remotePosts
+              .filter((post) => post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query))
+              .slice(0, 6);
+            const writersById = new Map();
+            [...posts().filter((post) => post.status === "published"), ...remotePosts].forEach((post) => {
+              if (!post.authorId || post.authorId === currentUser()?.id) return;
+              if (!post.authorName.toLowerCase().includes(query)) return;
+              writersById.set(post.authorId, { id: post.authorId, name: post.authorName });
+            });
+            users().forEach((user) => {
+              const name = displayName(user);
+              if (user.id !== currentUser()?.id && (name.toLowerCase().includes(query) || user.name.toLowerCase().includes(query))) {
+                writersById.set(user.id, { id: user.id, name });
+              }
+            });
+
+            const writers = [...writersById.values()].slice(0, 6);
+            const user = currentUser();
+            if (user && writers.length) {
+              const { data: authData, error: authError } = await client.auth.getUser();
+              if (authError) throw authError;
+              if (!authData.user || authData.user.id !== user.id) {
+                throw new Error("Your Supabase session has expired. Log in again to search followed writers.");
+              }
+              const { data: follows, error: followsError } = await client.from("follows")
+                .select("following_id")
+                .eq("follower_id", user.id)
+                .in("following_id", writers.map((writer) => writer.id));
+              if (followsError) throw followsError;
+              const followingIds = new Set((follows || []).map((follow) => follow.following_id));
+              writers.forEach((writer) => { writer.following = followingIds.has(writer.id); });
+            }
+            if (currentRequest === requestId) renderResults(writers, matchingPosts);
+          } catch (error) {
+            if (currentRequest !== requestId) return;
+            console.error("Search request failed.", error);
+            showMessage("Search is unavailable right now. Please try again.", true);
+          }
+        };
+
+        input.addEventListener("input", () => {
+          clearTimeout(debounceTimer);
+          const query = input.value.trim().toLowerCase();
+          const currentRequest = ++requestId;
+          if (query.length < 2) {
+            close();
+            return;
+          }
+          showMessage("Searching…");
+          debounceTimer = setTimeout(() => runSearch(query, currentRequest), 400);
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") close();
+        });
+        document.addEventListener("click", (event) => {
+          if (!wrapper.contains(event.target)) close();
+        });
       }
 
       function escapeHTML(value) {
@@ -494,6 +687,8 @@
         posts().filter((post) => post.status === "published")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .forEach((post) => cardList.appendChild(createPostCard(post)));
+        renderLikeStates();
+        refreshLikedPosts();
         const savedBookmarks = bookmarkList();
         cardList.querySelectorAll(".post-card").forEach((card) => {
           const button = card.querySelector(".bookmark-button");
@@ -559,7 +754,7 @@
           <h3 class="post-title">${escapeHTML(post.title)}</h3>
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
           <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span aria-label="Comments">◯ <span class="comment-count">${Number(post.commentCount) || 0}</span></span></div>
-          <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false">♡</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div></div></div>
+          <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false" data-post-id="${escapeHTML(post.id)}">♡ Like</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div></div></div>
           <div class="post-image art-journal" aria-label="${imageUrl ? "Story picture" : "Illustration for this story"}">${imageUrl ? "" : "<span>✍️</span>"}</div>`;
         if (imageUrl) {
           const image = document.createElement("img");
@@ -602,7 +797,7 @@
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
+          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
             <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
             <p class="comment-status" data-comment-status role="status">Loading comments…</p>
@@ -614,6 +809,8 @@
             </form>
           </section>` : ""}</article></div>`;
         setPage(content, { detailOnly: true });
+        renderLikeStates();
+        refreshLikedPosts();
         if (imageUrl) {
           const image = document.createElement("img");
           image.src = imageUrl;
@@ -1296,6 +1493,7 @@
           document.querySelectorAll(".modal-backdrop.open").forEach((modal) => modal.classList.remove("open"));
         }
       });
+      setupSearch();
       syncRemotePosts().catch((error) => {
         console.error("Unable to fetch published posts from Supabase.", error);
         notify("Stories could not be refreshed from the server.");
