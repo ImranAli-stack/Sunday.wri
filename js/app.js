@@ -107,6 +107,7 @@
           const commentCount = card.querySelector(".comment-count");
           if (commentCount) commentCount.textContent = String(count);
         });
+        refreshProfileEngagementForPost(postId);
       }
 
       function updatePostLikeCount(postId, count, liked) {
@@ -137,6 +138,13 @@
         });
         if (liked) likedPostIds.add(postId);
         else likedPostIds.delete(postId);
+        refreshProfileEngagementForPost(postId);
+      }
+
+      function refreshProfileEngagementForPost(postId) {
+        const user = currentUser();
+        const post = posts().find((item) => item.id === postId);
+        if (user && post?.authorId === user.id) loadProfileEngagementCounts(user);
       }
 
       function updateLikeButton(button, liked) {
@@ -716,7 +724,67 @@
         document.querySelector("[data-header-following]").textContent = "…";
         document.getElementById("headerAvatar").textContent = initials(user.name);
         document.getElementById("writeLink").href = "write.html";
+        ensureHeaderEngagementStats();
         loadHeaderFollowCounts(user);
+        loadProfileEngagementCounts(user);
+      }
+
+      function ensureHeaderEngagementStats() {
+        const stats = document.getElementById("headerStats");
+        if (!stats) return;
+        [
+          ["likes", "likes"],
+          ["comments", "comments"]
+        ].forEach(([key, label]) => {
+          if (stats.querySelector(`[data-header-${key}]`)) return;
+          const link = document.createElement("a");
+          link.href = "dashboard.html#userStories";
+          const count = document.createElement("strong");
+          count.dataset[`header${key[0].toUpperCase()}${key.slice(1)}`] = "";
+          count.textContent = "…";
+          link.append(count, ` ${label}`);
+          stats.appendChild(link);
+        });
+      }
+
+      async function loadProfileEngagementCounts(user) {
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to view profile counts.");
+          }
+          const { data, error } = await client
+            .from("posts")
+            .select("likes_table(count), comments(count)")
+            .eq("user_id", user.id)
+            .eq("status", "published");
+          if (error) throw error;
+          if (currentUser()?.id !== user.id) return;
+
+          const totals = data.reduce((result, post) => ({
+            likes: result.likes + (Number(post.likes_table?.[0]?.count) || 0),
+            comments: result.comments + (Number(post.comments?.[0]?.count) || 0)
+          }), { likes: 0, comments: 0 });
+          document.querySelectorAll("[data-profile-likes]").forEach((element) => {
+            element.textContent = String(totals.likes);
+          });
+          document.querySelectorAll("[data-profile-comments]").forEach((element) => {
+            element.textContent = String(totals.comments);
+          });
+          document.querySelectorAll("[data-header-likes]").forEach((element) => {
+            element.textContent = String(totals.likes);
+          });
+          document.querySelectorAll("[data-header-comments]").forEach((element) => {
+            element.textContent = String(totals.comments);
+          });
+        } catch (error) {
+          console.error("Unable to load profile like and comment totals.", error);
+          if (currentUser()?.id !== user.id) return;
+          document.querySelectorAll("[data-profile-likes], [data-profile-comments], [data-header-likes], [data-header-comments]")
+            .forEach((element) => { element.textContent = "—"; });
+        }
       }
 
       async function loadHeaderFollowCounts(user) {
@@ -1039,6 +1107,8 @@
             <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-stories>${publishedCount}</strong><span>Stories</span></a>
             <a class="dashboard-stat profile-stat-link" href="#userFollowers"><strong data-profile-followers>…</strong><span>Followers</span></a>
             <a class="dashboard-stat profile-stat-link" href="#userFollowing"><strong data-profile-following>…</strong><span>Following</span></a>
+            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-likes>…</strong><span>Total likes</span></a>
+            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-comments>…</strong><span>Total comments</span></a>
           </div>
           <div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
           <section class="community-lists" aria-label="Your community">
@@ -1047,6 +1117,7 @@
           </section>
           <section class="page-card" id="userStories"><h2>Your stories</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
         loadDashboardConnections(user);
+        loadProfileEngagementCounts(user);
         const targetId = location.hash.slice(1);
         if (["userStories", "userFollowers", "userFollowing"].includes(targetId)) {
           requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ block: "start" }));

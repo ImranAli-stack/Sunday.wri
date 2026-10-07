@@ -440,7 +440,7 @@
     .header-profile .avatar { width: 31px; height: 31px; flex: 0 0 auto; font-size: 9px; }
     .header-profile-copy { min-width: 0; }
     .header-profile-name { display: block; overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
-    .header-profile-stats { display: flex; gap: 3px; margin-top: 4px; white-space: nowrap; }
+    .header-profile-stats { display: grid; grid-template-columns: repeat(3, max-content); gap: 3px 6px; margin-top: 4px; white-space: nowrap; }
     .header-profile-stats a { color: var(--muted); font-size: 6px; text-decoration: none; }
     .header-profile-stats a:hover { color: var(--purple); }
     .header-profile-stats strong { color: var(--ink); font-size: 7px; }
@@ -464,11 +464,11 @@
     .form-error { display: none; padding: 10px 12px; margin-bottom: 12px; color: #a1364d; background: #fff0f1; border: 1px solid #f7d8dd; border-radius: 9px; font-size: 11px; line-height: 1.5; }
     .form-error.visible { display: block; }
     .form-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin-top: 10px; }
-    .dashboard-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 17px; }
+    .dashboard-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 17px; }
     .dashboard-stat { padding: 15px; background: white; border: 1px solid var(--line); border-radius: 12px; }
     .dashboard-stat strong { display: block; font-size: 19px; }
     .dashboard-stat span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
-    .profile-stats { max-width: 490px; margin: 17px 0 0; }
+    .profile-stats { max-width: 700px; margin: 17px 0 0; }
     .profile-stat-link { display: block; color: inherit; text-decoration: none; transition: border-color .16s ease, transform .16s ease; }
     .profile-stat-link:hover, .profile-stat-link:focus-visible { border-color: #cfc3ff; transform: translateY(-1px); }
     .profile-stat-link:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
