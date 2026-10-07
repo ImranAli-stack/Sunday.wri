@@ -53,12 +53,45 @@
       let notificationUserId = "";
       let notificationChannel;
       let notificationItems = [];
+      let notificationHistory = [];
 
       function notify(message) {
-        toast.textContent = message;
-        toast.classList.add("show");
+        toast.classList.remove("notification-toast");
+        toast.replaceChildren(document.createTextNode(message));
+        toast.setAttribute("role", "status");
+        toast.setAttribute("aria-live", "polite");
         clearTimeout(toastTimer);
+        toast.classList.add("show");
         toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+      }
+
+      function notifyNotification(notification) {
+        const user = currentUser();
+        if (!user || !notification.id) return;
+        const key = `sunday.notification-toasts.${user.id}`;
+        const storedIds = readStore(key, []);
+        const shownIds = Array.isArray(storedIds) ? storedIds : [];
+        if (shownIds.includes(notification.id)) return;
+        try {
+          writeStore(key, [...shownIds, notification.id]);
+        } catch (error) {
+          console.error("Unable to save notification toast state.", error);
+        }
+        toast.classList.add("notification-toast");
+        toast.setAttribute("role", "alert");
+        toast.setAttribute("aria-live", "assertive");
+        toast.replaceChildren(document.createTextNode(notificationMessage(notification)));
+        const link = document.createElement("a");
+        link.href = "notifications.html";
+        link.className = "notification-toast-link";
+        link.textContent = "View notifications";
+        toast.appendChild(link);
+        clearTimeout(toastTimer);
+        toast.classList.add("show");
+        toastTimer = setTimeout(() => {
+          toast.classList.remove("show", "notification-toast");
+          toast.replaceChildren();
+        }, 6000);
       }
 
       function readStore(key, fallback) {
@@ -734,68 +767,47 @@
         startNotifications(user);
       }
 
-      function ensureNotificationUI() {
-        let menu = document.querySelector("[data-notification-menu]");
-        if (menu) return menu;
-
-        menu = document.createElement("div");
-        menu.className = "notification-menu";
-        menu.dataset.notificationMenu = "";
-        const button = document.createElement("button");
-        button.className = "notification-toggle";
-        button.type = "button";
-        button.dataset.notificationsToggle = "";
-        button.setAttribute("aria-label", "Notifications");
-        button.setAttribute("aria-expanded", "false");
-        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>';
-        const badge = document.createElement("span");
-        badge.className = "notification-badge";
-        badge.dataset.notificationCount = "";
-        badge.hidden = true;
-        button.appendChild(badge);
-        const panel = document.createElement("section");
-        panel.className = "notification-panel";
-        panel.dataset.notificationPanel = "";
-        panel.hidden = true;
-        panel.setAttribute("aria-label", "Notifications");
-        const heading = document.createElement("h2");
-        heading.textContent = "Notifications";
-        const list = document.createElement("div");
-        list.className = "notification-list";
-        list.dataset.notificationList = "";
-        list.setAttribute("aria-live", "polite");
-        list.innerHTML = '<p class="notification-status">Loading notifications…</p>';
-        panel.append(heading, list);
-        menu.append(button, panel);
-        headerProfile.before(menu);
-        return menu;
-      }
-
       function notificationMessage(notification) {
         return String(notification.message || notification.content || notification.title || "You have a new notification.");
       }
 
-      function renderNotifications() {
-        const list = document.querySelector("[data-notification-list]");
-        const badge = document.querySelector("[data-notification-count]");
-        if (!list || !badge) return;
+      function ensureNotificationBell() {
+        let bell = document.querySelector("[data-notification-bell]");
+        if (bell) return bell;
+        bell = document.createElement("a");
+        bell.className = "notification-bell";
+        bell.href = "notifications.html";
+        bell.dataset.notificationBell = "";
+        bell.setAttribute("aria-label", "Notifications");
+        bell.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><span class="notification-badge" data-notification-count hidden></span>';
+        headerProfile.before(bell);
+        return bell;
+      }
 
-        badge.textContent = String(notificationItems.length);
-        badge.hidden = notificationItems.length === 0;
-        const toggle = document.querySelector("[data-notifications-toggle]");
-        if (toggle) {
-          toggle.setAttribute("aria-label", notificationItems.length
-            ? `Notifications, ${notificationItems.length} unread`
-            : "Notifications");
-        }
-        if (!notificationItems.length) {
+      function renderUnreadNotificationCount() {
+        const bell = document.querySelector("[data-notification-bell]");
+        const badge = bell?.querySelector("[data-notification-count]");
+        if (!badge) return;
+        const count = notificationItems.length;
+        badge.textContent = count > 99 ? "99+" : String(count);
+        badge.hidden = count === 0;
+        bell.setAttribute("aria-label", count
+          ? `Notifications, ${count} unread`
+          : "Notifications");
+      }
+
+      function renderNotifications() {
+        const list = document.querySelector("[data-notifications-list]");
+        renderUnreadNotificationCount();
+        if (!list) return;
+        if (!notificationHistory.length) {
           list.innerHTML = '<p class="notification-status">You’re all caught up.</p>';
           return;
         }
 
-        list.replaceChildren(...notificationItems.map((notification) => {
+        list.replaceChildren(...notificationHistory.map((notification) => {
           const item = document.createElement("article");
-          item.className = "notification-item";
+          item.className = `notification-item${notification.is_read ? " is-read" : " is-unread"}`;
           const message = document.createElement("span");
           message.className = "notification-message";
           message.textContent = notificationMessage(notification);
@@ -814,16 +826,23 @@
             const link = document.createElement("a");
             link.className = "notification-open";
             link.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
-            link.dataset.notificationOpen = notification.id;
             link.textContent = "View story";
+            if (!notification.is_read) link.dataset.notificationOpen = notification.id;
             actions.appendChild(link);
           }
-          const markRead = document.createElement("button");
-          markRead.className = "notification-mark-read";
-          markRead.type = "button";
-          markRead.dataset.markNotificationRead = notification.id;
-          markRead.textContent = "Mark read";
-          actions.appendChild(markRead);
+          if (notification.is_read) {
+            const readStatus = document.createElement("span");
+            readStatus.className = "notification-read-status";
+            readStatus.textContent = "Read";
+            actions.appendChild(readStatus);
+          } else {
+            const markRead = document.createElement("button");
+            markRead.className = "notification-mark-read";
+            markRead.type = "button";
+            markRead.dataset.markNotificationRead = notification.id;
+            markRead.textContent = "Mark read";
+            actions.appendChild(markRead);
+          }
           item.appendChild(actions);
           return item;
         }));
@@ -849,10 +868,12 @@
             .forEach((item) => merged.set(item.id, item));
           notificationItems = [...merged.values()].sort((a, b) =>
             String(b.created_at || "").localeCompare(String(a.created_at || "")));
-          renderNotifications();
+          renderUnreadNotificationCount();
+          const latestUnread = notificationItems[0];
+          if (latestUnread && routeParts().path !== "notifications") notifyNotification(latestUnread);
         } catch (error) {
           console.error("Unable to load notifications.", error);
-          const list = document.querySelector("[data-notification-list]");
+          const list = document.querySelector("[data-notifications-list]");
           if (!list || notificationUserId !== user.id) return;
           const status = document.createElement("p");
           status.className = "notification-status";
@@ -869,8 +890,8 @@
         stopNotifications();
         notificationUserId = user.id;
         notificationItems = [];
-        ensureNotificationUI();
-        renderNotifications();
+        ensureNotificationBell();
+        renderUnreadNotificationCount();
         getSupabaseClient().then((client) => {
           if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
           loadNotifications(user, client);
@@ -886,9 +907,15 @@
               if (payload.new.is_read) return;
               if (!notificationItems.some((item) => item.id === payload.new.id)) {
                 notificationItems.unshift(payload.new);
+              }
+              renderUnreadNotificationCount();
+              if (routeParts().path === "notifications") {
+                const existingIndex = notificationHistory.findIndex((item) => item.id === payload.new.id);
+                if (existingIndex === -1) notificationHistory.unshift(payload.new);
+                else notificationHistory[existingIndex] = payload.new;
                 renderNotifications();
               }
-              notify(notificationMessage(payload.new));
+              notifyNotification(payload.new);
             })
             .on("postgres_changes", {
               event: "UPDATE",
@@ -904,6 +931,10 @@
                 if (existingIndex === -1) notificationItems.unshift(payload.new);
                 else notificationItems[existingIndex] = payload.new;
               }
+              renderUnreadNotificationCount();
+              const historyIndex = notificationHistory.findIndex((item) => item.id === payload.new.id);
+              if (historyIndex !== -1) notificationHistory[historyIndex] = payload.new;
+              else if (routeParts().path === "notifications") notificationHistory.unshift(payload.new);
               renderNotifications();
             })
             .subscribe((status) => {
@@ -914,7 +945,7 @@
             });
         }).catch((error) => {
           console.error("Unable to initialize notifications.", error);
-          const list = document.querySelector("[data-notification-list]");
+          const list = document.querySelector("[data-notifications-list]");
           if (list && notificationUserId === user.id) {
             list.innerHTML = '<p class="notification-status" role="alert">Notifications are unavailable. Check your connection and try again.</p>';
           }
@@ -923,7 +954,8 @@
 
       async function markNotificationRead(notificationId, trigger) {
         const user = currentUser();
-        const notification = notificationItems.find((item) => item.id === notificationId);
+        const notification = notificationItems.find((item) => item.id === notificationId)
+          || notificationHistory.find((item) => item.id === notificationId);
         if (!user || !notification) return false;
 
         if (trigger) trigger.disabled = true;
@@ -943,6 +975,9 @@
           if (error) throw error;
           if (notificationUserId === user.id && currentUser()?.id === user.id) {
             notificationItems = notificationItems.filter((item) => item.id !== notificationId);
+            const historyIndex = notificationHistory.findIndex((item) => item.id === notificationId);
+            if (historyIndex !== -1) notificationHistory[historyIndex] = { ...notificationHistory[historyIndex], is_read: true };
+            renderUnreadNotificationCount();
             renderNotifications();
           }
           return true;
@@ -957,6 +992,54 @@
         }
       }
 
+      function renderNotificationsPage() {
+        const user = currentUser();
+        if (!user) {
+          sessionStorage.setItem("sunday.next", "notifications");
+          navigate("#login");
+          return;
+        }
+        setPage(`<div class="page-view">
+          <section class="page-hero"><div class="page-kicker">Your Sunday inbox</div><h1>Notifications</h1><p>Updates from the Sunday community, with unread items kept here until you mark them read.</p></section>
+          <section class="page-card notification-page-card"><div class="notification-page-heading"><h2>All notifications</h2><a class="secondary-button" href="index.html">Back to Sunday</a></div><div class="notification-list notification-page-list" data-notifications-list aria-live="polite"><p class="notification-status" role="status">Loading notifications…</p></div></section>
+        </div>`, { contentOnly: true });
+        loadNotificationHistory(user);
+      }
+
+      async function loadNotificationHistory(user) {
+        const list = document.querySelector("[data-notifications-list]");
+        if (!list) return;
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to view notifications.");
+          }
+          const { data, error } = await client
+            .from("notifications")
+            .select("*")
+            .eq("recipient_id", user.id)
+            .order("created_at", { ascending: false });
+          if (error) throw error;
+          if (!list.isConnected || currentUser()?.id !== user.id) return;
+          const historyById = new Map((data || []).map((item) => [item.id, item]));
+          notificationHistory.forEach((item) => historyById.set(item.id, item));
+          notificationHistory = [...historyById.values()].sort((a, b) =>
+            String(b.created_at || "").localeCompare(String(a.created_at || "")));
+          notificationItems = notificationHistory.filter((item) => !item.is_read);
+          renderNotifications();
+        } catch (error) {
+          console.error("Unable to load notification history.", error);
+          if (!list.isConnected || currentUser()?.id !== user.id) return;
+          list.innerHTML = `<p class="notification-status" role="alert">${escapeHTML(
+            error instanceof Error && error.message.startsWith("Your Supabase session")
+              ? error.message
+              : "Notifications could not be loaded. Check your connection and notification access policy."
+          )}</p>`;
+        }
+      }
+
       function stopNotifications() {
         if (notificationChannel && supabaseClient) {
           supabaseClient.removeChannel(notificationChannel).catch((error) => {
@@ -966,8 +1049,9 @@
         }
         notificationUserId = "";
         notificationItems = [];
-        const menu = document.querySelector("[data-notification-menu]");
-        if (menu) menu.remove();
+        notificationHistory = [];
+        const bell = document.querySelector("[data-notification-bell]");
+        if (bell) bell.remove();
       }
 
       function ensureHeaderEngagementStats() {
@@ -1083,7 +1167,7 @@
           home: "index.html", about: "about.html", contact: "contact.html",
           competitions: "competitions.html", login: "login.html", signup: "signup.html",
           dashboard: "dashboard.html", write: "write.html", bookmarks: "bookmarks.html",
-          settings: "settings.html", post: "post.html"
+          settings: "settings.html", post: "post.html", notifications: "notifications.html"
         }[path];
         if (!page) {
           location.href = "index.html";
@@ -1659,6 +1743,7 @@
         if (path === "about") { renderAbout(); return; }
         if (path === "contact") { renderContact(); return; }
         if (path === "competitions") { renderCompetitions(); return; }
+        if (path === "notifications") { renderNotificationsPage(); return; }
         if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") {
@@ -1684,21 +1769,6 @@
           const opened = await markNotificationRead(notificationLink.dataset.notificationOpen, notificationLink);
           if (opened) location.href = notificationLink.href;
           return;
-        }
-        const notificationsToggle = event.target.closest("[data-notifications-toggle]");
-        const notificationMenu = document.querySelector("[data-notification-menu]");
-        if (notificationsToggle) {
-          const panel = notificationMenu?.querySelector("[data-notification-panel]");
-          const open = panel?.hidden ?? true;
-          if (panel) panel.hidden = !open;
-          notificationsToggle.setAttribute("aria-expanded", String(open));
-          return;
-        }
-        if (notificationMenu && !notificationMenu.contains(event.target)) {
-          const panel = notificationMenu.querySelector("[data-notification-panel]");
-          const toggle = notificationMenu.querySelector("[data-notifications-toggle]");
-          if (panel) panel.hidden = true;
-          if (toggle) toggle.setAttribute("aria-expanded", "false");
         }
         const followButton = event.target.closest("[data-follow-user]");
         if (followButton) {
@@ -1813,14 +1883,10 @@
       });
 
       document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape") return;
-        const menu = document.querySelector("[data-notification-menu]");
-        const panel = menu?.querySelector("[data-notification-panel]");
-        const toggle = menu?.querySelector("[data-notifications-toggle]");
-        if (!panel || panel.hidden) return;
-        panel.hidden = true;
-        toggle.setAttribute("aria-expanded", "false");
-        toggle.focus();
+        if (event.key === "Escape" && toast.classList.contains("notification-toast")) {
+          toast.classList.remove("show", "notification-toast");
+          toast.replaceChildren();
+        }
       });
 
       document.addEventListener("keydown", (event) => {
