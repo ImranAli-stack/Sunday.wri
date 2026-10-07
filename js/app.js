@@ -775,12 +775,10 @@
       function ensureNotificationBell() {
         let bell = document.querySelector("[data-notification-bell]");
         if (bell) return bell;
-        bell = document.createElement("a");
-        bell.className = "notification-bell";
-        bell.href = "notifications.html";
+        bell = document.createElement("div");
+        bell.className = "notification-control";
         bell.dataset.notificationBell = "";
-        bell.setAttribute("aria-label", "Notifications");
-        bell.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><span class="notification-badge" data-notification-count hidden></span>';
+        bell.innerHTML = '<button class="notification-bell" type="button" data-notifications-toggle aria-label="Notifications" aria-expanded="false" aria-controls="notificationPreview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><span class="notification-badge" data-notification-count hidden></span></button><section class="notification-preview" id="notificationPreview" data-notification-preview hidden aria-label="Recent notifications"><h2>Notifications</h2><div class="notification-preview-list" data-notification-preview-list><p class="notification-status">Loading notifications…</p></div><a class="notification-show-all" href="notifications.html">Show all</a></section>';
         headerProfile.before(bell);
         return bell;
       }
@@ -792,9 +790,54 @@
         const count = notificationItems.length;
         badge.textContent = count > 99 ? "99+" : String(count);
         badge.hidden = count === 0;
-        bell.setAttribute("aria-label", count
+        const toggle = bell.querySelector("[data-notifications-toggle]");
+        toggle?.setAttribute("aria-label", count
           ? `Notifications, ${count} unread`
           : "Notifications");
+        renderNotificationPreview();
+      }
+
+      function renderNotificationPreview() {
+        const list = document.querySelector("[data-notification-preview-list]");
+        if (!list) return;
+        if (!notificationItems.length) {
+          list.innerHTML = '<p class="notification-status">You have no unread notifications.</p>';
+          return;
+        }
+        list.replaceChildren(...notificationItems.slice(0, 5).map((notification) => {
+          const item = document.createElement("article");
+          item.className = "notification-preview-item";
+          const message = document.createElement("span");
+          message.className = "notification-message";
+          message.textContent = notificationMessage(notification);
+          item.appendChild(message);
+          if (notification.created_at) {
+            const time = document.createElement("time");
+            time.className = "notification-time";
+            time.dateTime = notification.created_at;
+            const timestamp = new Date(notification.created_at);
+            time.textContent = Number.isNaN(timestamp.getTime()) ? "" : timestamp.toLocaleString();
+            item.appendChild(time);
+          }
+          const actions = document.createElement("div");
+          actions.className = "notification-actions";
+          if (notification.post_id) {
+            const link = document.createElement("a");
+            link.className = "notification-open";
+            link.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
+            link.dataset.notificationOpen = notification.id;
+            link.textContent = "View story";
+            actions.appendChild(link);
+          }
+          const markRead = document.createElement("button");
+          markRead.className = "notification-mark-read";
+          markRead.type = "button";
+          markRead.dataset.markNotificationRead = notification.id;
+          markRead.textContent = "Mark read";
+          actions.appendChild(markRead);
+          item.appendChild(actions);
+          return item;
+        }));
       }
 
       function renderNotifications() {
@@ -1777,6 +1820,21 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const notificationBell = document.querySelector("[data-notification-bell]");
+        const notificationToggle = event.target.closest("[data-notifications-toggle]");
+        if (notificationToggle) {
+          const preview = notificationBell?.querySelector("[data-notification-preview]");
+          const open = preview?.hidden ?? true;
+          if (preview) preview.hidden = !open;
+          notificationToggle.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        if (notificationBell && !notificationBell.contains(event.target)) {
+          const preview = notificationBell.querySelector("[data-notification-preview]");
+          const toggle = notificationBell.querySelector("[data-notifications-toggle]");
+          if (preview) preview.hidden = true;
+          if (toggle) toggle.setAttribute("aria-expanded", "false");
+        }
         const markReadButton = event.target.closest("[data-mark-notification-read]");
         if (markReadButton) {
           event.preventDefault();
@@ -1903,6 +1961,16 @@
       });
 
       document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          const bell = document.querySelector("[data-notification-bell]");
+          const preview = bell?.querySelector("[data-notification-preview]");
+          const toggle = bell?.querySelector("[data-notifications-toggle]");
+          if (preview && !preview.hidden) {
+            preview.hidden = true;
+            toggle.setAttribute("aria-expanded", "false");
+            toggle.focus();
+          }
+        }
         if (event.key === "Escape" && toast.classList.contains("notification-toast")) {
           toast.classList.remove("show", "notification-toast");
           toast.replaceChildren();
