@@ -785,7 +785,7 @@
         const toggle = document.querySelector("[data-notifications-toggle]");
         if (toggle) {
           toggle.setAttribute("aria-label", notificationItems.length
-            ? `Notifications, ${notificationItems.length} total`
+            ? `Notifications, ${notificationItems.length} unread`
             : "Notifications");
         }
         if (!notificationItems.length) {
@@ -794,11 +794,8 @@
         }
 
         list.replaceChildren(...notificationItems.map((notification) => {
-          const item = document.createElement(notification.post_id ? "a" : "div");
+          const item = document.createElement("article");
           item.className = "notification-item";
-          if (notification.post_id) {
-            item.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
-          }
           const message = document.createElement("span");
           message.className = "notification-message";
           message.textContent = notificationMessage(notification);
@@ -811,6 +808,23 @@
             time.textContent = Number.isNaN(timestamp.getTime()) ? "" : timestamp.toLocaleString();
             item.appendChild(time);
           }
+          const actions = document.createElement("div");
+          actions.className = "notification-actions";
+          if (notification.post_id) {
+            const link = document.createElement("a");
+            link.className = "notification-open";
+            link.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
+            link.dataset.notificationOpen = notification.id;
+            link.textContent = "View story";
+            actions.appendChild(link);
+          }
+          const markRead = document.createElement("button");
+          markRead.className = "notification-mark-read";
+          markRead.type = "button";
+          markRead.dataset.markNotificationRead = notification.id;
+          markRead.textContent = "Mark read";
+          actions.appendChild(markRead);
+          item.appendChild(actions);
           return item;
         }));
       }
@@ -826,11 +840,13 @@
             .from("notifications")
             .select("*")
             .eq("recipient_id", user.id)
+            .eq("is_read", false)
             .order("created_at", { ascending: false });
           if (error) throw error;
           if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
           const merged = new Map();
-          [...notificationItems, ...(data || [])].forEach((item) => merged.set(item.id, item));
+          [...notificationItems, ...(data || []).filter((item) => !item.is_read)]
+            .forEach((item) => merged.set(item.id, item));
           notificationItems = [...merged.values()].sort((a, b) =>
             String(b.created_at || "").localeCompare(String(a.created_at || "")));
           renderNotifications();
@@ -867,11 +883,28 @@
               filter: `recipient_id=eq.${user.id}`
             }, (payload) => {
               if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+              if (payload.new.is_read) return;
               if (!notificationItems.some((item) => item.id === payload.new.id)) {
                 notificationItems.unshift(payload.new);
                 renderNotifications();
               }
               notify(notificationMessage(payload.new));
+            })
+            .on("postgres_changes", {
+              event: "UPDATE",
+              schema: "public",
+              table: "notifications",
+              filter: `recipient_id=eq.${user.id}`
+            }, (payload) => {
+              if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+              if (payload.new.is_read) {
+                notificationItems = notificationItems.filter((item) => item.id !== payload.new.id);
+              } else {
+                const existingIndex = notificationItems.findIndex((item) => item.id === payload.new.id);
+                if (existingIndex === -1) notificationItems.unshift(payload.new);
+                else notificationItems[existingIndex] = payload.new;
+              }
+              renderNotifications();
             })
             .subscribe((status) => {
               if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
@@ -886,6 +919,42 @@
             list.innerHTML = '<p class="notification-status" role="alert">Notifications are unavailable. Check your connection and try again.</p>';
           }
         });
+      }
+
+      async function markNotificationRead(notificationId, trigger) {
+        const user = currentUser();
+        const notification = notificationItems.find((item) => item.id === notificationId);
+        if (!user || !notification) return false;
+
+        if (trigger) trigger.disabled = true;
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to update notifications.");
+          }
+          const { error } = await client
+            .from("notifications")
+            .update({ is_read: true })
+            .eq("id", notificationId)
+            .eq("recipient_id", user.id)
+            .eq("is_read", false);
+          if (error) throw error;
+          if (notificationUserId === user.id && currentUser()?.id === user.id) {
+            notificationItems = notificationItems.filter((item) => item.id !== notificationId);
+            renderNotifications();
+          }
+          return true;
+        } catch (error) {
+          console.error("Unable to mark notification as read.", error);
+          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
+            ? error.message
+            : "This notification could not be marked as read. Please try again.");
+          return false;
+        } finally {
+          if (trigger?.isConnected) trigger.disabled = false;
+        }
       }
 
       function stopNotifications() {
@@ -1603,6 +1672,19 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const markReadButton = event.target.closest("[data-mark-notification-read]");
+        if (markReadButton) {
+          event.preventDefault();
+          await markNotificationRead(markReadButton.dataset.markNotificationRead, markReadButton);
+          return;
+        }
+        const notificationLink = event.target.closest("[data-notification-open]");
+        if (notificationLink) {
+          event.preventDefault();
+          const opened = await markNotificationRead(notificationLink.dataset.notificationOpen, notificationLink);
+          if (opened) location.href = notificationLink.href;
+          return;
+        }
         const notificationsToggle = event.target.closest("[data-notifications-toggle]");
         const notificationMenu = document.querySelector("[data-notification-menu]");
         if (notificationsToggle) {

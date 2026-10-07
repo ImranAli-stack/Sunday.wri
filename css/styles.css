@@ -441,11 +441,15 @@
     .notification-panel { position: absolute; top: calc(100% + 12px); right: 0; z-index: 20; width: min(340px, calc(100vw - 24px)); max-height: min(420px, 70vh); overflow-y: auto; padding: 14px; background: white; border: 1px solid var(--line); border-radius: 13px; box-shadow: 0 12px 36px rgba(20,18,45,.16); }
     .notification-panel h2 { margin: 0 0 9px; font-size: 13px; }
     .notification-list { display: grid; gap: 7px; }
-    .notification-item { display: grid; gap: 4px; padding: 10px; color: var(--ink); background: #faf9ff; border: 1px solid #eeeaf8; border-radius: 9px; text-decoration: none; }
-    a.notification-item:hover { border-color: #d8cff8; }
+    .notification-item { display: grid; gap: 7px; padding: 10px; color: var(--ink); background: #faf9ff; border: 1px solid #eeeaf8; border-radius: 9px; }
     .notification-message { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
     .notification-time, .notification-status { color: var(--muted); font-size: 9px; line-height: 1.5; }
     .notification-status { margin: 5px 0; }
+    .notification-actions { display: flex; justify-content: flex-end; gap: 9px; align-items: center; }
+    .notification-open, .notification-mark-read { padding: 0; color: var(--purple); background: transparent; border: 0; font-size: 9px; font-weight: 750; text-decoration: none; cursor: pointer; }
+    .notification-open:hover, .notification-mark-read:hover { color: var(--purple-dark); text-decoration: underline; }
+    .notification-open:focus-visible, .notification-mark-read:focus-visible { outline: 2px solid var(--purple); outline-offset: 3px; }
+    .notification-mark-read:disabled, .notification-open:disabled { opacity: .55; cursor: wait; }
     .auth-link { color: #6d5bd0; font-size: 11px; font-weight: 750; white-space: nowrap; }
     .auth-link:hover { color: var(--purple-dark); }
     .header-profile { display: flex; align-items: flex-start; gap: 8px; min-width: 168px; padding-left: 10px; border-left: 1px solid var(--line); }
