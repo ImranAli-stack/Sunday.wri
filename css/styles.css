@@ -283,8 +283,9 @@
     .post-content { min-width: 0; display: flex; flex-direction: column; }
     .post-author { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
     .post-author .avatar { width: 25px; height: 25px; font-size: 8px; }
-    .author-name { font-size: 10px; font-weight: 730; }
-    .post-date { font-size: 9px; color: var(--muted); }
+    .author-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 730; }
+    .post-date { color: var(--muted); font-size: 9px; white-space: nowrap; }
+    .author-follow-button { flex: 0 0 auto; padding: 4px 6px; font-size: 8px; }
     .post-title { margin: 0 0 7px; font-size: 16px; line-height: 1.3; letter-spacing: -.35px; }
     .post-excerpt { margin: 0; color: #77798c; font-size: 11px; line-height: 1.65; }
     .post-footer { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: auto; padding-top: 14px; }
@@ -478,6 +479,7 @@
     .detail-article h1 { margin: 8px 0 15px; font-size: clamp(25px, 5vw, 40px); line-height: 1.15; letter-spacing: -1.2px; }
     .detail-byline { display: flex; align-items: center; gap: 9px; margin: 15px 0 22px; }
     .detail-byline .avatar { width: 34px; height: 34px; font-size: 10px; }
+    .detail-byline > div:nth-child(2) { flex: 1; min-width: 0; }
     .detail-byline strong { display: block; font-size: 11px; }
     .detail-byline span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
     .detail-cover { position: relative; min-height: 210px; display: grid; place-items: center; overflow: hidden; margin: 18px 0 25px; border-radius: 14px; font-size: 76px; }

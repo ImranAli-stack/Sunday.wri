@@ -372,6 +372,20 @@
         writeStore("sunday.bookmarks.v1", all);
       }
 
+      function followButtonMarkup(authorId, user = currentUser()) {
+        if (!authorId || user?.id === authorId) return "";
+        return `<button class="follow-button author-follow-button" type="button" data-follow-user="${escapeHTML(authorId)}" aria-pressed="false">Follow</button>`;
+      }
+
+      function updateFollowButtons(followingIds) {
+        document.querySelectorAll("[data-follow-user]").forEach((button) => {
+          const following = followingIds.has(button.dataset.followUser);
+          button.setAttribute("aria-pressed", String(following));
+          button.classList.toggle("following", following);
+          button.textContent = following ? "Following" : "Follow";
+        });
+      }
+
       async function renderFollowSuggestions() {
         const container = document.getElementById("writerSuggestions");
         if (!container) return;
@@ -380,11 +394,6 @@
           .filter((post) => post.status === "published" && post.authorId && post.authorName)
           .filter((post) => !user || post.authorId !== user.id)
           .map((post) => [post.authorId, post])).values()].slice(0, 3);
-
-        if (!writers.length) {
-          container.innerHTML = '<p class="sidebar-promo-copy">No other writers to follow yet. Check back after more stories are published.</p>';
-          return;
-        }
 
         let followingIds = new Set();
         if (user) {
@@ -407,6 +416,12 @@
           }
         }
 
+        if (!writers.length) {
+          container.innerHTML = '<p class="sidebar-promo-copy">No other writers to follow yet. Check back after more stories are published.</p>';
+          updateFollowButtons(followingIds);
+          return;
+        }
+
         container.innerHTML = writers.map((writer) => {
           const following = followingIds.has(writer.authorId);
           const button = user
@@ -414,6 +429,7 @@
             : `<button class="follow-button" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="false">Follow</button>`;
           return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${escapeHTML(writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
         }).join("");
+        updateFollowButtons(followingIds);
       }
 
       async function toggleFollow(followButton) {
@@ -765,7 +781,7 @@
         const readingMinutes = Math.max(1, Math.ceil(post.body.trim().split(/\s+/).length / 200));
         const imageUrl = safePostImageUrl(post.imagePath);
         card.innerHTML = `<div class="post-content">
-          <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><span class="author-name">${escapeHTML(post.authorName)}</span><span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
+          <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><span class="author-name">${escapeHTML(post.authorName)}</span>${followButtonMarkup(post.authorId)}<span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
           <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
           <h3 class="post-title">${escapeHTML(post.title)}</h3>
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
@@ -811,7 +827,7 @@
         const imageUrl = safePostImageUrl(post.imagePath);
         const content = `<div class="page-view"><a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
-          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div></div>
+          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
           <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
@@ -827,6 +843,7 @@
         setPage(content, { detailOnly: true });
         renderLikeStates();
         refreshLikedPosts();
+        renderFollowSuggestions();
         if (imageUrl) {
           const image = document.createElement("img");
           image.src = imageUrl;
