@@ -464,6 +464,14 @@
     .dashboard-tabs { display: flex; gap: 7px; margin: 14px 0; }
     .dashboard-tab { padding: 8px 12px; color: #74758a; background: white; border: 1px solid var(--line); border-radius: 9px; font-size: 10px; font-weight: 700; cursor: pointer; }
     .dashboard-tab.active { color: var(--purple); background: var(--purple-pale); border-color: #e4ddff; }
+    .community-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 17px; }
+    .community-lists .page-card { min-width: 0; margin: 0; }
+    .community-lists h2 { display: flex; align-items: baseline; gap: 7px; }
+    .community-count { color: var(--muted); font-size: 11px; font-weight: 600; }
+    .community-person { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .community-person .avatar { width: 30px; height: 30px; flex: 0 0 auto; font-size: 9px; }
+    .community-person-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; }
+    .community-status { margin: 10px 0 2px; color: var(--muted); font-size: 10px; line-height: 1.5; }
     .dashboard-post { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
     .dashboard-post-main { flex: 1; min-width: 0; }
     .dashboard-post-main strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
@@ -587,6 +595,7 @@
       .footer-signoff { flex-direction: column; }
       .dashboard-stats { gap: 6px; }
       .dashboard-stat { padding: 11px; }
+      .community-lists { grid-template-columns: 1fr; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }

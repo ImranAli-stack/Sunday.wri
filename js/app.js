@@ -411,6 +411,7 @@
             followingIds = new Set(data.map((follow) => follow.following_id));
           } catch (error) {
             console.error("Unable to load followed writers.", error);
+            if (!container.isConnected) return;
             container.innerHTML = '<p class="sidebar-promo-copy">Following could not be loaded. Please refresh and try again.</p>';
             return;
           }
@@ -473,6 +474,7 @@
           }
 
           notify(isFollowing ? "You unfollowed this writer" : "You’re now following this writer");
+          if (routeParts().path === "dashboard") renderDashboard(activeDashboardTab);
         } catch (error) {
           updateButtons(isFollowing);
           console.error("Unable to update followed writers.", error);
@@ -928,7 +930,85 @@
           : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
         setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Your private space · ${escapeHTML(user.role || "writer")}</div><h1>Writer dashboard</h1><p>Welcome back, ${escapeHTML(displayName(user))}. Your drafts stay private; published stories appear here and in the public feed.</p><div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
           <div class="dashboard-stats"><div class="dashboard-stat"><strong>${allCount}</strong><span>Your stories</span></div><div class="dashboard-stat"><strong>${publishedCount}</strong><span>Public posts</span></div><div class="dashboard-stat"><strong>${posts().filter((post) => post.authorId === user.id && post.status === "draft").length}</strong><span>Private drafts</span></div></div>
+          <section class="community-lists" aria-label="Your community">
+            <section class="page-card"><h2>Following <span class="community-count" data-following-count>…</span></h2><div data-following-list><p class="community-status" role="status">Loading following…</p></div></section>
+            <section class="page-card"><h2>Followers <span class="community-count" data-followers-count>…</span></h2><div data-followers-list><p class="community-status" role="status">Loading followers…</p></div></section>
+          </section>
           <section class="page-card"><h2>Your writing</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
+        loadDashboardConnections(user);
+      }
+
+      async function loadDashboardConnections(user) {
+        const followingList = document.querySelector("[data-following-list]");
+        const followersList = document.querySelector("[data-followers-list]");
+        if (!followingList || !followersList) return;
+
+        try {
+          const client = await getSupabaseClient();
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to view your community.");
+          }
+
+          const { data: relationships, error } = await client
+            .from("follows")
+            .select("follower_id, following_id");
+          if (error) throw error;
+          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
+
+          const followingIds = [...new Set(relationships
+            .filter((relationship) => relationship.follower_id === user.id)
+            .map((relationship) => relationship.following_id))];
+          const followerIds = [...new Set(relationships
+            .filter((relationship) => relationship.following_id === user.id)
+            .map((relationship) => relationship.follower_id))];
+          const names = new Map([[user.id, displayName(user)]]);
+          const relatedIds = [...new Set([...followingIds, ...followerIds])];
+          relatedIds.forEach((id) => {
+            const localUser = users().find((account) => account.id === id);
+            if (localUser) names.set(id, displayName(localUser));
+            const localPost = posts().find((post) => post.authorId === id && post.authorName);
+            if (localPost && !names.has(id)) names.set(id, localPost.authorName);
+          });
+
+          if (relatedIds.length) {
+            const { data: authorPosts, error: postsError } = await client
+              .from("posts")
+              .select("user_id, author_name")
+              .eq("status", "published")
+              .in("user_id", relatedIds)
+              .order("created_at", { ascending: false });
+            if (postsError) throw postsError;
+            authorPosts.forEach((post) => {
+              if (post.author_name && !names.has(post.user_id)) names.set(post.user_id, post.author_name);
+            });
+          }
+          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
+
+          const renderPeople = (ids, emptyMessage) => ids.length
+            ? ids.map((id) => {
+              const name = names.get(id) || "Sunday writer";
+              return `<div class="community-person"><span class="avatar purple">${escapeHTML(initials(name))}</span><span class="community-person-name">${escapeHTML(name)}</span>${followButtonMarkup(id, user)}</div>`;
+            }).join("")
+            : `<p class="community-status">${emptyMessage}</p>`;
+
+          document.querySelector("[data-following-count]").textContent = String(followingIds.length);
+          document.querySelector("[data-followers-count]").textContent = String(followerIds.length);
+          followingList.innerHTML = renderPeople(followingIds, "You’re not following anyone yet.");
+          followersList.innerHTML = renderPeople(followerIds, "You don’t have any followers yet.");
+          updateFollowButtons(new Set(followingIds));
+        } catch (error) {
+          console.error("Unable to load dashboard followers and following.", error);
+          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
+          const message = error instanceof Error && error.message.startsWith("Your Supabase session")
+            ? error.message
+            : "Your community could not be loaded. Please refresh and try again.";
+          followingList.innerHTML = `<p class="community-status" role="alert">${escapeHTML(message)}</p>`;
+          followersList.innerHTML = `<p class="community-status" role="alert">${escapeHTML(message)}</p>`;
+          document.querySelector("[data-following-count]").textContent = "—";
+          document.querySelector("[data-followers-count]").textContent = "—";
+        }
       }
 
       function renderBookmarks() {

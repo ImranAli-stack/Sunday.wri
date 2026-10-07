@@ -15,7 +15,10 @@ drop policy if exists "Users can read their follows" on public.follows;
 create policy "Users can read their follows"
   on public.follows for select
   to authenticated
-  using (follower_id = (select auth.uid()));
+  using (
+    follower_id = (select auth.uid())
+    or following_id = (select auth.uid())
+  );
 
 drop policy if exists "Users can follow others" on public.follows;
 create policy "Users can follow others"
