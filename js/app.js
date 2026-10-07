@@ -50,6 +50,9 @@
       let likedPostIds = new Set();
       let followedUserIds = new Set();
       let friendUserIds = new Set();
+      let notificationUserId = "";
+      let notificationChannel;
+      let notificationItems = [];
 
       function notify(message) {
         toast.textContent = message;
@@ -704,6 +707,7 @@
       function updateHeader() {
         const user = currentUser();
         if (!user) {
+          stopNotifications();
           followedUserIds = new Set();
           friendUserIds = new Set();
           authLink.hidden = false;
@@ -727,6 +731,174 @@
         ensureHeaderEngagementStats();
         loadHeaderFollowCounts(user);
         loadProfileEngagementCounts(user);
+        startNotifications(user);
+      }
+
+      function ensureNotificationUI() {
+        let menu = document.querySelector("[data-notification-menu]");
+        if (menu) return menu;
+
+        menu = document.createElement("div");
+        menu.className = "notification-menu";
+        menu.dataset.notificationMenu = "";
+        const button = document.createElement("button");
+        button.className = "notification-toggle";
+        button.type = "button";
+        button.dataset.notificationsToggle = "";
+        button.setAttribute("aria-label", "Notifications");
+        button.setAttribute("aria-expanded", "false");
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>';
+        const badge = document.createElement("span");
+        badge.className = "notification-badge";
+        badge.dataset.notificationCount = "";
+        badge.hidden = true;
+        button.appendChild(badge);
+        const panel = document.createElement("section");
+        panel.className = "notification-panel";
+        panel.dataset.notificationPanel = "";
+        panel.hidden = true;
+        panel.setAttribute("aria-label", "Notifications");
+        const heading = document.createElement("h2");
+        heading.textContent = "Notifications";
+        const list = document.createElement("div");
+        list.className = "notification-list";
+        list.dataset.notificationList = "";
+        list.setAttribute("aria-live", "polite");
+        list.innerHTML = '<p class="notification-status">Loading notifications…</p>';
+        panel.append(heading, list);
+        menu.append(button, panel);
+        headerProfile.before(menu);
+        return menu;
+      }
+
+      function notificationMessage(notification) {
+        return String(notification.message || notification.content || notification.title || "You have a new notification.");
+      }
+
+      function renderNotifications() {
+        const list = document.querySelector("[data-notification-list]");
+        const badge = document.querySelector("[data-notification-count]");
+        if (!list || !badge) return;
+
+        badge.textContent = String(notificationItems.length);
+        badge.hidden = notificationItems.length === 0;
+        const toggle = document.querySelector("[data-notifications-toggle]");
+        if (toggle) {
+          toggle.setAttribute("aria-label", notificationItems.length
+            ? `Notifications, ${notificationItems.length} total`
+            : "Notifications");
+        }
+        if (!notificationItems.length) {
+          list.innerHTML = '<p class="notification-status">You’re all caught up.</p>';
+          return;
+        }
+
+        list.replaceChildren(...notificationItems.map((notification) => {
+          const item = document.createElement(notification.post_id ? "a" : "div");
+          item.className = "notification-item";
+          if (notification.post_id) {
+            item.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
+          }
+          const message = document.createElement("span");
+          message.className = "notification-message";
+          message.textContent = notificationMessage(notification);
+          item.appendChild(message);
+          if (notification.created_at) {
+            const time = document.createElement("time");
+            time.className = "notification-time";
+            time.dateTime = notification.created_at;
+            const timestamp = new Date(notification.created_at);
+            time.textContent = Number.isNaN(timestamp.getTime()) ? "" : timestamp.toLocaleString();
+            item.appendChild(time);
+          }
+          return item;
+        }));
+      }
+
+      async function loadNotifications(user, client) {
+        try {
+          const { data: authData, error: authError } = await client.auth.getUser();
+          if (authError) throw authError;
+          if (!authData.user || authData.user.id !== user.id) {
+            throw new Error("Your Supabase session has expired. Log in again to view notifications.");
+          }
+          const { data, error } = await client
+            .from("notifications")
+            .select("*")
+            .eq("recipient_id", user.id)
+            .order("created_at", { ascending: false });
+          if (error) throw error;
+          if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+          const merged = new Map();
+          [...notificationItems, ...(data || [])].forEach((item) => merged.set(item.id, item));
+          notificationItems = [...merged.values()].sort((a, b) =>
+            String(b.created_at || "").localeCompare(String(a.created_at || "")));
+          renderNotifications();
+        } catch (error) {
+          console.error("Unable to load notifications.", error);
+          const list = document.querySelector("[data-notification-list]");
+          if (!list || notificationUserId !== user.id) return;
+          const status = document.createElement("p");
+          status.className = "notification-status";
+          status.setAttribute("role", "alert");
+          status.textContent = error instanceof Error && error.message.startsWith("Your Supabase session")
+            ? error.message
+            : "Notifications could not be loaded. Check your connection and notification access policy.";
+          list.replaceChildren(status);
+        }
+      }
+
+      function startNotifications(user) {
+        if (notificationUserId === user.id) return;
+        stopNotifications();
+        notificationUserId = user.id;
+        notificationItems = [];
+        ensureNotificationUI();
+        renderNotifications();
+        getSupabaseClient().then((client) => {
+          if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+          loadNotifications(user, client);
+          notificationChannel = client
+            .channel(`notifications:${user.id}`)
+            .on("postgres_changes", {
+              event: "INSERT",
+              schema: "public",
+              table: "notifications",
+              filter: `recipient_id=eq.${user.id}`
+            }, (payload) => {
+              if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+              if (!notificationItems.some((item) => item.id === payload.new.id)) {
+                notificationItems.unshift(payload.new);
+                renderNotifications();
+              }
+              notify(notificationMessage(payload.new));
+            })
+            .subscribe((status) => {
+              if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                console.error(`Notifications realtime subscription failed: ${status}`);
+                notify("Live notifications are temporarily unavailable. Refresh to reconnect.");
+              }
+            });
+        }).catch((error) => {
+          console.error("Unable to initialize notifications.", error);
+          const list = document.querySelector("[data-notification-list]");
+          if (list && notificationUserId === user.id) {
+            list.innerHTML = '<p class="notification-status" role="alert">Notifications are unavailable. Check your connection and try again.</p>';
+          }
+        });
+      }
+
+      function stopNotifications() {
+        if (notificationChannel && supabaseClient) {
+          supabaseClient.removeChannel(notificationChannel).catch((error) => {
+            console.error("Unable to stop the notifications realtime subscription.", error);
+          });
+          notificationChannel = undefined;
+        }
+        notificationUserId = "";
+        notificationItems = [];
+        const menu = document.querySelector("[data-notification-menu]");
+        if (menu) menu.remove();
       }
 
       function ensureHeaderEngagementStats() {
@@ -1431,6 +1603,21 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const notificationsToggle = event.target.closest("[data-notifications-toggle]");
+        const notificationMenu = document.querySelector("[data-notification-menu]");
+        if (notificationsToggle) {
+          const panel = notificationMenu?.querySelector("[data-notification-panel]");
+          const open = panel?.hidden ?? true;
+          if (panel) panel.hidden = !open;
+          notificationsToggle.setAttribute("aria-expanded", String(open));
+          return;
+        }
+        if (notificationMenu && !notificationMenu.contains(event.target)) {
+          const panel = notificationMenu.querySelector("[data-notification-panel]");
+          const toggle = notificationMenu.querySelector("[data-notifications-toggle]");
+          if (panel) panel.hidden = true;
+          if (toggle) toggle.setAttribute("aria-expanded", "false");
+        }
         const followButton = event.target.closest("[data-follow-user]");
         if (followButton) {
           event.preventDefault();
@@ -1541,6 +1728,17 @@
         }
         const card = event.target.closest(".post-card[data-post-id]");
         if (card && !event.target.closest("button")) navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const menu = document.querySelector("[data-notification-menu]");
+        const panel = menu?.querySelector("[data-notification-panel]");
+        const toggle = menu?.querySelector("[data-notifications-toggle]");
+        if (!panel || panel.hidden) return;
+        panel.hidden = true;
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.focus();
       });
 
       document.addEventListener("keydown", (event) => {
