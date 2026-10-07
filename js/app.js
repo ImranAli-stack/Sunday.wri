@@ -1146,7 +1146,29 @@
       }
 
       function renderAbout() {
-        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Sunday is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Sunday is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section><section class="page-card"><h2>A gentle set of guidelines</h2><p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p></section></div>`, { contentOnly: true });
+        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Sunday is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Sunday is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section>
+          <section class="page-card"><h2>Start earning with your writing</h2><p>Turn your words into an opportunity with Sunday. Write, share your ideas, build your audience, and work toward earning from your content.</p>
+            <h3>How it works</h3>
+            <ol class="monetization-steps">
+              <li><strong>Create your Sunday account.</strong> Sign up for free and complete your writer profile.</li>
+              <li><strong>Start writing.</strong> Publish original blogs, articles, poetry, stories, educational content, and other valuable writing.</li>
+              <li><strong>Build your audience.</strong> Gain followers and encourage readers to engage through likes, comments, and shares.</li>
+              <li><strong>Meet the monetization criteria.</strong> Eligibility requires:
+                <ul>
+                  <li>At least <strong>500 followers</strong>.</li>
+                  <li>At least <strong>100 genuine engagements</strong>.</li>
+                  <li>Original, high-quality content.</li>
+                  <li>Following Sunday’s Community Guidelines.</li>
+                  <li>No serious copyright, plagiarism, spam, or policy violations.</li>
+                  <li>An active account in good standing.</li>
+                </ul>
+              </li>
+              <li><strong>Apply for monetization.</strong> Once eligible, apply to the Sunday Monetization Program from your Earnings Dashboard.</li>
+              <li><strong>Get approved and start earning.</strong> After review and approval, eligible content may generate earnings based on genuine reader activity and engagement.</li>
+            </ol>
+            <h3>How earnings are calculated</h3><p>Earnings may depend on genuine article views, reader engagement, reading time, likes, comments, other interactions, and overall content quality. Meeting the eligibility criteria does not guarantee approval or earnings.</p>
+          </section>
+          <section class="page-card"><h2>A gentle set of guidelines</h2><p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p></section></div>`, { contentOnly: true });
       }
 
       function renderContact() {
