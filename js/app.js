@@ -54,6 +54,7 @@
       let notificationChannel;
       let notificationItems = [];
       let notificationHistory = [];
+      let notificationReadIds = new Set();
 
       function notify(message) {
         toast.classList.remove("notification-toast");
@@ -864,7 +865,8 @@
           if (error) throw error;
           if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
           const merged = new Map();
-          [...notificationItems, ...(data || []).filter((item) => !item.is_read)]
+          [...notificationItems.filter((item) => !notificationReadIds.has(item.id)),
+            ...(data || []).filter((item) => !item.is_read && !notificationReadIds.has(item.id))]
             .forEach((item) => merged.set(item.id, item));
           notificationItems = [...merged.values()].sort((a, b) =>
             String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -926,7 +928,9 @@
               if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
               if (payload.new.is_read) {
                 notificationItems = notificationItems.filter((item) => item.id !== payload.new.id);
+                notificationReadIds.add(payload.new.id);
               } else {
+                notificationReadIds.delete(payload.new.id);
                 const existingIndex = notificationItems.findIndex((item) => item.id === payload.new.id);
                 if (existingIndex === -1) notificationItems.unshift(payload.new);
                 else notificationItems[existingIndex] = payload.new;
@@ -966,14 +970,25 @@
           if (!authData.user || authData.user.id !== user.id) {
             throw new Error("Your Supabase session has expired. Log in again to update notifications.");
           }
-          const { error } = await client
+          const { error: updateError } = await client
             .from("notifications")
             .update({ is_read: true })
             .eq("id", notificationId)
             .eq("recipient_id", user.id)
-            .eq("is_read", false);
-          if (error) throw error;
+            .eq("is_read", false)
+            .select("id, is_read")
+            .maybeSingle();
+          if (updateError) throw updateError;
+          const { data: updated, error: verifyError } = await client
+            .from("notifications")
+            .select("id, is_read")
+            .eq("id", notificationId)
+            .eq("recipient_id", user.id)
+            .maybeSingle();
+          if (verifyError) throw verifyError;
+          if (!updated?.is_read) throw new Error("Supabase did not save this notification as read. Check the notifications update policy.");
           if (notificationUserId === user.id && currentUser()?.id === user.id) {
+            notificationReadIds.add(notificationId);
             notificationItems = notificationItems.filter((item) => item.id !== notificationId);
             const historyIndex = notificationHistory.findIndex((item) => item.id === notificationId);
             if (historyIndex !== -1) notificationHistory[historyIndex] = { ...notificationHistory[historyIndex], is_read: true };
@@ -1027,6 +1042,10 @@
           notificationHistory.forEach((item) => historyById.set(item.id, item));
           notificationHistory = [...historyById.values()].sort((a, b) =>
             String(b.created_at || "").localeCompare(String(a.created_at || "")));
+          notificationHistory.forEach((item) => {
+            if (item.is_read) notificationReadIds.add(item.id);
+            else notificationReadIds.delete(item.id);
+          });
           notificationItems = notificationHistory.filter((item) => !item.is_read);
           renderNotifications();
         } catch (error) {
@@ -1050,6 +1069,7 @@
         notificationUserId = "";
         notificationItems = [];
         notificationHistory = [];
+        notificationReadIds = new Set();
         const bell = document.querySelector("[data-notification-bell]");
         if (bell) bell.remove();
       }
