@@ -353,7 +353,7 @@
           const following = followingIds.has(writer.authorId);
           const button = user
             ? `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`
-            : '<a class="follow-button" href="login.html">Log in</a>';
+            : `<button class="follow-button" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="false">Follow</button>`;
           return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${escapeHTML(writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
         }).join("");
       }
@@ -361,7 +361,8 @@
       async function toggleFollow(followButton) {
         const user = currentUser();
         if (!user) {
-          navigate("login.html");
+          sessionStorage.setItem("sunday.next", "home");
+          navigate("#login");
           return;
         }
         const targetId = followButton.dataset.followUser;
