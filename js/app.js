@@ -1150,12 +1150,12 @@
       }
 
       function renderContact() {
-        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Fill in the details below and Send will open a message in your email app.</p><form id="contactForm" data-contact-form>
+        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Send your message to the Sunday team.</p><form id="contactForm" data-contact-form>
           <div class="form-field"><label for="contactName">Name</label><input id="contactName" name="name" autocomplete="name" maxlength="80" required></div>
-          <div class="form-field"><label for="contactFatherName">Father name</label><input id="contactFatherName" name="fatherName" maxlength="80" required></div>
           <div class="form-field"><label for="contactEmail">Email</label><input id="contactEmail" name="email" type="email" autocomplete="email" maxlength="254" required></div>
-          <div class="form-field"><label for="contactPurpose">Purpose</label><input id="contactPurpose" name="purpose" maxlength="120" required placeholder="How can we help?"></div>
-          <button class="primary-button" type="submit">Send</button><p class="form-note" data-contact-status role="status">Your email app will address the message to hello@sunday.com.</p>
+          <div class="form-field"><label for="contactSubject">Subject</label><input id="contactSubject" name="subject" maxlength="150" required></div>
+          <div class="form-field"><label for="contactMessage">Message</label><textarea id="contactMessage" name="message" rows="6" maxlength="5000" required></textarea></div>
+          <button class="primary-button" type="submit">Send</button><p class="form-note" data-contact-status role="status"></p>
         </form></section></div>`, { contentOnly: true });
       }
 
@@ -1520,20 +1520,26 @@
           event.preventDefault();
           const formData = new FormData(form);
           const name = String(formData.get("name") || "").trim();
-          const fatherName = String(formData.get("fatherName") || "").trim();
           const email = String(formData.get("email") || "").trim();
-          const purpose = String(formData.get("purpose") || "").trim();
-          const subject = `Sunday contact: ${purpose}`;
-          const body = [
-            `Name: ${name}`,
-            `Father name: ${fatherName}`,
-            `Email: ${email}`,
-            `Purpose: ${purpose}`
-          ].join("\n");
-          const mailto = `mailto:hello@sunday.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          const subject = String(formData.get("subject") || "").trim();
+          const message = String(formData.get("message") || "").trim();
           const status = form.querySelector("[data-contact-status]");
-          status.textContent = "Opening your email app with your message. Send it there to contact Sunday.";
-          window.location.href = mailto;
+          const submitButton = form.querySelector('button[type="submit"]');
+          submitButton.disabled = true;
+          status.textContent = "Sending your message…";
+          try {
+            const { error } = await (await getSupabaseClient())
+              .from("contact")
+              .insert([{ name, email, subject, message }]);
+            if (error) throw error;
+            status.textContent = "Your message was sent. Thank you for contacting Sunday.";
+            form.reset();
+          } catch (error) {
+            console.error("Unable to submit contact form.", error);
+            status.textContent = "Your message could not be sent. Please try again later.";
+          } finally {
+            submitButton.disabled = false;
+          }
           return;
         }
         if (form.id === "authForm") {
