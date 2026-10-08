@@ -176,6 +176,7 @@
         });
         if (liked) likedPostIds.add(postId);
         else likedPostIds.delete(postId);
+        renderTrendingPosts();
         refreshProfileEngagementForPost(postId);
       }
 
@@ -1316,6 +1317,7 @@
         posts().filter((post) => post.status === "published")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .forEach((post) => cardList.appendChild(createPostCard(post)));
+        renderTrendingPosts();
         renderLikeStates();
         refreshLikedPosts();
         const savedBookmarks = bookmarkList();
@@ -1329,7 +1331,9 @@
         });
         const queryInput = document.getElementById("searchInput");
         const sortSelect = document.getElementById("sortSelect");
-        const requestedTopic = routeParts().params.get("topic");
+        const routeParams = routeParts().params;
+        const requestedTopic = routeParams.get("topic");
+        const requestedTag = routeParams.get("tag")?.replace(/^#/, "").toLowerCase() || "";
         let topic = STORY_CATEGORIES.find((category) => category.toLowerCase() === requestedTopic?.toLowerCase()) || "All";
         document.querySelectorAll("[data-topic]").forEach((button) => {
           button.classList.toggle("selected", button.dataset.topic.toLowerCase() === topic.toLowerCase());
@@ -1340,14 +1344,19 @@
           cardList.querySelectorAll(".post-card").forEach((card) => {
             const category = card.dataset.category.toLowerCase();
             const legacyCategories = LEGACY_CATEGORY_GROUPS[topic] || [];
+            const postTags = extractPostTags(card.dataset.fullBody || "", card.dataset.title || "");
+            const matchingTag = !requestedTag || postTags.some((tag) => tag.toLowerCase() === requestedTag)
+              || category.replace(/[^a-z0-9]+/g, "").toLowerCase() === requestedTag.replace(/[^a-z0-9]+/g, "");
             const matches = (topic === "All" || category === topic.toLowerCase() || legacyCategories.includes(category))
-              && (!query || card.textContent.toLowerCase().includes(query));
+              && matchingTag
+              && (!query || card.textContent.toLowerCase().includes(query) || (card.dataset.fullBody || "").toLowerCase().includes(query));
             card.hidden = !matches;
             if (matches) count++;
           });
           document.getElementById("emptyState").style.display = count ? "none" : "block";
           document.getElementById("resultCount").textContent = query || topic !== "All"
             ? `${count} ${count === 1 ? "story" : "stories"} found`
+            : requestedTag ? `${count} ${count === 1 ? "story" : "stories"} tagged #${requestedTag}`
             : "All the good things, in one place.";
         }
         function sort() {
@@ -1372,6 +1381,38 @@
         filter();
         renderFollowSuggestions();
         document.querySelectorAll(".top-nav a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === "#home"));
+      }
+
+      function extractPostTags(...values) {
+        const tags = new Set();
+        values.join(" ").match(/#[\p{L}\p{N}_-]+/gu)?.forEach((tag) => {
+          tags.add(tag.slice(1));
+        });
+        return [...tags].slice(0, 3);
+      }
+
+      function renderTrendingPosts() {
+        const container = document.getElementById("trendingPosts");
+        if (!container) return;
+        const trending = posts()
+          .filter((post) => post.status === "published" && Number(post.likes) > 0)
+          .sort((a, b) => (Number(b.likes) || 0) - (Number(a.likes) || 0)
+            || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
+          .slice(0, 3);
+        if (!trending.length) {
+          container.innerHTML = '<p class="sidebar-promo-copy">Popular public stories will appear here as they receive likes.</p>';
+          return;
+        }
+        container.innerHTML = trending.map((post, index) => {
+          const tags = extractPostTags(post.title || "", post.body || "");
+          if (!tags.length && post.category) {
+            const categoryTag = String(post.category).replace(/[^\p{L}\p{N}_-]+/gu, "");
+            if (categoryTag) tags.push(categoryTag);
+          }
+          const tagLinks = tags.map((tag) =>
+            `<a class="trending-tag" href="index.html?tag=${encodeURIComponent(tag)}">#${escapeHTML(tag)}</a>`).join("");
+          return `<article class="trending-item"><span class="trend-number">${String(index + 1).padStart(2, "0")}</span><div class="trending-copy"><a class="trending-story" href="post.html?id=${encodeURIComponent(post.id)}">${escapeHTML(post.title)}</a><span>${escapeHTML(post.category)} · ${Number(post.likes) || 0} ${Number(post.likes) === 1 ? "like" : "likes"}</span>${tagLinks ? `<div class="trending-tags">${tagLinks}</div>` : ""}</div></article>`;
+        }).join("");
       }
 
       function createPostCard(post) {

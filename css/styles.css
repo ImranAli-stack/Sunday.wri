@@ -371,8 +371,13 @@
     .follow-button.friends { color: #5c4cae; border-color: #ddd5ff; background: #f2efff; }
     .trending-item { display: flex; gap: 9px; margin: 12px 0 3px; }
     .trend-number { color: #c6c6d1; font-size: 13px; font-weight: 800; }
-    .trending-item strong { display: block; font-size: 9px; line-height: 1.45; }
-    .trending-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .trending-copy { min-width: 0; }
+    .trending-story { display: block; font-size: 9px; font-weight: 750; line-height: 1.45; }
+    .trending-story:hover { color: var(--purple-dark); }
+    .trending-copy > span { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .trending-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .trending-tag { color: var(--purple); font-size: 8px; font-weight: 700; }
+    .trending-tag:hover { color: var(--purple-dark); text-decoration: underline; }
     .footer-note { padding: 1px 4px; color: #a0a1b1; font-size: 8px; line-height: 1.8; }
     .footer-note a:hover { color: var(--purple); }
 
