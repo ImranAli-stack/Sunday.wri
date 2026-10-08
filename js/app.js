@@ -55,6 +55,7 @@
       let notificationItems = [];
       let notificationHistory = [];
       let notificationReadIds = new Set();
+      let notificationActors = new Map();
 
       function notify(message) {
         toast.classList.remove("notification-toast");
@@ -772,6 +773,44 @@
         return String(notification.message || notification.content || notification.title || "You have a new notification.");
       }
 
+      function createNotificationMessage(notification) {
+        const text = notificationMessage(notification);
+        const actorName = notification.actor_id && notificationActors.get(notification.actor_id);
+        const message = document.createElement("span");
+        message.className = "notification-message";
+        if (!actorName || !text.startsWith("Someone")) {
+          message.textContent = text;
+          return message;
+        }
+        const profileLink = document.createElement("a");
+        profileLink.className = "notification-account-link";
+        profileLink.href = `profile.html?id=${encodeURIComponent(notification.actor_id)}`;
+        profileLink.textContent = actorName;
+        message.append(profileLink, document.createTextNode(text.slice("Someone".length)));
+        return message;
+      }
+
+      async function loadNotificationActors(client, notifications) {
+        const actorIds = [...new Set(notifications.map((item) => item.actor_id).filter(Boolean))];
+        if (!actorIds.length) return;
+        try {
+          const { data, error } = await client
+            .from("Sunday.Wri Tables")
+            .select('id, "Full Name", "Poetic Name"')
+            .in("id", actorIds);
+          if (error) throw error;
+          const actors = new Map(notificationActors);
+          (data || []).forEach((profile) => actors.set(
+            String(profile.id),
+            profile["Poetic Name"] || profile["Full Name"] || "Sunday member"
+          ));
+          notificationActors = actors;
+        } catch (error) {
+          console.error("Unable to load notification account names.", error);
+          notificationActors = new Map();
+        }
+      }
+
       function ensureNotificationBell() {
         let bell = document.querySelector("[data-notification-bell]");
         if (bell) return bell;
@@ -807,10 +846,7 @@
         list.replaceChildren(...notificationItems.slice(0, 5).map((notification) => {
           const item = document.createElement("article");
           item.className = "notification-preview-item";
-          const message = document.createElement("span");
-          message.className = "notification-message";
-          message.textContent = notificationMessage(notification);
-          item.appendChild(message);
+          item.appendChild(createNotificationMessage(notification));
           if (notification.created_at) {
             const time = document.createElement("time");
             time.className = "notification-time";
@@ -852,10 +888,7 @@
         list.replaceChildren(...notificationHistory.map((notification) => {
           const item = document.createElement("article");
           item.className = `notification-item${notification.is_read ? " is-read" : " is-unread"}`;
-          const message = document.createElement("span");
-          message.className = "notification-message";
-          message.textContent = notificationMessage(notification);
-          item.appendChild(message);
+          item.appendChild(createNotificationMessage(notification));
           if (notification.created_at) {
             const time = document.createElement("time");
             time.className = "notification-time";
@@ -907,6 +940,7 @@
             .order("created_at", { ascending: false });
           if (error) throw error;
           if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
+          await loadNotificationActors(client, data || []);
           const merged = new Map();
           [...notificationItems.filter((item) => !notificationReadIds.has(item.id)),
             ...(data || []).filter((item) => !item.is_read && !notificationReadIds.has(item.id))]
@@ -918,6 +952,7 @@
           if (latestUnread && routeParts().path !== "notifications") notifyNotification(latestUnread);
         } catch (error) {
           console.error("Unable to load notifications.", error);
+          notificationActors = new Map();
           const list = document.querySelector("[data-notifications-list]");
           if (!list || notificationUserId !== user.id) return;
           const status = document.createElement("p");
@@ -947,9 +982,10 @@
               schema: "public",
               table: "notifications",
               filter: `recipient_id=eq.${user.id}`
-            }, (payload) => {
+            }, async (payload) => {
               if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
               if (payload.new.is_read) return;
+              await loadNotificationActors(client, [payload.new]);
               if (!notificationItems.some((item) => item.id === payload.new.id)) {
                 notificationItems.unshift(payload.new);
               }
@@ -1081,6 +1117,7 @@
             .order("created_at", { ascending: false });
           if (error) throw error;
           if (!list.isConnected || currentUser()?.id !== user.id) return;
+          await loadNotificationActors(client, data || []);
           const historyById = new Map((data || []).map((item) => [item.id, item]));
           notificationHistory.forEach((item) => historyById.set(item.id, item));
           notificationHistory = [...historyById.values()].sort((a, b) =>
@@ -1113,6 +1150,7 @@
         notificationItems = [];
         notificationHistory = [];
         notificationReadIds = new Set();
+        notificationActors = new Map();
         const bell = document.querySelector("[data-notification-bell]");
         if (bell) bell.remove();
       }
@@ -1230,7 +1268,8 @@
           home: "index.html", about: "about.html", contact: "contact.html",
           competitions: "competitions.html", login: "login.html", signup: "signup.html",
           dashboard: "dashboard.html", write: "write.html", bookmarks: "bookmarks.html",
-          settings: "settings.html", post: "post.html", notifications: "notifications.html"
+          settings: "settings.html", post: "post.html", notifications: "notifications.html",
+          profile: "profile.html"
         }[path];
         if (!page) {
           location.href = "index.html";
@@ -1509,6 +1548,43 @@
         const targetId = location.hash.slice(1);
         if (["userStories", "userFollowers", "userFollowing"].includes(targetId)) {
           requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ block: "start" }));
+        }
+      }
+
+      async function renderPublicProfile(userId) {
+        if (!userId) {
+          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This profile link is missing an account ID.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+          return;
+        }
+        setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
+        try {
+          const client = await getSupabaseClient();
+          const [{ data: profiles, error: profileError }, { data: stories, error: storiesError }] = await Promise.all([
+            client.from("Sunday.Wri Tables")
+              .select('id, "Full Name", "Poetic Name"')
+              .eq("id", userId)
+              .limit(1),
+            client.from("posts")
+              .select("id, title, category, author_name, created_at")
+              .eq("user_id", userId)
+              .eq("status", "published")
+              .order("created_at", { ascending: false })
+          ]);
+          if (profileError) throw profileError;
+          if (storiesError) throw storiesError;
+          const profile = profiles[0];
+          if (!profile) {
+            setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+            return;
+          }
+          const name = profile["Poetic Name"] || profile["Full Name"] || "Sunday member";
+          const rows = stories.length
+            ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div>`).join("")
+            : '<p class="community-status">No public stories yet.</p>';
+          setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(profile["Full Name"] || "Sunday community member")}</p><div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${stories.length}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
+        } catch (error) {
+          console.error("Unable to load public profile.", error);
+          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
         }
       }
 
@@ -1808,6 +1884,7 @@
         if (path === "competitions") { renderCompetitions(); return; }
         if (path === "notifications") { renderNotificationsPage(); return; }
         if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
+        if (path === "profile") { renderPublicProfile(params.get("id") || ""); return; }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") {
           renderWriter("", params.get("edit") || "");

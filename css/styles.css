@@ -451,6 +451,9 @@
     .notification-item.is-unread { background: #f7f4ff; border-color: #ddd5ff; }
     .notification-item.is-read { background: #fbfbfd; }
     .notification-message { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+    .notification-account-link { color: var(--ink); font-weight: 800; text-decoration: underline; text-decoration-color: #b7aaff; text-underline-offset: 2px; }
+    .notification-account-link:hover { color: var(--purple-dark); }
+    .notification-account-link:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
     .notification-time, .notification-status { color: var(--muted); font-size: 9px; line-height: 1.5; }
     .notification-status { margin: 5px 0; }
     .notification-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }

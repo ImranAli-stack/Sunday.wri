@@ -1,3 +1,6 @@
+alter table public.notifications
+  add column if not exists actor_id uuid references auth.users (id) on delete set null;
+
 create or replace function public.notify_post_like()
 returns trigger
 language plpgsql
@@ -18,9 +21,10 @@ begin
     return new;
   end if;
 
-  insert into public.notifications (recipient_id, post_id, message, is_read)
+  insert into public.notifications (recipient_id, actor_id, post_id, message, is_read)
   values (
     post_author_id,
+    new.user_id,
     new.post_id,
     'Someone liked your post: "' || coalesce(post_title, 'Untitled story') || '"',
     false
@@ -50,9 +54,10 @@ begin
     return new;
   end if;
 
-  insert into public.notifications (recipient_id, post_id, message, is_read)
+  insert into public.notifications (recipient_id, actor_id, post_id, message, is_read)
   values (
     post_author_id,
+    new.user_id,
     new.post_id,
     'Someone commented on your post: "' || coalesce(post_title, 'Untitled story') || '"',
     false
