@@ -480,6 +480,12 @@
     .header-profile-stats strong { color: var(--ink); font-size: 7px; }
     .page-view { width: min(820px, 100%); margin: 0 auto; }
     .page-hero { padding: 29px; margin-bottom: 18px; border-radius: 18px; background: linear-gradient(120deg, #eeeaff, #f9f6ff 68%, #f2fbf6); border: 1px solid #eae5fa; }
+    .public-profile-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px; }
+    .public-profile-avatar { width: 76px; height: 76px; border-radius: 50%; object-fit: cover; }
+    .public-profile-copy { min-width: 0; }
+    .public-profile-copy h1 { overflow-wrap: anywhere; }
+    .public-profile-copy p { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .public-profile-hero .profile-stats { grid-column: 1 / -1; margin-top: 0; }
     .page-kicker { color: var(--purple); font-size: 10px; font-weight: 850; letter-spacing: 1.4px; text-transform: uppercase; }
     .page-hero h1 { margin: 8px 0 8px; font-size: clamp(25px, 4vw, 36px); letter-spacing: -1.2px; }
     .page-hero p { max-width: 610px; margin: 0; color: #72748b; font-size: 13px; line-height: 1.7; }

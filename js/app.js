@@ -1559,11 +1559,11 @@
         setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
         try {
           const client = await getSupabaseClient();
-          const [{ data: profiles, error: profileError }, { data: stories, error: storiesError }] = await Promise.all([
+          const [{ data: profile, error: profileError }, { data: stories, error: storiesError }] = await Promise.all([
             client.from("Sunday.Wri Tables")
-              .select('id, "Full Name", "Poetic Name"')
+              .select('id, "Full Name", "Poetic Name", "Avatar URL", "Bio"')
               .eq("id", userId)
-              .limit(1),
+              .maybeSingle(),
             client.from("posts")
               .select("id, title, category, author_name, created_at")
               .eq("user_id", userId)
@@ -1572,19 +1572,42 @@
           ]);
           if (profileError) throw profileError;
           if (storiesError) throw storiesError;
-          const profile = profiles[0];
           if (!profile) {
             setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
             return;
           }
           const name = profile["Poetic Name"] || profile["Full Name"] || "Sunday member";
+          const avatarUrl = safePublicAvatarUrl(profile["Avatar URL"]);
+          const bio = typeof profile.Bio === "string" ? profile.Bio.trim() : "";
           const rows = stories.length
             ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div>`).join("")
             : '<p class="community-status">No public stories yet.</p>';
-          setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(profile["Full Name"] || "Sunday community member")}</p><div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${stories.length}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
+          setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
+            ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="" referrerpolicy="no-referrer">`
+            : `<span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>`}
+            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(bio || profile["Full Name"] || "Sunday community member")}</p></div>
+            <div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${stories.length}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
+          const profileAvatar = document.querySelector("[data-public-profile-avatar]");
+          profileAvatar?.addEventListener("error", () => {
+            const fallback = document.createElement("span");
+            fallback.className = "avatar purple public-profile-avatar";
+            fallback.setAttribute("aria-hidden", "true");
+            fallback.textContent = initials(name);
+            profileAvatar.replaceWith(fallback);
+          }, { once: true });
         } catch (error) {
           console.error("Unable to load public profile.", error);
           setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+        }
+      }
+
+      function safePublicAvatarUrl(value) {
+        if (typeof value !== "string" || value.length > 2048) return "";
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+        } catch {
+          return "";
         }
       }
 
