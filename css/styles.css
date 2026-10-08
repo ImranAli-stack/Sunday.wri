@@ -124,11 +124,16 @@
     .search-person { display: flex; align-items: center; gap: 9px; min-height: 42px; padding: 5px 8px; }
     .search-person .avatar { width: 28px; height: 28px; font-size: 8px; flex: 0 0 auto; }
     .search-person-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; }
-    .search-post { display: block; padding: 8px 9px; color: inherit; border-radius: 8px; text-decoration: none; }
+    .search-post { display: block; padding: 8px 9px; color: inherit; border-radius: 8px; }
     .search-post:hover, .search-post:focus-visible { background: #f7f6fb; }
-    .search-post strong, .search-post span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .search-post > a { display: block; color: inherit; text-decoration: none; }
+    .search-post > a:hover strong { color: var(--purple); }
+    .search-post strong, .search-post > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .search-post strong { font-size: 11px; }
-    .search-post span { margin-top: 4px; color: var(--muted); font-size: 9px; }
+    .search-post > span { margin-top: 4px; color: var(--muted); font-size: 9px; }
+    .profile-name-link { color: inherit; text-decoration: none; text-underline-offset: 2px; }
+    .profile-name-link:hover { color: var(--purple-dark); text-decoration: underline; }
+    .profile-name-link:focus-visible { border-radius: 2px; outline: 2px solid var(--purple); outline-offset: 2px; }
     .write-button, .primary-button {
       border: 0;
       display: inline-flex;
@@ -553,7 +558,7 @@
     .comment-list { display: grid; gap: 12px; }
     .comment-item { padding: 13px 15px; border: 1px solid var(--line); border-radius: 11px; background: #fdfdff; }
     .comment-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-    .comment-header strong { font-size: 11px; }
+    .comment-header strong, .comment-header a { font-size: 11px; }
     .comment-header time { color: var(--muted); font-size: 9px; }
     .comment-delete { flex: 0 0 auto; padding: 0; color: #a1364d; background: none; border: 0; font-size: 10px; font-weight: 700; cursor: pointer; }
     .comment-delete:hover { text-decoration: underline; }

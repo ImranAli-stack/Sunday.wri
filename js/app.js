@@ -401,6 +401,13 @@
         return user?.poeticName || user?.name || "Writer";
       }
 
+      function publicProfileLink(userId, name, className = "") {
+        const safeName = escapeHTML(name);
+        if (!userId) return `<span${className ? ` class="${className}"` : ""}>${safeName}</span>`;
+        const classes = ["profile-name-link", className].filter(Boolean).join(" ");
+        return `<a class="${classes}" href="profile.html?id=${encodeURIComponent(userId)}">${safeName}</a>`;
+      }
+
       function canWrite(user) {
         return user && (user.role === "writer" || user.role === "both" || !user.role);
       }
@@ -509,7 +516,7 @@
           const button = user
             ? `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`
             : `<button class="follow-button" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="false">Follow</button>`;
-          return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${escapeHTML(writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
+          return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${publicProfileLink(writer.authorId, writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
         }).join("");
         updateFollowButtons(followingIds);
       }
@@ -630,11 +637,11 @@
               const followControl = isSelf
                 ? ""
                 : `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.id)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`;
-              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(writer.name))}</span><span class="search-person-name">${escapeHTML(writer.name)}</span>${followControl}</div>`;
+              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(writer.name))}</span>${publicProfileLink(writer.id, writer.name, "search-person-name")}${followControl}</div>`;
             }).join("")}</section>`
             : "";
           const postSection = matchingPosts.length
-            ? `<section class="search-result-section"><h2>Stories</h2>${matchingPosts.map((post) => `<a class="search-post" href="post.html?id=${encodeURIComponent(post.id)}"><strong>${escapeHTML(post.title)}</strong><span>By ${escapeHTML(post.authorName)} · ${escapeHTML(post.category)}</span></a>`).join("")}</section>`
+            ? `<section class="search-result-section"><h2>Stories</h2>${matchingPosts.map((post) => `<div class="search-post"><a href="post.html?id=${encodeURIComponent(post.id)}"><strong>${escapeHTML(post.title)}</strong></a><span>By ${publicProfileLink(post.authorId, post.authorName)} · ${escapeHTML(post.category)}</span></div>`).join("")}</section>`
             : "";
           if (!writerSection && !postSection) {
             showMessage("No matching writers or stories found.");
@@ -1380,7 +1387,7 @@
         const readingMinutes = Math.max(1, Math.ceil(post.body.trim().split(/\s+/).length / 200));
         const imageUrl = safePostImageUrl(post.imagePath);
         card.innerHTML = `<div class="post-content">
-          <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><span class="author-name">${escapeHTML(post.authorName)}</span>${followButtonMarkup(post.authorId)}<span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
+          <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div>${publicProfileLink(post.authorId, post.authorName, "author-name")}${followButtonMarkup(post.authorId)}<span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
           <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
           <h3 class="post-title">${escapeHTML(post.title)}</h3>
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
@@ -1426,7 +1433,7 @@
         const imageUrl = safePostImageUrl(post.imagePath);
         const content = `<div class="page-view"><a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
-          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${escapeHTML(post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
+          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${publicProfileLink(post.authorId, post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
           <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
@@ -1462,8 +1469,12 @@
         item.dataset.commentId = comment.id;
         const header = document.createElement("div");
         header.className = "comment-header";
-        const author = document.createElement("strong");
+        const author = comment.user_id ? document.createElement("a") : document.createElement("strong");
         author.textContent = comment.author_name || "Sunday reader";
+        if (comment.user_id) {
+          author.href = `profile.html?id=${encodeURIComponent(comment.user_id)}`;
+          author.className = "profile-name-link comment-author-link";
+        }
         const date = document.createElement("time");
         date.dateTime = comment.created_at;
         date.textContent = formatDate(comment.created_at);
@@ -1664,7 +1675,7 @@
           const renderPeople = (ids, emptyMessage) => ids.length
             ? ids.map((id) => {
               const name = names.get(id) || "Sunday writer";
-              return `<div class="community-person"><span class="avatar purple">${escapeHTML(initials(name))}</span><span class="community-person-name">${escapeHTML(name)}</span>${followButtonMarkup(id, user)}</div>`;
+              return `<div class="community-person"><span class="avatar purple">${escapeHTML(initials(name))}</span>${publicProfileLink(id, name, "community-person-name")}${followButtonMarkup(id, user)}</div>`;
             }).join("")
             : `<p class="community-status">${emptyMessage}</p>`;
 
@@ -1694,7 +1705,7 @@
         const savedPosts = posts();
         const stories = bookmarkList().map((id) => savedPosts.find((post) => post.id === id))
           .filter((post) => post && (post.status === "published" || post.authorId === currentUser()?.id));
-        const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${escapeHTML(post.authorName)}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div>`).join("")
+        const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${publicProfileLink(post.authorId, post.authorName)}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div>`).join("")
           : '<div class="empty-dashboard">Your reading list is waiting. Bookmark a story from the public feed and it will be saved here.</div>';
         setPage(`<div class="page-view">${pageHero("Saved for another day", "Your bookmarks", "A personal reading list of stories you want to come back to.")}<section class="page-card">${rows}</section></div>`, { contentOnly: true });
       }
@@ -2057,7 +2068,7 @@
           return;
         }
         const card = event.target.closest(".post-card[data-post-id]");
-        if (card && !event.target.closest("button")) navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
+        if (card && !event.target.closest("button, a")) navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
       });
 
       document.addEventListener("keydown", (event) => {
