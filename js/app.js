@@ -403,9 +403,11 @@
 
       function publicProfileLink(userId, name, className = "") {
         const safeName = escapeHTML(name);
-        if (!userId) return `<span${className ? ` class="${className}"` : ""}>${safeName}</span>`;
+        const profileUrl = userId
+          ? `profile.html?id=${encodeURIComponent(userId)}`
+          : `profile.html?name=${encodeURIComponent(name)}`;
         const classes = ["profile-name-link", className].filter(Boolean).join(" ");
-        return `<a class="${classes}" href="profile.html?id=${encodeURIComponent(userId)}">${safeName}</a>`;
+        return `<a class="${classes}" href="${profileUrl}">${safeName}</a>`;
       }
 
       function canWrite(user) {
@@ -1562,31 +1564,60 @@
         }
       }
 
-      async function renderPublicProfile(userId) {
-        if (!userId) {
+      async function renderPublicProfile(userId, profileName = "") {
+        if (!userId && !profileName.trim()) {
           setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This profile link is missing an account ID.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
           return;
         }
         setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
         try {
           const client = await getSupabaseClient();
-          const [{ data: profile, error: profileError }, { data: stories, error: storiesError }] = await Promise.all([
-            client.from("Sunday.Wri Tables")
-              .select('id, "Full Name", "Poetic Name", "Avatar URL", "Bio"')
+          const profileFields = 'id, "Full Name", "Poetic Name", "Avatar URL", "Bio"';
+          let profile;
+          if (userId) {
+            const { data, error } = await client.from("Sunday.Wri Tables")
+              .select(profileFields)
               .eq("id", userId)
-              .maybeSingle(),
-            client.from("posts")
-              .select("id, title, category, author_name, created_at")
-              .eq("user_id", userId)
-              .eq("status", "published")
-              .order("created_at", { ascending: false })
-          ]);
-          if (profileError) throw profileError;
-          if (storiesError) throw storiesError;
+              .maybeSingle();
+            if (error) throw error;
+            profile = data;
+          } else {
+            let { data, error } = await client.from("Sunday.Wri Tables")
+              .select(profileFields)
+              .eq("Poetic Name", profileName.trim())
+              .limit(2);
+            if (error) throw error;
+            if (!data.length) {
+              ({ data, error } = await client.from("Sunday.Wri Tables")
+                .select(profileFields)
+                .eq("Full Name", profileName.trim())
+                .limit(2));
+              if (error) throw error;
+            }
+            if (data.length > 1) {
+              const choices = data.map((item) => {
+                const choiceName = item["Poetic Name"] || item["Full Name"] || "Sunday member";
+                const fullName = item["Full Name"] && item["Full Name"] !== choiceName
+                  ? `<span>${escapeHTML(item["Full Name"])}</span>`
+                  : "";
+                return `<a class="dashboard-post profile-choice" href="profile.html?id=${encodeURIComponent(item.id)}"><strong>${escapeHTML(choiceName)}</strong>${fullName}</a>`;
+              }).join("");
+              setPage(`<div class="page-view">${pageHero("Community profile", "Choose a profile", `More than one member matches “${escapeHTML(profileName.trim())}”. Select the right account.`)}<section class="page-card">${choices}</section></div>`, { contentOnly: true });
+              return;
+            }
+            profile = data[0] || null;
+            userId = profile?.id || "";
+          }
           if (!profile) {
             setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
             return;
           }
+          const { data: stories, error: storiesError } = await client.from("posts")
+            .select("id, title, category, author_name, created_at")
+            .eq("user_id", userId)
+            .eq("status", "published")
+            .order("created_at", { ascending: false });
+          if (storiesError) throw storiesError;
           const name = profile["Poetic Name"] || profile["Full Name"] || "Sunday member";
           const avatarUrl = safePublicAvatarUrl(profile["Avatar URL"]);
           const bio = typeof profile.Bio === "string" ? profile.Bio.trim() : "";
@@ -1918,7 +1949,10 @@
         if (path === "competitions") { renderCompetitions(); return; }
         if (path === "notifications") { renderNotificationsPage(); return; }
         if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
-        if (path === "profile") { renderPublicProfile(params.get("id") || ""); return; }
+        if (path === "profile") {
+          renderPublicProfile(params.get("id") || "", params.get("name") || "");
+          return;
+        }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") {
           renderWriter("", params.get("edit") || "");
