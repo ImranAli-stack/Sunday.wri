@@ -435,6 +435,37 @@
         return `<button class="follow-button author-follow-button" type="button" data-follow-user="${escapeHTML(authorId)}" aria-pressed="false">Follow</button>`;
       }
 
+      function shareControlMarkup(postId, title) {
+        return `<div class="share-control">
+          <button class="icon-button share-button" type="button" data-share-post="${escapeHTML(postId)}" data-share-title="${escapeHTML(title)}" aria-label="Share this story" aria-expanded="false" aria-controls="shareMenu-${escapeHTML(postId)}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.7 10.7 6.6-4.4m-6.6 7 6.6 4.4"></path></svg>
+          </button>
+          <div class="share-menu" id="shareMenu-${escapeHTML(postId)}" hidden role="group" aria-label="Share this story"></div>
+        </div>`;
+      }
+
+      function populateShareMenu(button) {
+        const menu = button.closest(".share-control")?.querySelector(".share-menu");
+        if (!menu) return;
+        const postUrl = new URL("post.html", window.location.href);
+        postUrl.searchParams.set("id", button.dataset.sharePost);
+        const url = postUrl.href;
+        const title = button.dataset.shareTitle || "A story from Sunday";
+        const shareOptions = [
+          ["WhatsApp", `https://api.whatsapp.com/send?${new URLSearchParams({ text: `${title} ${url}` })}`],
+          ["Facebook", `https://www.facebook.com/sharer/sharer.php?${new URLSearchParams({ u: url })}`],
+          ["Twitter / X", `https://twitter.com/intent/tweet?${new URLSearchParams({ url, text: title })}`]
+        ];
+        menu.replaceChildren(...shareOptions.map(([label, href]) => {
+          const link = document.createElement("a");
+          link.href = href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = label;
+          return link;
+        }));
+      }
+
       function updateFollowButtons(followingIds) {
         followedUserIds = new Set(followingIds);
         document.querySelectorAll("[data-follow-user]").forEach((button) => {
@@ -1435,7 +1466,7 @@
           <h3 class="post-title">${escapeHTML(post.title)}</h3>
           <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
           <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span aria-label="Comments">◯ <span class="comment-count">${Number(post.commentCount) || 0}</span></span></div>
-          <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false" data-post-id="${escapeHTML(post.id)}">♡ Like</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button></div></div></div>
+          <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false" data-post-id="${escapeHTML(post.id)}">♡ Like</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button>${shareControlMarkup(post.id, post.title)}</div></div></div>
           <div class="post-image art-journal" aria-label="${imageUrl ? "Story picture" : "Illustration for this story"}">${imageUrl ? "" : "<span>✍️</span>"}</div>`;
         if (imageUrl) {
           const image = document.createElement("img");
@@ -1478,7 +1509,7 @@
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
           <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${publicProfileLink(post.authorId, post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button><a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
+          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button>${post.status === "published" ? shareControlMarkup(post.id, post.title) : ""}<a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
             <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
             <p class="comment-status" data-comment-status role="status">Loading comments…</p>
@@ -1579,7 +1610,7 @@
         const list = own.length ? own.map((post) => `<div class="dashboard-post">
           <div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${escapeHTML(formatDate(post.createdAt))}</span></div>
           <span class="status-pill ${post.status === "draft" ? "draft" : ""}">${post.status === "draft" ? "Private draft" : "Published"}</span>
-          <div class="dashboard-post-actions">${post.status === "published" ? `<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Open</a>` : ""}
+          <div class="dashboard-post-actions">${post.status === "published" ? `${shareControlMarkup(post.id, post.title)}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Open</a>` : ""}
             <a class="dashboard-action" href="write.html?edit=${encodeURIComponent(post.id)}">${post.status === "draft" ? "Edit draft" : "Edit"}</a>
             <button class="dashboard-action delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button></div></div>`).join("")
           : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
@@ -1663,7 +1694,7 @@
           const avatarUrl = safePublicAvatarUrl(profile["Avatar URL"]);
           const bio = typeof profile.Bio === "string" ? profile.Bio.trim() : "";
           const rows = stories.length
-            ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div>`).join("")
+            ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><div class="dashboard-post-actions">${shareControlMarkup(story.id, story.title || "Untitled story")}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div></div>`).join("")
             : '<p class="community-status">No public stories yet.</p>';
           setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
             ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="" referrerpolicy="no-referrer">`
@@ -1777,7 +1808,7 @@
         const savedPosts = posts();
         const stories = bookmarkList().map((id) => savedPosts.find((post) => post.id === id))
           .filter((post) => post && (post.status === "published" || post.authorId === currentUser()?.id));
-        const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${publicProfileLink(post.authorId, post.authorName)}</span></div><a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div>`).join("")
+        const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${publicProfileLink(post.authorId, post.authorName)}</span></div><div class="dashboard-post-actions">${post.status === "published" ? shareControlMarkup(post.id, post.title) : ""}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div></div>`).join("")
           : '<div class="empty-dashboard">Your reading list is waiting. Bookmark a story from the public feed and it will be saved here.</div>';
         setPage(`<div class="page-view">${pageHero("Saved for another day", "Your bookmarks", "A personal reading list of stories you want to come back to.")}<section class="page-card">${rows}</section></div>`, { contentOnly: true });
       }
@@ -2015,6 +2046,22 @@
           notificationToggle.setAttribute("aria-expanded", String(open));
           return;
         }
+        if (!event.target.closest(".share-control")) {
+          document.querySelectorAll(".share-control [data-share-post][aria-expanded='true']").forEach((button) => {
+            button.setAttribute("aria-expanded", "false");
+            button.closest(".share-control").querySelector(".share-menu").hidden = true;
+          });
+        }
+        const shareButton = event.target.closest("[data-share-post]");
+        if (shareButton) {
+          event.preventDefault();
+          const menu = shareButton.closest(".share-control").querySelector(".share-menu");
+          const open = shareButton.getAttribute("aria-expanded") !== "true";
+          if (open) populateShareMenu(shareButton);
+          shareButton.setAttribute("aria-expanded", String(open));
+          menu.hidden = !open;
+          return;
+        }
         if (notificationBell && !notificationBell.contains(event.target)) {
           const preview = notificationBell.querySelector("[data-notification-preview]");
           const toggle = notificationBell.querySelector("[data-notifications-toggle]");
@@ -2148,6 +2195,12 @@
 
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
+          const openShareButton = document.querySelector(".share-control [data-share-post][aria-expanded='true']");
+          if (openShareButton) {
+            openShareButton.setAttribute("aria-expanded", "false");
+            openShareButton.closest(".share-control").querySelector(".share-menu").hidden = true;
+            openShareButton.focus();
+          }
           const bell = document.querySelector("[data-notification-bell]");
           const preview = bell?.querySelector("[data-notification-preview]");
           const toggle = bell?.querySelector("[data-notifications-toggle]");

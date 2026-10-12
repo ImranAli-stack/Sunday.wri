@@ -296,7 +296,28 @@
     .post-footer { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: auto; padding-top: 14px; }
     .post-meta { display: flex; gap: 10px; color: #9192a3; font-size: 9px; }
     .post-meta span { display: inline-flex; align-items: center; gap: 4px; }
-    .post-actions { display: flex; gap: 5px; }
+    .post-actions { display: flex; align-items: center; gap: 5px; }
+    .share-control { position: relative; display: inline-flex; flex: 0 0 auto; }
+    .share-button svg { width: 15px; height: 15px; }
+    .share-menu {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 7px);
+      z-index: 15;
+      display: grid;
+      min-width: 118px;
+      padding: 5px;
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      box-shadow: 0 8px 24px rgba(38,35,73,.15);
+    }
+    .share-menu a { padding: 8px 9px; color: var(--ink); border-radius: 6px; font-size: 10px; font-weight: 700; text-decoration: none; }
+    .share-menu a:hover, .share-menu a:focus-visible { color: var(--purple); background: #f5f2ff; outline: none; }
+    .detail-actions .share-control { align-self: center; }
+    .detail-actions .share-button { display: inline-flex; width: auto; height: auto; min-height: 38px; padding: 10px 14px; gap: 6px; color: var(--ink); background: white; border: 1px solid var(--line); font-size: 11px; }
+    .detail-actions .share-button::after { content: "Share"; }
+    .detail-actions .share-button:hover { color: var(--purple); border-color: #ddd5ff; background: #f5f2ff; }
     .icon-button {
       min-width: 29px;
       height: 27px;
