@@ -9,7 +9,8 @@
         posts: "sunday.posts.v1",
         session: "sunday.session.v1"
       };
-      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Other"];
+      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Story", "Short story", "Book review", "Story review", "Fiction", "Other"];
+      const STORY_LANGUAGES = ["Balochi", "Roman Balochi", "Urdu", "Roman Urdu", "English"];
       const LEGACY_CATEGORY_GROUPS = {
         Life: ["travel", "wellness"],
         Skill: ["design"]
@@ -288,6 +289,7 @@
           id: String(post.id),
           title: post.title || "Untitled story",
           category: post.category || "Lifestyle",
+          language: post.language || "English",
           body: post.content || post.body || "",
           authorId: post.user_id || post.author_id || "",
           authorName: post.author_name || post.full_name || "Writer",
@@ -1465,7 +1467,7 @@
         return {
           id, title: card.querySelector(".post-title").textContent,
           body: card.dataset.fullBody || card.querySelector(".post-excerpt").textContent,
-          category: card.dataset.category, authorName: card.querySelector(".author-name").textContent,
+          category: card.dataset.category, language: "English", authorName: card.querySelector(".author-name").textContent,
           createdAt: new Date(card.dataset.date).toISOString(), likes: Number(card.dataset.likes),
           imagePath: card.dataset.imagePath || "", status: "published"
         };
@@ -1482,7 +1484,7 @@
         const imageUrl = safePostImageUrl(post.imagePath);
         const content = `<div class="page-view"><a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
           <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
-          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${publicProfileLink(post.authorId, post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
+          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${publicProfileLink(post.authorId, post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${escapeHTML(post.language || "English")} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
           <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
           <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button>${post.status === "published" ? shareControlMarkup(post.id, post.title) : ""}<a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
           ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
@@ -1888,11 +1890,13 @@
         const title = editingPost?.title || "";
         const body = editingPost?.body || "";
         const category = editingPost?.category || "Lifestyle";
+        const language = editingPost?.language || "English";
         const currentImageUrl = safePostImageUrl(editingPost?.imagePath);
         setPage(`<div class="page-view">${pageHero(isPublishedEdit ? "Update your story" : editingPost ? "Pick up where you left off" : "Make something yours", isPublishedEdit ? "Edit published story" : editingPost ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
           <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(editingPost?.id || "")}" data-edit-status="${escapeHTML(editingPost?.status || "")}" novalidate>
           <div class="form-field"><label for="postTitle">Story title</label><input id="postTitle" name="title" maxlength="120" required placeholder="Give your story a title" value="${escapeHTML(title)}"></div>
           <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${STORY_CATEGORIES.map((option) => `<option${category.toLowerCase() === option.toLowerCase() ? " selected" : ""}>${option}</option>`).join("")}${STORY_CATEGORIES.some((option) => option.toLowerCase() === category.toLowerCase()) ? "" : `<option selected>${escapeHTML(category)}</option>`}</select></div>
+          <div class="form-field"><label for="postLanguage">Language</label><select id="postLanguage" name="language">${STORY_LANGUAGES.map((option) => `<option${language.toLowerCase() === option.toLowerCase() ? " selected" : ""}>${option}</option>`).join("")}${STORY_LANGUAGES.some((option) => option.toLowerCase() === language.toLowerCase()) ? "" : `<option selected>${escapeHTML(language)}</option>`}</select></div>
           <div class="form-field"><label for="postImage">Story picture <span class="form-label-note">(optional, JPG, PNG, WebP or GIF; up to 5 MB)</span></label><input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><div class="image-preview${currentImageUrl ? " visible" : ""}" data-image-preview data-current-image="${escapeHTML(currentImageUrl)}">${currentImageUrl ? `<img src="${escapeHTML(currentImageUrl)}" alt="Current story picture preview">` : ""}</div>${currentImageUrl ? '<label class="remove-image-option"><input name="removeImage" type="checkbox"> Remove current picture</label>' : ""}<span class="form-label-note">Pictures are uploaded when published; a selected picture is not saved with a private draft.</span></div>
           <div class="form-field"><label for="postBody">Your story</label><textarea id="postBody" name="body" maxlength="12000" required placeholder="Start with the detail you can't stop thinking about...">${escapeHTML(body)}</textarea></div>
           <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">${isPublishedEdit ? "Save changes" : "Publish to the community"}</button>${isPublishedEdit ? '<a class="secondary-button" href="dashboard.html">Cancel</a>' : '<button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>'}</div>
@@ -2410,10 +2414,10 @@
                 return;
               }
               post = existing
-                ? { ...existing, title, category: form.elements.category.value, body, createdAt: new Date().toISOString() }
+                ? { ...existing, title, category: form.elements.category.value, language: form.elements.language.value, body, createdAt: new Date().toISOString() }
                 : {
                   id: crypto.randomUUID(), authorId: user.id, authorName: user.poeticName || user.name,
-                  title, category: form.elements.category.value, body,
+                  title, category: form.elements.category.value, language: form.elements.language.value, body,
                   status: "draft", likes: 0, createdAt: new Date().toISOString()
                 };
               nextPosts = existing ? savedPosts.map((item) => item.id === existing.id ? post : item) : [...savedPosts, post];
@@ -2447,6 +2451,7 @@
                 id: postId,
                 title,
                 category: form.elements.category.value,
+                language: form.elements.language.value,
                 content: body,
                 user_id: authData.user.id,
                 author_name: user.poeticName || user.name,
