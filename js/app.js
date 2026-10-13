@@ -1619,7 +1619,7 @@
         setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
         try {
           const client = await getSupabaseClient();
-          const profileFields = "id, full_name, bio";
+          const profileFields = "id, username, full_name, bio, avatar_url, stories_count, followers_count, following_count, total_likes, total_comments";
           let profile;
           if (userId) {
             const { data, error } = await client.from("profiles")
@@ -1664,14 +1664,47 @@
               : '<p class="community-status">No public stories yet.</p>';
           }
           const name = profile.full_name || "Anonymous Writer";
+          const username = profile.username || `member-${String(profile.id).slice(0, 8)}`;
           const bio = typeof profile.bio === "string" ? profile.bio.trim() : "";
-          const storyCount = storiesError ? "—" : stories.length;
-          setPage(`<div class="page-view"><section class="page-hero public-profile-hero"><span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>
-            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(bio || "Sunday community member")}</p></div>
-            <div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${storyCount}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
+          const avatarUrl = safePublicAvatarUrl(profile.avatar_url);
+          const metrics = [
+            ["stories_count", "Stories"],
+            ["followers_count", "Followers"],
+            ["following_count", "Following"],
+            ["total_likes", "Total likes"],
+            ["total_comments", "Total comments"]
+          ];
+          const metricCards = metrics.map(([field, label]) => {
+            const value = Number(profile[field]);
+            const displayValue = Number.isSafeInteger(value) && value >= 0 ? value : 0;
+            return `<div class="dashboard-stat"><strong>${displayValue}</strong><span>${label}</span></div>`;
+          }).join("");
+          setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
+            ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="">`
+            : `<span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>`}
+            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p class="profile-handle">@${escapeHTML(username)}</p><p>${escapeHTML(bio || "Sunday community member")}</p></div>
+            <div class="dashboard-stats profile-stats">${metricCards}</div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
+          const profileAvatar = document.querySelector("[data-public-profile-avatar]");
+          profileAvatar?.addEventListener("error", () => {
+            const fallback = document.createElement("span");
+            fallback.className = "avatar purple public-profile-avatar";
+            fallback.setAttribute("aria-hidden", "true");
+            fallback.textContent = initials(name);
+            profileAvatar.replaceWith(fallback);
+          }, { once: true });
         } catch (error) {
           console.error("Unable to load public profile.", error);
           setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+        }
+      }
+
+      function safePublicAvatarUrl(value) {
+        if (typeof value !== "string" || value.length > 2048) return "";
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+        } catch {
+          return "";
         }
       }
 
