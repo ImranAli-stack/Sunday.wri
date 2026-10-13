@@ -811,14 +811,14 @@
         if (!actorIds.length) return;
         try {
           const { data, error } = await client
-            .from("Sunday.Wri Tables")
-            .select('id, "Full Name", "Poetic Name"')
+            .from("profiles")
+            .select("id, full_name")
             .in("id", actorIds);
           if (error) throw error;
           const actors = new Map(notificationActors);
           (data || []).forEach((profile) => actors.set(
             String(profile.id),
-            profile["Poetic Name"] || profile["Full Name"] || "Sunday member"
+            profile.full_name || "Sunday member"
           ));
           notificationActors = actors;
         } catch (error) {
@@ -1619,35 +1619,25 @@
         setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
         try {
           const client = await getSupabaseClient();
-          const profileFields = 'id, "Full Name", "Poetic Name", "Avatar URL", "Bio"';
+          const profileFields = "id, full_name, bio";
           let profile;
           if (userId) {
-            const { data, error } = await client.from("Sunday.Wri Tables")
+            const { data, error } = await client.from("profiles")
               .select(profileFields)
               .eq("id", userId)
               .maybeSingle();
             if (error) throw error;
             profile = data;
           } else {
-            let { data, error } = await client.from("Sunday.Wri Tables")
+            const { data, error } = await client.from("profiles")
               .select(profileFields)
-              .eq("Poetic Name", profileName.trim())
+              .eq("full_name", profileName.trim())
               .limit(2);
             if (error) throw error;
-            if (!data.length) {
-              ({ data, error } = await client.from("Sunday.Wri Tables")
-                .select(profileFields)
-                .eq("Full Name", profileName.trim())
-                .limit(2));
-              if (error) throw error;
-            }
             if (data.length > 1) {
               const choices = data.map((item) => {
-                const choiceName = item["Poetic Name"] || item["Full Name"] || "Sunday member";
-                const fullName = item["Full Name"] && item["Full Name"] !== choiceName
-                  ? `<span>${escapeHTML(item["Full Name"])}</span>`
-                  : "";
-                return `<a class="dashboard-post profile-choice" href="profile.html?id=${encodeURIComponent(item.id)}"><strong>${escapeHTML(choiceName)}</strong>${fullName}</a>`;
+                const choiceName = item.full_name || "Sunday member";
+                return `<a class="dashboard-post profile-choice" href="profile.html?id=${encodeURIComponent(item.id)}"><strong>${escapeHTML(choiceName)}</strong></a>`;
               }).join("");
               setPage(`<div class="page-view">${pageHero("Community profile", "Choose a profile", `More than one member matches “${escapeHTML(profileName.trim())}”. Select the right account.`)}<section class="page-card">${choices}</section></div>`, { contentOnly: true });
               return;
@@ -1664,39 +1654,24 @@
             .eq("user_id", userId)
             .eq("status", "published")
             .order("created_at", { ascending: false });
-          if (storiesError) throw storiesError;
-          const name = profile["Poetic Name"] || profile["Full Name"] || "Sunday member";
-          const avatarUrl = safePublicAvatarUrl(profile["Avatar URL"]);
-          const bio = typeof profile.Bio === "string" ? profile.Bio.trim() : "";
-          const rows = stories.length
-            ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><div class="dashboard-post-actions">${shareControlMarkup(story.id, story.title || "Untitled story")}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div></div>`).join("")
-            : '<p class="community-status">No public stories yet.</p>';
-          setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
-            ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="" referrerpolicy="no-referrer">`
-            : `<span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>`}
-            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(bio || profile["Full Name"] || "Sunday community member")}</p></div>
-            <div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${stories.length}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
-          const profileAvatar = document.querySelector("[data-public-profile-avatar]");
-          profileAvatar?.addEventListener("error", () => {
-            const fallback = document.createElement("span");
-            fallback.className = "avatar purple public-profile-avatar";
-            fallback.setAttribute("aria-hidden", "true");
-            fallback.textContent = initials(name);
-            profileAvatar.replaceWith(fallback);
-          }, { once: true });
+          let rows;
+          if (storiesError) {
+            console.error("Unable to load public profile stories.", storiesError);
+            rows = '<p class="community-status" role="status">Public profile details are available, but stories could not be loaded. Please try again later.</p>';
+          } else {
+            rows = stories.length
+              ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><div class="dashboard-post-actions">${shareControlMarkup(story.id, story.title || "Untitled story")}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div></div>`).join("")
+              : '<p class="community-status">No public stories yet.</p>';
+          }
+          const name = profile.full_name || "Anonymous Writer";
+          const bio = typeof profile.bio === "string" ? profile.bio.trim() : "";
+          const storyCount = storiesError ? "—" : stories.length;
+          setPage(`<div class="page-view"><section class="page-hero public-profile-hero"><span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>
+            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p>${escapeHTML(bio || "Sunday community member")}</p></div>
+            <div class="dashboard-stats profile-stats"><div class="dashboard-stat"><strong>${storyCount}</strong><span>Published stories</span></div></div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
         } catch (error) {
           console.error("Unable to load public profile.", error);
           setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
-        }
-      }
-
-      function safePublicAvatarUrl(value) {
-        if (typeof value !== "string" || value.length > 2048) return "";
-        try {
-          const url = new URL(value);
-          return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
-        } catch {
-          return "";
         }
       }
 
