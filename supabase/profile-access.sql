@@ -1,4 +1,6 @@
 alter table public.profiles
+  add column if not exists full_name text,
+  add column if not exists bio text,
   add column if not exists username text,
   add column if not exists avatar_url text,
   add column if not exists stories_count integer not null default 0,
@@ -81,3 +83,73 @@ create policy "Anyone can read public profiles"
   on public.profiles for select
   to anon, authenticated
   using (true);
+
+create or replace function public.create_profile_for_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  display_name text;
+  preferred_username text;
+begin
+  display_name := coalesce(
+    nullif(new.raw_user_meta_data ->> 'full_name', ''),
+    nullif(new.raw_user_meta_data ->> 'Full_Name', ''),
+    split_part(new.email, '@', 1),
+    'Anonymous Writer'
+  );
+  preferred_username := coalesce(
+    nullif(new.raw_user_meta_data ->> 'poetic_name', ''),
+    nullif(new.raw_user_meta_data ->> 'Poetic_Name', ''),
+    display_name
+  );
+
+  insert into public.profiles (id, username, full_name)
+  values (
+    new.id,
+    coalesce(
+      nullif(trim(both '-' from regexp_replace(lower(preferred_username), '[^a-z0-9]+', '-', 'g')), ''),
+      'member'
+    ) || '-' || replace(new.id::text, '-', ''),
+    display_name
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created_profile on auth.users;
+create trigger on_auth_user_created_profile
+  after insert on auth.users
+  for each row execute function public.create_profile_for_new_auth_user();
+
+insert into public.profiles (id, username, full_name)
+select
+  auth_user.id,
+  coalesce(
+    nullif(trim(both '-' from regexp_replace(
+      lower(coalesce(
+        nullif(auth_user.raw_user_meta_data ->> 'poetic_name', ''),
+        nullif(auth_user.raw_user_meta_data ->> 'Poetic_Name', ''),
+        nullif(auth_user.raw_user_meta_data ->> 'full_name', ''),
+        nullif(auth_user.raw_user_meta_data ->> 'Full_Name', ''),
+        split_part(auth_user.email, '@', 1),
+        'member'
+      )),
+      '[^a-z0-9]+',
+      '-',
+      'g'
+    )), ''),
+    'member'
+  ) || '-' || replace(auth_user.id::text, '-', ''),
+  coalesce(
+    nullif(auth_user.raw_user_meta_data ->> 'full_name', ''),
+    nullif(auth_user.raw_user_meta_data ->> 'Full_Name', ''),
+    split_part(auth_user.email, '@', 1),
+    'Anonymous Writer'
+  )
+from auth.users as auth_user
+on conflict (id) do nothing;

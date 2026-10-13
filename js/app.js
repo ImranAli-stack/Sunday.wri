@@ -1629,11 +1629,18 @@
             if (error) throw error;
             profile = data;
           } else {
-            const { data, error } = await client.from("profiles")
+            let { data, error } = await client.from("profiles")
               .select(profileFields)
               .eq("full_name", profileName.trim())
               .limit(2);
             if (error) throw error;
+            if (!data.length) {
+              ({ data, error } = await client.from("profiles")
+                .select(profileFields)
+                .eq("username", profileName.trim().replace(/^@/, ""))
+                .limit(2));
+              if (error) throw error;
+            }
             if (data.length > 1) {
               const choices = data.map((item) => {
                 const choiceName = item.full_name || "Sunday member";
@@ -1919,9 +1926,9 @@
 
         const metadata = authUser.user_metadata || {};
         const email = authUser.email || "";
-        const name = details.name || metadata.full_name || email.split("@")[0] || "Writer";
-        const poeticName = details.poeticName || metadata.poetic_name || name;
-        const requestedRole = details.role || metadata.role;
+        const name = details.name || metadata.full_name || metadata.Full_Name || email.split("@")[0] || "Writer";
+        const poeticName = details.poeticName || metadata.poetic_name || metadata.Poetic_Name || name;
+        const requestedRole = details.role || metadata.role || metadata.Writer_o_reader;
         const role = ["reader", "writer", "both"].includes(requestedRole) ? requestedRole : "both";
         const account = {
           id: authUser.id, name, poeticName, role, handle: `@${email.split("@")[0]}`,
@@ -1949,7 +1956,16 @@
             const { data, error } = await auth.signUp({
               email,
               password,
-              options: { data: { full_name: name, poetic_name: poeticName, role: form.elements.role.value } }
+              options: {
+                data: {
+                  full_name: name,
+                  poetic_name: poeticName,
+                  role: form.elements.role.value,
+                  Full_Name: name,
+                  Poetic_Name: poeticName,
+                  Writer_o_reader: form.elements.role.value
+                }
+              }
             });
             if (error) throw error;
             if (!data.user) throw new Error("Supabase did not return the new account. Please try again.");
