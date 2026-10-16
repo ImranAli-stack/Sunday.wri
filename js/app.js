@@ -427,7 +427,7 @@
         const postUrl = new URL("post.html", window.location.href);
         postUrl.searchParams.set("id", button.dataset.sharePost);
         const url = postUrl.href;
-        const title = button.dataset.shareTitle || "A story from Sunday";
+        const title = button.dataset.shareTitle || "A story from Qalamly";
         const shareOptions = [
           ["WhatsApp", `https://api.whatsapp.com/send?${new URLSearchParams({ text: `${title} ${url}` })}`],
           ["Facebook", `https://www.facebook.com/sharer/sharer.php?${new URLSearchParams({ u: url })}`],
@@ -820,7 +820,7 @@
           const actors = new Map(notificationActors);
           (data || []).forEach((profile) => actors.set(
             String(profile.id),
-            profile.full_name || "Sunday member"
+            profile.full_name || "Qalamly member"
           ));
           notificationActors = actors;
         } catch (error) {
@@ -1112,8 +1112,8 @@
           return;
         }
         setPage(`<div class="page-view">
-          <section class="page-hero"><div class="page-kicker">Your Sunday inbox</div><h1>Notifications</h1><p>Updates from the Sunday community, with unread items kept here until you mark them read.</p></section>
-          <section class="page-card notification-page-card"><div class="notification-page-heading"><h2>All notifications</h2><a class="secondary-button" href="index.html">Back to Sunday</a></div><div class="notification-list notification-page-list" data-notifications-list aria-live="polite"><p class="notification-status" role="status">Loading notifications…</p></div></section>
+          <section class="page-hero"><div class="page-kicker">Your Qalamly inbox</div><h1>Notifications</h1><p>Updates from the Qalamly community, with unread items kept here until you mark them read.</p></section>
+          <section class="page-card notification-page-card"><div class="notification-page-heading"><h2>All notifications</h2><a class="secondary-button" href="index.html">Back to Qalamly</a></div><div class="notification-list notification-page-list" data-notifications-list aria-live="polite"><p class="notification-status" role="status">Loading notifications…</p></div></section>
         </div>`, { contentOnly: true });
         loadNotificationHistory(user);
       }
@@ -1521,7 +1521,7 @@
         const header = document.createElement("div");
         header.className = "comment-header";
         const author = comment.user_id ? document.createElement("a") : document.createElement("strong");
-        author.textContent = comment.author_name || "Sunday reader";
+        author.textContent = comment.author_name || "Qalamly reader";
         if (comment.user_id) {
           author.href = `profile.html?id=${encodeURIComponent(comment.user_id)}`;
           author.className = "profile-name-link comment-author-link";
@@ -1591,7 +1591,7 @@
             <a class="dashboard-action" href="write.html?edit=${encodeURIComponent(post.id)}">${post.status === "draft" ? "Edit draft" : "Edit"}</a>
             <button class="dashboard-action delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button></div></div>`).join("")
           : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
-        setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile · ${escapeHTML(user.role || "writer")}</div><h1>${escapeHTML(displayName(user))}</h1><p>${escapeHTML(user.handle || "Your Sunday profile")} · Your published stories and community connections.</p>
+        setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile · ${escapeHTML(user.role || "writer")}</div><h1>${escapeHTML(displayName(user))}</h1><p>${escapeHTML(user.handle || "Your Qalamly profile")} · Your published stories and community connections.</p>
           <div class="dashboard-stats profile-stats" aria-label="Profile statistics">
             <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-stories>${publishedCount}</strong><span>Stories</span></a>
             <a class="dashboard-stat profile-stat-link" href="#userFollowers"><strong data-profile-followers>…</strong><span>Followers</span></a>
@@ -1615,7 +1615,7 @@
 
       async function renderPublicProfile(userId, profileName = "") {
         if (!userId && !profileName.trim()) {
-          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This profile link is missing an account ID.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This profile link is missing an account ID.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Qalamly</a></section></div>`, { contentOnly: true });
           return;
         }
         setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
@@ -1645,7 +1645,7 @@
             }
             if (data.length > 1) {
               const choices = data.map((item) => {
-                const choiceName = item.full_name || "Sunday member";
+                const choiceName = item.full_name || "Qalamly member";
                 return `<a class="dashboard-post profile-choice" href="profile.html?id=${encodeURIComponent(item.id)}"><strong>${escapeHTML(choiceName)}</strong></a>`;
               }).join("");
               setPage(`<div class="page-view">${pageHero("Community profile", "Choose a profile", `More than one member matches “${escapeHTML(profileName.trim())}”. Select the right account.`)}<section class="page-card">${choices}</section></div>`, { contentOnly: true });
@@ -1655,7 +1655,7 @@
             userId = profile?.id || "";
           }
           if (!profile) {
-            setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+            setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Qalamly</a></section></div>`, { contentOnly: true });
             return;
           }
           const { data: stories, error: storiesError } = await client.from("posts")
@@ -1691,7 +1691,7 @@
           setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
             ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="">`
             : `<span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>`}
-            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p class="profile-handle">@${escapeHTML(username)}</p><p>${escapeHTML(bio || "Sunday community member")}</p></div>
+            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p class="profile-handle">@${escapeHTML(username)}</p><p>${escapeHTML(bio || "Qalamly community member")}</p></div>
             <div class="dashboard-stats profile-stats">${metricCards}</div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
           const profileAvatar = document.querySelector("[data-public-profile-avatar]");
           profileAvatar?.addEventListener("error", () => {
@@ -1703,7 +1703,7 @@
           }, { once: true });
         } catch (error) {
           console.error("Unable to load public profile.", error);
-          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
+          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Qalamly</a></section></div>`, { contentOnly: true });
         }
       }
 
@@ -1769,7 +1769,7 @@
 
           const renderPeople = (ids, emptyMessage) => ids.length
             ? ids.map((id) => {
-              const name = names.get(id) || "Sunday writer";
+              const name = names.get(id) || "Qalamly writer";
               return `<div class="community-person"><span class="avatar purple">${escapeHTML(initials(name))}</span>${publicProfileLink(id, name, "community-person-name")}${followButtonMarkup(id, user)}</div>`;
             }).join("")
             : `<p class="community-status">${emptyMessage}</p>`;
@@ -1810,11 +1810,11 @@
       }
 
       function renderAbout() {
-        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Sunday is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Sunday is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section>
-          <section class="page-card"><h2>Start earning with your writing</h2><p>Turn your words into an opportunity with Sunday. Write, share your ideas, build your audience, and work toward earning from your content.</p>
+        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Qalamly is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Qalamly is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section>
+          <section class="page-card"><h2>Start earning with your writing</h2><p>Turn your words into an opportunity with Qalamly. Write, share your ideas, build your audience, and work toward earning from your content.</p>
             <h3>How it works</h3>
             <ol class="monetization-steps">
-              <li><strong>Create your Sunday account.</strong> Sign up for free and complete your writer profile.</li>
+              <li><strong>Create your Qalamly account.</strong> Sign up for free and complete your writer profile.</li>
               <li><strong>Start writing.</strong> Publish original blogs, articles, poetry, stories, educational content, and other valuable writing.</li>
               <li><strong>Build your audience.</strong> Gain followers and encourage readers to engage through likes, comments, and shares.</li>
               <li><strong>Meet the monetization criteria.</strong> Eligibility requires:
@@ -1822,12 +1822,12 @@
                   <li>At least <strong>500 followers</strong>.</li>
                   <li>At least <strong>100 genuine engagements</strong>.</li>
                   <li>Original, high-quality content.</li>
-                  <li>Following Sunday’s Community Guidelines.</li>
+                  <li>Following Qalamly’s Community Guidelines.</li>
                   <li>No serious copyright, plagiarism, spam, or policy violations.</li>
                   <li>An active account in good standing.</li>
                 </ul>
               </li>
-              <li><strong>Apply for monetization.</strong> Once eligible, apply to the Sunday Monetization Program from your Earnings Dashboard.</li>
+              <li><strong>Apply for monetization.</strong> Once eligible, apply to the Qalamly Monetization Program from your Earnings Dashboard.</li>
               <li><strong>Get approved and start earning.</strong> After review and approval, eligible content may generate earnings based on genuine reader activity and engagement.</li>
             </ol>
             <h3>How earnings are calculated</h3><p>Earnings may depend on genuine article views, reader engagement, reading time, likes, comments, other interactions, and overall content quality. Meeting the eligibility criteria does not guarantee approval or earnings.</p>
@@ -1836,7 +1836,7 @@
       }
 
       function renderContact() {
-        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Send your message to the Sunday team.</p><form id="contactForm" data-contact-form>
+        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Send your message to the Qalamly team.</p><form id="contactForm" data-contact-form>
           <div class="form-field"><label for="contactName">Name</label><input id="contactName" name="name" autocomplete="name" maxlength="80" required></div>
           <div class="form-field"><label for="contactEmail">Email</label><input id="contactEmail" name="email" type="email" autocomplete="email" maxlength="254" required></div>
           <div class="form-field"><label for="contactSubject">Subject</label><input id="contactSubject" name="subject" maxlength="150" required></div>
@@ -1856,7 +1856,7 @@
         }
         const signup = mode === "signup";
         const formTitle = signup ? "Create your writer account" : "Welcome back";
-        const intro = signup ? "Join Sunday to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
+        const intro = signup ? "Join Qalamly to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
         setPage(`<div class="page-view">${pageHero(signup ? "A page of your own" : "Your words are waiting", formTitle, intro)}
           <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div><form id="authForm" data-auth-mode="${mode}" novalidate>
           ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
@@ -1867,7 +1867,7 @@
           ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
           <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           <p class="form-note">Authentication is handled by Supabase. Profile details, drafts, and stories are stored only in this browser and do not sync between devices.</p>
-          </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Sunday? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
+          </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
       }
 
       function renderWriter(message = "", draftId = "") {
@@ -2301,7 +2301,7 @@
               .from("contact")
               .insert([{ name, email, subject, message }]);
             if (error) throw error;
-            status.textContent = "Your message was sent. Thank you for contacting Sunday.";
+            status.textContent = "Your message was sent. Thank you for contacting Qalamly.";
             form.reset();
           } catch (error) {
             console.error("Unable to submit contact form.", error);

@@ -347,11 +347,11 @@
       }
 
       function renderAbout() {
-        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Sunday is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Sunday is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section><section class="page-card"><h2>A gentle set of guidelines</h2><p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p></section></div>`, { contentOnly: true });
+        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Qalamly is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Qalamly is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section><section class="page-card"><h2>A gentle set of guidelines</h2><p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p></section></div>`, { contentOnly: true });
       }
 
       function renderContact() {
-        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card"><h2>Get in touch</h2><p>Email the Sunday team and we’ll get back to you as soon as we can.</p><p><a class="primary-button" href="mailto:hello@sunday.example">✉ hello@sunday.example</a></p><p class="form-note">For this demo, the address is a placeholder. Replace it with your real contact email before publishing the site.</p></section><section class="page-card"><h2>Community &amp; story questions</h2><p>For writing prompts, submissions, or help with your account, include “Sunday community” in the subject line so we can point you in the right direction.</p></section></div>`, { contentOnly: true });
+        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card"><h2>Get in touch</h2><p>Email the Qalamly team and we’ll get back to you as soon as we can.</p><p><a class="primary-button" href="mailto:hello@qalamly.example">✉ hello@qalamly.example</a></p><p class="form-note">For this demo, the address is a placeholder. Replace it with your real contact email before publishing the site.</p></section><section class="page-card"><h2>Community &amp; story questions</h2><p>For writing prompts, submissions, or help with your account, include “Qalamly community” in the subject line so we can point you in the right direction.</p></section></div>`, { contentOnly: true });
       }
 
       function renderCompetitions() {
@@ -365,7 +365,7 @@
         }
         const signup = mode === "signup";
         const formTitle = signup ? "Create your writer account" : "Welcome back";
-        const intro = signup ? "Join Sunday to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
+        const intro = signup ? "Join Qalamly to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
         setPage(`<div class="page-view">${pageHero(signup ? "A page of your own" : "Your words are waiting", formTitle, intro)}
           <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div><form id="authForm" novalidate>
           ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
@@ -376,7 +376,7 @@
           ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
           <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           <p class="form-note">Demo account data is stored only in this browser. This standalone page has no server, account recovery, or cross-device sync; do not use a real password here.</p>
-          </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Sunday? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
+          </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
       }
 
       function renderWriter(message = "", draftId = "") {
