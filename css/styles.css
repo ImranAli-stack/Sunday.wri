@@ -50,15 +50,17 @@
       letter-spacing: -1.1px;
     }
     .brand-mark {
-      width: 34px;
-      height: 34px;
+      flex: 0 0 44px;
+      width: 44px;
+      height: 44px;
       display: grid;
       place-items: center;
-      color: white;
-      background: var(--purple);
+      overflow: hidden;
+      color: transparent;
+      background: #fff url("../logo/icon.png") center / contain no-repeat;
+      border: 1px solid var(--line);
       border-radius: 12px;
-      font-size: 18px;
-      transform: rotate(-5deg);
+      font-size: 0;
     }
     .brand span:last-child { transform: translateY(-1px); }
     .brand-dot { color: var(--purple); }

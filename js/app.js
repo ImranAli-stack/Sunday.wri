@@ -9,7 +9,7 @@
         posts: "sunday.posts.v1",
         session: "sunday.session.v1"
       };
-      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Story", "Short story", "Book review", "Story review", "Fiction", "Other"];
+      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Story", "Short story", "Book review", "Story review", "Fiction", "Other","Article"];
       const STORY_LANGUAGES = ["Balochi", "Roman Balochi", "Urdu", "Roman Urdu", "English"];
       const LEGACY_CATEGORY_GROUPS = {
         Life: ["travel", "wellness"],
