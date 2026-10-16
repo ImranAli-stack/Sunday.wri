@@ -532,6 +532,73 @@
         updateFollowButtons(followingIds);
       }
 
+      async function renderWritersDirectory() {
+        setPage(`<div class="page-view">${pageHero("Meet the community", "Writers to follow", "Discover every Qalamly writer and find your next favorite voice.")}<section class="page-card">
+          <label class="writer-directory-search" for="writerDirectorySearch">Search writers<input id="writerDirectorySearch" type="search" placeholder="Name or bio"></label>
+          <p class="community-status" id="writerDirectoryStatus" role="status">Loading writers…</p>
+          <div class="writer-directory-grid" id="writerDirectoryList"></div>
+        </section></div>`, { contentOnly: true });
+
+        const status = document.getElementById("writerDirectoryStatus");
+        const list = document.getElementById("writerDirectoryList");
+        const search = document.getElementById("writerDirectorySearch");
+        try {
+          const client = await getSupabaseClient();
+          const writers = [];
+          const pageSize = 500;
+          for (let offset = 0; ; offset += pageSize) {
+            const { data, error } = await client.from("profiles")
+              .select("id, username, full_name, bio, stories_count, followers_count, role")
+              .in("role", ["writer", "both"])
+              .order("full_name", { ascending: true })
+              .order("username", { ascending: true })
+              .range(offset, offset + pageSize - 1);
+            if (error) throw error;
+            const page = data || [];
+            writers.push(...page);
+            if (page.length < pageSize) break;
+          }
+
+          const user = currentUser();
+          const eligibleWriters = writers.filter((writer) => writer.id !== user?.id);
+          if (!eligibleWriters.length) {
+            status.textContent = "No other writers have joined yet. Check back soon.";
+            return;
+          }
+
+          list.innerHTML = eligibleWriters.map((writer) => {
+            const name = writer.full_name || writer.username || "Qalamly writer";
+            const searchableText = `${name} ${writer.username || ""} ${writer.bio || ""}`.toLowerCase();
+            return `<article class="writer-directory-card" data-writer-search="${escapeHTML(searchableText)}">
+              <div class="avatar purple">${escapeHTML(initials(name))}</div>
+              <div class="writer-directory-copy"><h2>${publicProfileLink(writer.id, name)}</h2>
+                <p>${escapeHTML(writer.bio || "A Qalamly writer")}</p>
+                <span>${Number(writer.stories_count) || 0} stories · ${Number(writer.followers_count) || 0} followers</span>
+              </div>
+              <button class="follow-button" type="button" data-follow-user="${escapeHTML(writer.id)}" aria-pressed="false">Follow</button>
+            </article>`;
+          }).join("");
+          status.textContent = `${eligibleWriters.length} ${eligibleWriters.length === 1 ? "writer" : "writers"}`;
+          search.addEventListener("input", () => {
+            const query = search.value.trim().toLowerCase();
+            let visibleCount = 0;
+            list.querySelectorAll("[data-writer-search]").forEach((card) => {
+              card.hidden = !card.dataset.writerSearch.includes(query);
+              if (!card.hidden) visibleCount++;
+            });
+            status.textContent = `${visibleCount} ${visibleCount === 1 ? "writer" : "writers"} found`;
+          });
+          refreshFollowState().catch((error) => {
+            console.error("Unable to load followed state in the writers directory.", error);
+            if (currentUser()) notify("Follow status could not be loaded. Please refresh and try again.");
+          });
+        } catch (error) {
+          console.error("Unable to load the writers directory.", error);
+          status.textContent = "Writers could not be loaded. Run supabase/profile-access.sql in your Supabase SQL editor, then refresh.";
+          status.setAttribute("role", "alert");
+        }
+      }
+
       async function toggleFollow(followButton) {
         const user = currentUser();
         if (!user) {
@@ -1287,7 +1354,7 @@
           competitions: "competitions.html", login: "login.html", signup: "signup.html",
           dashboard: "dashboard.html", write: "write.html", bookmarks: "bookmarks.html",
           settings: "settings.html", post: "post.html", notifications: "notifications.html",
-          profile: "profile.html"
+          profile: "profile.html", writers: "writers.html"
         }[path];
         if (!page) {
           location.href = "index.html";
@@ -2028,6 +2095,7 @@
           renderPublicProfile(params.get("id") || "", params.get("name") || "");
           return;
         }
+        if (path === "writers") { renderWritersDirectory(); return; }
         if (path === "settings") { renderSettings(); return; }
         if (path === "write") {
           renderWriter("", params.get("edit") || "");

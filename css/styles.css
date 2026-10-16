@@ -378,6 +378,17 @@
     .person-info { flex: 1; min-width: 0; }
     .person-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
     .person-info span { display: block; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .writer-directory-search { display: grid; gap: 7px; max-width: 360px; margin-bottom: 14px; color: #74758a; font-size: 11px; font-weight: 650; }
+    .writer-directory-search input { width: 100%; padding: 10px 12px; color: var(--ink); background: #f7f7fa; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; }
+    .writer-directory-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
+    .writer-directory-card { display: flex; align-items: flex-start; gap: 11px; min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 12px; }
+    .writer-directory-card[hidden] { display: none; }
+    .writer-directory-card .avatar { width: 42px; height: 42px; }
+    .writer-directory-copy { flex: 1; min-width: 0; }
+    .writer-directory-copy h2 { margin: 1px 0 5px; overflow-wrap: anywhere; font-size: 12px; }
+    .writer-directory-copy p { margin: 0 0 7px; color: #707287; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+    .writer-directory-copy > span { color: var(--muted); font-size: 9px; }
+    .writer-directory-card .follow-button { flex: 0 0 auto; }
     .follow-button {
       display: inline-block;
       border: 1px solid #e6e0ff;

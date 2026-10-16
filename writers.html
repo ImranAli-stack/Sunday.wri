@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc">
+  <meta name="description" content="Discover writers in the Qalamly community.">
+  <title>Writers to follow — Qalamly</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/supabase.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body data-page="writers">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Qalamly home">
+      <span class="brand-mark" aria-hidden="true">q</span>
+      <span>Qalamly<span class="brand-dot">.</span></span>
+    </a>
+    <nav class="top-nav" aria-label="Main navigation">
+      <a href="index.html">Home</a>
+      <a href="contact.html">Contact</a>
+      <a href="about.html">About</a>
+      <a href="competitions.html">Competitions</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <label class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg>
+      <input id="searchInput" type="search" placeholder="Search writers and stories..." aria-label="Search writers and stories">
+    </label>
+    <a class="write-button" id="writeLink" href="write.html">Write</a>
+    <a class="auth-link" id="authLink" href="login.html">Log in</a>
+    <div class="header-profile" id="headerProfile" hidden>
+      <span class="avatar purple" id="headerAvatar">?</span>
+      <span class="header-profile-copy">
+        <a class="header-profile-name" id="headerName" href="dashboard.html">Writer</a>
+        <span class="header-profile-stats" id="headerStats" aria-label="Profile statistics">
+          <a href="dashboard.html#userStories"><strong data-header-stories>0</strong> stories</a>
+          <a href="dashboard.html#userFollowers"><strong data-header-followers>—</strong> followers</a>
+          <a href="dashboard.html#userFollowing"><strong data-header-following>—</strong> following</a>
+        </span>
+      </span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="left-sidebar" aria-label="Sidebar navigation">
+      <div class="sidebar-label">Your space</div>
+      <a class="side-link" href="index.html" data-side-link><span class="side-icon">⌂</span> Home</a>
+      <a class="side-link" href="dashboard.html" data-side-link><span class="side-icon">◉</span> Profile</a>
+      <a class="side-link" href="bookmarks.html" data-side-link><span class="side-icon">▣</span> Bookmarks</a>
+      <hr class="side-divider">
+      <div class="sidebar-label">Discover</div>
+      <a class="side-link selected" href="writers.html" data-side-link>Writers to follow</a>
+    </aside>
+    <main class="feed"></main>
+    <aside class="right-sidebar" aria-label="Community links">
+      <section class="panel">
+        <div class="panel-heading"><h3>Discover more</h3></div>
+        <p class="sidebar-promo-copy">Read community stories and meet the people behind them.</p>
+        <a class="panel-link" href="index.html">Browse stories</a>
+      </section>
+    </aside>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <section><a class="footer-brand" href="index.html">Qalamly<span>.</span></a><p class="footer-blurb">A bright corner for the stories we tell and the people we meet.</p></section>
+      <section><h2 class="footer-heading">Explore</h2><div class="footer-links"><a href="index.html">Latest stories</a><a href="writers.html">Writers to follow</a><a href="about.html">About Qalamly</a></div></section>
+      <section><h2 class="footer-heading">Your writing</h2><div class="footer-links"><a href="write.html">Write a story</a><a href="dashboard.html">Writer dashboard</a><a href="signup.html">Create an account</a></div></section>
+      <section><h2 class="footer-heading">Say hello</h2><div class="footer-links"><a href="contact.html">Contact the team</a></div></section>
+    </div>
+    <div class="footer-signoff"><span>Made for the love of a good story. © 2026 Qalamly</span></div>
+  </footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

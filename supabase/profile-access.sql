@@ -3,6 +3,7 @@ alter table public.profiles
   add column if not exists bio text,
   add column if not exists username text,
   add column if not exists avatar_url text,
+  add column if not exists role text not null default 'both',
   add column if not exists stories_count integer not null default 0,
   add column if not exists followers_count integer not null default 0,
   add column if not exists following_count integer not null default 0,
@@ -14,8 +15,20 @@ update public.profiles
 set username = 'member-' || left(replace(id::text, '-', ''), 12)
 where username is null or btrim(username) = '';
 
+update public.profiles as profile
+set role = case
+  when auth_user.raw_user_meta_data ->> 'role' in ('reader', 'writer', 'both')
+    then auth_user.raw_user_meta_data ->> 'role'
+  when auth_user.raw_user_meta_data ->> 'Writer_o_reader' in ('reader', 'writer', 'both')
+    then auth_user.raw_user_meta_data ->> 'Writer_o_reader'
+  else 'both'
+end
+from auth.users as auth_user
+where auth_user.id = profile.id;
+
 update public.profiles
 set stories_count = coalesce(stories_count, 0),
+    role = coalesce(role, 'both'),
     followers_count = coalesce(followers_count, 0),
     following_count = coalesce(following_count, 0),
     total_likes = coalesce(total_likes, 0),
@@ -24,6 +37,8 @@ set stories_count = coalesce(stories_count, 0),
 
 alter table public.profiles
   alter column username set not null,
+  alter column role set default 'both',
+  alter column role set not null,
   alter column stories_count set default 0,
   alter column stories_count set not null,
   alter column followers_count set default 0,
@@ -72,6 +87,7 @@ $$;
 
 grant select (
   id, username, full_name, bio, avatar_url,
+  role,
   stories_count, followers_count, following_count, total_likes, total_comments,
   created_at
 )
@@ -106,14 +122,21 @@ begin
     display_name
   );
 
-  insert into public.profiles (id, username, full_name)
+  insert into public.profiles (id, username, full_name, role)
   values (
     new.id,
     coalesce(
       nullif(trim(both '-' from regexp_replace(lower(preferred_username), '[^a-z0-9]+', '-', 'g')), ''),
       'member'
     ) || '-' || replace(new.id::text, '-', ''),
-    display_name
+    display_name,
+    case
+      when new.raw_user_meta_data ->> 'role' in ('reader', 'writer', 'both')
+        then new.raw_user_meta_data ->> 'role'
+      when new.raw_user_meta_data ->> 'Writer_o_reader' in ('reader', 'writer', 'both')
+        then new.raw_user_meta_data ->> 'Writer_o_reader'
+      else 'both'
+    end
   )
   on conflict (id) do nothing;
 
@@ -126,7 +149,7 @@ create trigger on_auth_user_created_profile
   after insert on auth.users
   for each row execute function public.create_profile_for_new_auth_user();
 
-insert into public.profiles (id, username, full_name)
+insert into public.profiles (id, username, full_name, role)
 select
   auth_user.id,
   coalesce(
@@ -150,6 +173,13 @@ select
     nullif(auth_user.raw_user_meta_data ->> 'Full_Name', ''),
     split_part(auth_user.email, '@', 1),
     'Anonymous Writer'
-  )
+  ),
+  case
+    when auth_user.raw_user_meta_data ->> 'role' in ('reader', 'writer', 'both')
+      then auth_user.raw_user_meta_data ->> 'role'
+    when auth_user.raw_user_meta_data ->> 'Writer_o_reader' in ('reader', 'writer', 'both')
+      then auth_user.raw_user_meta_data ->> 'Writer_o_reader'
+    else 'both'
+  end
 from auth.users as auth_user
 on conflict (id) do nothing;
