@@ -692,8 +692,8 @@
         results.setAttribute("aria-label", "Search results");
         wrapper.appendChild(results);
         input.setAttribute("aria-controls", results.id);
-        input.placeholder = "Search writers and stories...";
-        input.setAttribute("aria-label", "Search writers and stories");
+        input.placeholder = "Search people and stories...";
+        input.setAttribute("aria-label", "Search people and stories");
         input.setAttribute("aria-expanded", "false");
 
         let debounceTimer;
@@ -708,24 +708,24 @@
           input.setAttribute("aria-expanded", "true");
         };
         const renderResults = (writers, matchingPosts) => {
-          const writerSection = writers.length
-            ? `<section class="search-result-section"><h2>Writers</h2>${writers.map((writer) => {
-              const isSelf = writer.id === currentUser()?.id;
-              const following = writer.following;
+          const peopleSection = writers.length
+            ? `<section class="search-result-section"><h2>People</h2>${writers.map((person) => {
+              const isSelf = person.id === currentUser()?.id;
+              const following = person.following;
               const followControl = isSelf
                 ? ""
-                : `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.id)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`;
-              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(writer.name))}</span>${publicProfileLink(writer.id, writer.name, "search-person-name")}${followControl}</div>`;
+                : `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(person.id)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`;
+              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(person.name))}</span>${publicProfileLink(person.id, person.name, "search-person-name")}${followControl}</div>`;
             }).join("")}</section>`
             : "";
           const postSection = matchingPosts.length
             ? `<section class="search-result-section"><h2>Stories</h2>${matchingPosts.map((post) => `<div class="search-post"><a href="post.html?id=${encodeURIComponent(post.id)}"><strong>${escapeHTML(post.title)}</strong></a><span>By ${publicProfileLink(post.authorId, post.authorName)} · ${escapeHTML(post.category)}</span></div>`).join("")}</section>`
             : "";
-          if (!writerSection && !postSection) {
-            showMessage("No matching writers or stories found.");
+          if (!peopleSection && !postSection) {
+            showMessage("No matching people or stories found.");
             return;
           }
-          results.innerHTML = `${writerSection}${postSection}`;
+          results.innerHTML = `${peopleSection}${postSection}`;
           updateFollowButtons(followedUserIds);
           results.hidden = false;
           input.setAttribute("aria-expanded", "true");
@@ -737,11 +737,28 @@
           try {
             const client = await getSupabaseClient();
             const columns = ["title", "content", "author_name"];
-            const responses = await Promise.all(columns.map((column) => client.from("posts")
-              .select("*")
-              .eq("status", "published")
-              .ilike(column, pattern)
-              .limit(8)));
+            const [profileResponse, usernameResponse, ...responses] = await Promise.all([
+              client.from("profiles")
+                .select("id, full_name")
+                .ilike("full_name", pattern)
+                .limit(20),
+              client.from("profiles")
+                .select("id, username, full_name")
+                .ilike("username", pattern)
+                .limit(20),
+              ...columns.map((column) => client.from("posts")
+                .select("id, title, content, category, user_id, author_name, created_at")
+                .eq("status", "published")
+                .ilike(column, pattern)
+                .limit(8))
+            ]);
+            if (profileResponse.error) throw profileResponse.error;
+            if (usernameResponse.error && usernameResponse.error.code !== "42703") {
+              throw usernameResponse.error;
+            }
+            if (usernameResponse.error) {
+              console.warn("Username search is unavailable until supabase/profile-access.sql has been applied.");
+            }
             const failedResponse = responses.find((response) => response.error);
             if (failedResponse) throw failedResponse.error;
             if (currentRequest !== requestId) return;
@@ -749,28 +766,38 @@
             const remotePosts = [...new Map(responses.flatMap((response) => response.data || [])
               .map((post) => [String(post.id), post])).values()].map(normalizeRemotePost);
             const matchingPosts = remotePosts
-              .filter((post) => post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query))
+              .filter((post) => post.title.toLowerCase().includes(query)
+                || post.body.toLowerCase().includes(query)
+                || post.authorName.toLowerCase().includes(query))
               .slice(0, 6);
-            const writersById = new Map();
+            const peopleById = new Map();
+            [...(profileResponse.data || []), ...(usernameResponse.data || [])].forEach((profile) => {
+              const name = profile.full_name || profile.username;
+              if (profile.id === currentUser()?.id || !name) return;
+              peopleById.set(String(profile.id), { id: String(profile.id), name });
+            });
             [...posts().filter((post) => post.status === "published"), ...remotePosts].forEach((post) => {
               if (!post.authorId || post.authorId === currentUser()?.id) return;
               if (!post.authorName.toLowerCase().includes(query)) return;
-              writersById.set(post.authorId, { id: post.authorId, name: post.authorName });
+              if (!peopleById.has(post.authorId)) {
+                peopleById.set(post.authorId, { id: post.authorId, name: post.authorName });
+              }
             });
-            users().forEach((user) => {
-              const name = displayName(user);
-              if (user.id !== currentUser()?.id && (name.toLowerCase().includes(query) || user.name.toLowerCase().includes(query))) {
-                writersById.set(user.id, { id: user.id, name });
+            users().forEach((account) => {
+              const name = displayName(account);
+              if (account.id !== currentUser()?.id
+                && (name.toLowerCase().includes(query) || account.name.toLowerCase().includes(query))) {
+                peopleById.set(account.id, { id: account.id, name });
               }
             });
 
-            const writers = [...writersById.values()].slice(0, 6);
+            const writers = [...peopleById.values()].slice(0, 20);
             const user = currentUser();
             if (user && writers.length) {
               const { data: authData, error: authError } = await client.auth.getUser();
               if (authError) throw authError;
               if (!authData.user || authData.user.id !== user.id) {
-                throw new Error("Your Supabase session has expired. Log in again to search followed writers.");
+                throw new Error("Your Supabase session has expired. Log in again to search followed users.");
               }
               const { data: follows, error: followsError } = await client.from("follows")
                 .select("follower_id, following_id");
@@ -782,9 +809,9 @@
               friendUserIds = new Set((follows || [])
                 .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
                 .map((follow) => follow.follower_id));
-              writers.forEach((writer) => {
-                writer.following = followingIds.has(writer.id);
-                writer.friends = friendUserIds.has(writer.id);
+              writers.forEach((person) => {
+                person.following = followingIds.has(person.id);
+                person.friends = friendUserIds.has(person.id);
               });
             }
             if (currentRequest === requestId) renderResults(writers, matchingPosts);
@@ -1726,7 +1753,7 @@
             return;
           }
           const { data: stories, error: storiesError } = await client.from("posts")
-            .select("id, title, category, author_name, created_at")
+            .select("id, title, category, author_name, created_at, likes_table(count), comments(count)")
             .eq("user_id", userId)
             .eq("status", "published")
             .order("created_at", { ascending: false });
@@ -1739,6 +1766,11 @@
               ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><div class="dashboard-post-actions">${shareControlMarkup(story.id, story.title || "Untitled story")}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div></div>`).join("")
               : '<p class="community-status">No public stories yet.</p>';
           }
+          const publicStoryMetrics = storiesError ? {} : {
+            stories_count: stories.length,
+            total_likes: stories.reduce((total, story) => total + (Number(story.likes_table?.[0]?.count) || 0), 0),
+            total_comments: stories.reduce((total, story) => total + (Number(story.comments?.[0]?.count) || 0), 0)
+          };
           const name = profile.full_name || "Anonymous Writer";
           const username = profile.username || `member-${String(profile.id).slice(0, 8)}`;
           const bio = typeof profile.bio === "string" ? profile.bio.trim() : "";
@@ -1751,7 +1783,7 @@
             ["total_comments", "Total comments"]
           ];
           const metricCards = metrics.map(([field, label]) => {
-            const value = Number(profile[field]);
+            const value = Number(publicStoryMetrics[field] ?? profile[field]);
             const displayValue = Number.isSafeInteger(value) && value >= 0 ? value : 0;
             return `<div class="dashboard-stat"><strong>${displayValue}</strong><span>${label}</span></div>`;
           }).join("");
@@ -1929,8 +1961,8 @@
           ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
           ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
           <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"></div>
-          <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
-          ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"></div>' : ""}
+          <div class="form-field"><label for="authPassword">Password</label><div class="password-input-wrap"><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"><button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="authPassword" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="password-eye-slash" d="m4 4 16 16"></path></svg></button></div></div>
+          ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><div class="password-input-wrap"><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"><button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="authConfirmPassword" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="password-eye-slash" d="m4 4 16 16"></path></svg></button></div></div>' : ""}
           ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
           <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           <p class="form-note">Authentication is handled by Supabase. Profile details, drafts, and stories are stored only in this browser and do not sync between devices.</p>
@@ -2108,6 +2140,17 @@
       }
 
       document.addEventListener("click", async (event) => {
+        const passwordToggle = event.target.closest("[data-password-toggle]");
+        if (passwordToggle) {
+          const passwordInput = document.getElementById(passwordToggle.getAttribute("aria-controls"));
+          if (passwordInput) {
+            const showPassword = passwordInput.type === "password";
+            passwordInput.type = showPassword ? "text" : "password";
+            passwordToggle.setAttribute("aria-pressed", String(showPassword));
+            passwordToggle.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+          }
+          return;
+        }
         const notificationBell = document.querySelector("[data-notification-bell]");
         const notificationToggle = event.target.closest("[data-notifications-toggle]");
         if (notificationToggle) {

@@ -370,6 +370,13 @@
       background: #fdfdff;
       font-size: 12px;
     }
+    .password-input-wrap { position: relative; }
+    .password-input-wrap input { padding-right: 44px; }
+    .password-visibility-toggle { position: absolute; top: 50%; right: 7px; display: grid; place-items: center; width: 32px; height: 32px; padding: 6px; color: #77798c; background: transparent; border: 0; border-radius: 7px; cursor: pointer; transform: translateY(-50%); }
+    .password-visibility-toggle:hover { color: var(--purple); background: var(--purple-pale); }
+    .password-visibility-toggle:focus-visible { outline: 2px solid rgba(116, 88, 232, .55); outline-offset: 1px; }
+    .password-visibility-toggle svg { width: 18px; height: 18px; }
+    .password-visibility-toggle[aria-pressed="true"] .password-eye-slash { display: none; }
     .form-field textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
     .modal-actions { display: flex; justify-content: end; gap: 9px; margin-top: 18px; }
     .secondary-button { border: 1px solid var(--line); background: white; padding: 10px 14px; border-radius: 9px; font-size: 11px; font-weight: 700; cursor: pointer; }

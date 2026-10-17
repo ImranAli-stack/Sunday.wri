@@ -371,8 +371,8 @@
           ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
           ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
           <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"></div>
-          <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
-          ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"></div>' : ""}
+          <div class="form-field"><label for="authPassword">Password</label><div class="password-input-wrap"><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}">${signup ? '<button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="authPassword" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="password-eye-slash" d="m4 4 16 16"></path></svg></button>' : ""}</div></div>
+          ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><div class="password-input-wrap"><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"><button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="authConfirmPassword" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.5"></circle><path class="password-eye-slash" d="m4 4 16 16"></path></svg></button></div></div>' : ""}
           ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
           <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           <p class="form-note">Demo account data is stored only in this browser. This standalone page has no server, account recovery, or cross-device sync; do not use a real password here.</p>
@@ -514,6 +514,17 @@
       }
 
       document.addEventListener("click", (event) => {
+        const passwordToggle = event.target.closest("[data-password-toggle]");
+        if (passwordToggle) {
+          const passwordInput = document.getElementById(passwordToggle.getAttribute("aria-controls"));
+          if (passwordInput) {
+            const showPassword = passwordInput.type === "password";
+            passwordInput.type = showPassword ? "text" : "password";
+            passwordToggle.setAttribute("aria-pressed", String(showPassword));
+            passwordToggle.setAttribute("aria-label", showPassword ? "Hide password" : "Show password");
+          }
+          return;
+        }
         const sideLink = event.target.closest("[data-side-link]");
         if (sideLink) {
           event.preventDefault();
