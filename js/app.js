@@ -2,14 +2,7 @@
   "use strict";
 
   const STORAGE = {
-    users: "qalamly.users.v2",
-    posts: "qalamly.posts.v2",
-    session: "qalamly.session.v2",
-    bookmarks: "qalamly.bookmarks.v2",
-    likes: "qalamly.likes.v2",
-    comments: "qalamly.comments.v2",
-    follows: "qalamly.follows.v2",
-    notifications: "qalamly.notifications.v2"
+    bookmarks: "qalamly.bookmarks.v2"
   };
 
   const STORY_CATEGORIES = [
@@ -24,107 +17,19 @@
 
   const RTL_LANGUAGES = new Set(["Urdu", "Balochi"]);
 
-  const SEED_WRITERS = [
-    { id: "writer-avery", name: "Avery Morgan", poeticName: "Avery Morgan", handle: "@averymorgan", bio: "Writing about slow mornings, tea rituals, and mindful living.", role: "both", avatarColor: "green", followers: 142, following: 38 },
-    { id: "writer-leo", name: "Leo Chen", poeticName: "Leo Chen", handle: "@leochen", bio: "Sketchbook keeper, imperfect maker, and essayist.", role: "both", avatarColor: "gold", followers: 118, following: 44 },
-    { id: "writer-nina", name: "Nina Shah", poeticName: "Nina Shah", handle: "@ninashah", bio: "Capturing corner cafes, city walks, and Urdu & English reflections.", role: "both", avatarColor: "blue", followers: 96, following: 29 },
-    { id: "writer-oliver", name: "Oliver Tate", poeticName: "Oliver Tate", handle: "@olivertate", bio: "Wandering narrow lanes without an itinerary.", role: "both", avatarColor: "purple", followers: 89, following: 51 },
-    { id: "writer-rory", name: "Rory Kim", poeticName: "Rory Kim", handle: "@rorykim", bio: "Interior architecture and spaces that leave room for life.", role: "both", avatarColor: "green", followers: 74, following: 19 },
-    { id: "writer-freya", name: "Freya Park", poeticName: "Freya Park", handle: "@freyapark", bio: "Gentle notes on wellness, poetry, and human connection.", role: "both", avatarColor: "gold", followers: 67, following: 22 }
-  ];
-
-  const SEED_POSTS = [
-    {
-      id: "seed-0",
-      authorId: "writer-avery",
-      authorName: "Avery Morgan",
-      title: "The tiny rituals that make an ordinary day feel like yours",
-      category: "Lifestyle",
-      language: "English",
-      createdAt: "2026-10-04T12:00:00.000Z",
-      likes: 248,
-      artClass: "art-garden",
-      artEmoji: "🌿",
-      status: "published",
-      body: "A slower morning, a proper cup of tea, five minutes with the window open. Small ways to make everyday life feel a little more like living.\n\nI used to think a good day had to begin with a perfect plan. The mornings that stay with me are the quieter ones: opening the curtains, watering the basil, and letting the kettle take its time.\n\nThese little rituals don't fix everything. They simply make a bit of space to notice where I am and what I need. That is a lovely place to begin."
-    },
-    {
-      id: "seed-1",
-      authorId: "writer-leo",
-      authorName: "Leo Chen",
-      title: "A love letter to making things badly",
-      category: "Creativity",
-      language: "English",
-      createdAt: "2026-10-03T12:00:00.000Z",
-      likes: 186,
-      artClass: "art-journal",
-      artEmoji: "📓",
-      status: "published",
-      body: "What if the point isn't to be good at it? On giving yourself permission to make a mess, follow the fun, and create without an audience in mind.\n\nFor years I saved my sketchbooks for the days when I had a good idea. The blank pages got more intimidating every week. Then I started filling one page a day with deliberately imperfect things: crooked buildings, strange little creatures, color combinations that probably shouldn't work.\n\nSomewhere in the mess, making things became fun again. You don't have to be good at something for it to belong to you."
-    },
-    {
-      id: "seed-2",
-      authorId: "writer-nina",
-      authorName: "Nina Shah",
-      title: "The neighborhood cafe that taught me how to slow down",
-      category: "Life",
-      language: "English",
-      createdAt: "2026-10-02T12:00:00.000Z",
-      likes: 152,
-      artClass: "art-coffee",
-      artEmoji: "☕",
-      status: "published",
-      body: "I went in for a quick coffee and found a new favorite table, a friendly hello, and a reminder that not every moment needs to be optimized.\n\nThe cafe on the corner has one table by the front window that catches the afternoon sun. I started stopping there between errands, telling myself I had ten minutes. The owner learned my order; I learned which plants were real and which were painted on the wall.\n\nNothing dramatic happened. I just found a place where I could sit without having to earn the pause. Now I take the long way home."
-    },
-    {
-      id: "seed-3",
-      authorId: "writer-oliver",
-      authorName: "Oliver Tate",
-      title: "Getting wonderfully lost in a city that wasn't on the list",
-      category: "Story",
-      language: "English",
-      createdAt: "2026-10-01T12:00:00.000Z",
-      likes: 129,
-      artClass: "art-travel",
-      artEmoji: "🧭",
-      status: "published",
-      body: "No itinerary, no must-see checklist—just one long afternoon of turning down streets because they looked interesting. My favorite kind of trip.\n\nI missed the tram on purpose after spotting a narrow lane full of laundry and flowerpots. It led to a bookshop, which led to lunch, which led to a conversation with a woman who had lived on that block for fifty years.\n\nI came home with no photographs of the famous landmarks and a pocket full of tiny details I would have missed if I had kept to the plan."
-    },
-    {
-      id: "seed-4",
-      authorId: "writer-rory",
-      authorName: "Rory Kim",
-      title: "Why the best rooms leave a little room for life",
-      category: "Skill",
-      language: "English",
-      createdAt: "2026-09-30T12:00:00.000Z",
-      likes: 98,
-      artClass: "art-design",
-      artEmoji: "🪑",
-      status: "published",
-      body: "A home isn't a finished photograph. It's the book left open, the afternoon light, and the chair that never stays where you put it.\n\nThe rooms I love most are not the ones where nothing is out of place. They have a surface for unfinished things, a soft lamp for the evenings, and enough clear space to move around in. They change as the people in them change.\n\nA home can be thoughtfully designed and still leave room for life to happen."
-    },
-    {
-      id: "seed-5",
-      authorId: "writer-freya",
-      authorName: "Freya Park",
-      title: "An unambitious guide to feeling a little better",
-      category: "Poetry",
-      language: "English",
-      createdAt: "2026-09-29T12:00:00.000Z",
-      likes: 84,
-      artClass: "art-city",
-      artEmoji: "✨",
-      status: "published",
-      body: "Drink a glass of water. Step outside. Text someone back. No grand reinvention required—sometimes a gentle nudge is more than enough.\n\nWhen I feel overwhelmed, ambitious routines can start to look like another list I'm failing to complete. So I try one small thing instead: open a window, stretch my shoulders, or put a song on while the kettle boils.\n\nA little better is still better. You are allowed to start there."
-    }
-  ];
-
   const feed = document.querySelector(".feed");
   const layout = document.querySelector(".layout");
   const toast = document.getElementById("toast");
   const authLink = document.getElementById("authLink");
   const headerProfile = document.getElementById("headerProfile");
+  let supabase;
+  let sessionUser = null;
+  let profileRows = [];
+  let postRows = [];
+  let commentRows = [];
+  let likeRows = [];
+  let followRows = [];
+  let notificationRows = [];
   let toastTimer;
 
   // --- STORAGE & STATE HELPERS ---
@@ -155,55 +60,144 @@
     }
   }
 
-  function ensureSeedData() {
-    const existingUsers = readStore(STORAGE.users, []);
-    if (!existingUsers.length) {
-      writeStore(STORAGE.users, SEED_WRITERS);
-    }
-    const existingComments = readStore(STORAGE.comments, null);
-    if (!existingComments) {
-      writeStore(STORAGE.comments, [
-        { id: "c-1", postId: "seed-0", authorId: "writer-leo", authorName: "Leo Chen", content: "Opening the window for five minutes every morning changed my entire week.", createdAt: "2026-10-04T14:20:00.000Z" },
-        { id: "c-2", postId: "seed-1", authorId: "writer-avery", authorName: "Avery Morgan", content: "Filling one page a day with imperfect sketches is the best advice!", createdAt: "2026-10-03T16:10:00.000Z" }
-      ]);
-    }
-  }
-
   function users() {
-    const stored = readStore(STORAGE.users, []);
-    const map = new Map();
-    SEED_WRITERS.forEach((w) => map.set(w.id, w));
-    if (Array.isArray(stored)) {
-      stored.forEach((u) => map.set(u.id, u));
-    }
-    return [...map.values()];
+    return profileRows;
   }
 
   function allPosts() {
-    const custom = readStore(STORAGE.posts, []);
-    const customArr = Array.isArray(custom) ? custom : [];
-    const customIds = new Set(customArr.map((p) => p.id));
-    const seeds = SEED_POSTS.filter((p) => !customIds.has(p.id));
-    return [...customArr, ...seeds];
+    return postRows;
   }
 
-  function savePostUpdate(updatedPost) {
-    const custom = readStore(STORAGE.posts, []);
-    const arr = Array.isArray(custom) ? custom : [];
-    const exists = arr.some((p) => p.id === updatedPost.id);
-    const next = exists ? arr.map((p) => (p.id === updatedPost.id ? updatedPost : p)) : [...arr, updatedPost];
-    writeStore(STORAGE.posts, next);
+  function mapProfile(row) {
+    return {
+      id: row.id,
+      name: row.full_name || row.username || "Writer",
+      poeticName: row.id === sessionUser?.id
+        ? sessionUser.user_metadata?.poetic_name || row.full_name || row.username
+        : row.full_name || row.username || "Writer",
+      handle: row.username ? `@${row.username}` : "",
+      bio: row.bio || "",
+      role: row.role || "both",
+      followers: Number(row.followers_count) || 0,
+      following: Number(row.following_count) || 0,
+      avatarUrl: row.avatar_url || ""
+    };
   }
 
-  function deletePostById(postId) {
-    const custom = readStore(STORAGE.posts, []);
-    const arr = Array.isArray(custom) ? custom : [];
-    writeStore(STORAGE.posts, arr.filter((p) => p.id !== postId));
+  function mapPost(row) {
+    const author = profileRows.find((profile) => profile.id === row.user_id);
+    const imagePath = row.image_path || "";
+    const imageUrl = imagePath ? supabase.storage.from("post-images").getPublicUrl(imagePath).data.publicUrl : "";
+    return {
+      id: row.id,
+      authorId: row.user_id,
+      authorName: author ? displayName(author) : "Writer",
+      title: row.title || "",
+      category: row.category || "Other",
+      language: row.language || "English",
+      body: row.content || row.body || "",
+      createdAt: row.created_at,
+      likes: Number(row.likes_count ?? row.likes) || 0,
+      status: row.status || "published",
+      imagePath,
+      imageUrl,
+      imageData: ""
+    };
+  }
+
+  async function loadRemoteData() {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+    sessionUser = sessionData.session?.user || null;
+
+    const profileFields = "id,username,full_name,bio,avatar_url,role,stories_count,followers_count,following_count,total_likes,total_comments,created_at";
+    const { data: profileData, error: profileError } = await supabase
+      .from("profiles")
+      .select(profileFields)
+      .order("created_at", { ascending: false });
+    if (profileError) throw profileError;
+    profileRows = (profileData || []).map(mapProfile);
+
+    let postsQuery = supabase.from("posts").select("*").order("created_at", { ascending: false });
+    postsQuery = sessionUser
+      ? postsQuery.or(`status.eq.published,user_id.eq.${sessionUser.id}`)
+      : postsQuery.eq("status", "published");
+    const { data: postsData, error: postsError } = await postsQuery;
+    if (postsError) throw postsError;
+    postRows = (postsData || []).map(mapPost);
+
+    const { data: comments, error: commentsError } = await supabase
+      .from("comments")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (commentsError) throw commentsError;
+    commentRows = (comments || []).map((row) => ({
+      id: row.id, postId: row.post_id, authorId: row.user_id,
+      authorName: row.author_name, content: row.content, createdAt: row.created_at
+    }));
+
+    if (sessionUser) {
+      const [followsResult, likesResult, notificationsResult] = await Promise.all([
+        supabase.from("follows").select("follower_id,following_id").eq("follower_id", sessionUser.id),
+        supabase.from("likes_table").select("post_id,user_id").eq("user_id", sessionUser.id),
+        supabase.from("notifications").select("*").eq("recipient_id", sessionUser.id).order("created_at", { ascending: false })
+      ]);
+      const failed = [followsResult, likesResult, notificationsResult].find((result) => result.error);
+      if (failed?.error) throw failed.error;
+      followRows = followsResult.data || [];
+      likeRows = likesResult.data || [];
+      notificationRows = (notificationsResult.data || []).map((row) => ({
+        id: row.id, recipientId: row.recipient_id, postId: row.post_id,
+        message: row.message, isRead: row.is_read, createdAt: row.created_at
+      }));
+    } else {
+      followRows = [];
+      likeRows = [];
+      notificationRows = [];
+    }
+
+    if (!sessionUser) return null;
+    let ownProfile = profileRows.find((profile) => profile.id === sessionUser.id);
+    if (!ownProfile) {
+      ownProfile = mapProfile({
+        id: sessionUser.id,
+        username: sessionUser.user_metadata?.poetic_name,
+        full_name: sessionUser.user_metadata?.full_name,
+        role: sessionUser.user_metadata?.role
+      });
+      profileRows.push(ownProfile);
+    }
+    return ownProfile;
+  }
+
+  async function savePostUpdate(post) {
+    const record = {
+      ...(post.id ? { id: post.id } : {}),
+      user_id: sessionUser.id,
+      title: post.title,
+      content: post.body,
+      category: post.category,
+      language: post.language,
+      status: post.status,
+      image_path: post.imagePath || null
+    };
+    const { data, error } = await supabase.from("posts").upsert(record).select("*").single();
+    if (error) throw error;
+    const saved = mapPost(data);
+    const index = postRows.findIndex((item) => item.id === saved.id);
+    if (index < 0) postRows.unshift(saved);
+    else postRows[index] = saved;
+    return saved;
+  }
+
+  async function deletePostById(postId) {
+    const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", sessionUser.id);
+    if (error) throw error;
+    postRows = postRows.filter((post) => post.id !== postId);
   }
 
   function currentUser() {
-    const id = readStore(STORAGE.session, null);
-    return id ? users().find((u) => u.id === id) || null : null;
+    return sessionUser ? users().find((user) => user.id === sessionUser.id) || null : null;
   }
 
   function displayName(user) {
@@ -231,98 +225,84 @@
   }
 
   function likedPostsList() {
-    const all = readStore(STORAGE.likes, {});
-    const key = currentUser()?.id || "guest";
-    return Array.isArray(all[key]) ? all[key] : [];
+    return likeRows.filter((like) => like.user_id === sessionUser?.id).map((like) => like.post_id);
   }
 
-  function toggleLike(postId) {
-    const all = readStore(STORAGE.likes, {});
-    const key = currentUser()?.id || "guest";
-    const list = Array.isArray(all[key]) ? all[key] : [];
-    const wasLiked = list.includes(postId);
-    all[key] = wasLiked ? list.filter((id) => id !== postId) : [...new Set([...list, postId])];
-    writeStore(STORAGE.likes, all);
-
+  async function toggleLike(postId) {
+    if (!sessionUser) throw new Error("Log in to like a story.");
+    const wasLiked = likedPostsList().includes(postId);
+    const query = wasLiked
+      ? supabase.from("likes_table").delete().eq("post_id", postId).eq("user_id", sessionUser.id)
+      : supabase.from("likes_table").insert({ post_id: postId, user_id: sessionUser.id });
+    const { error } = await query;
+    if (error) throw error;
+    likeRows = wasLiked
+      ? likeRows.filter((like) => !(like.post_id === postId && like.user_id === sessionUser.id))
+      : [...likeRows, { post_id: postId, user_id: sessionUser.id }];
     const target = allPosts().find((p) => p.id === postId);
     if (target) {
       const nextLikes = Math.max(0, Number(target.likes || 0) + (wasLiked ? -1 : 1));
-      const updated = { ...target, likes: nextLikes };
-      savePostUpdate(updated);
-      if (!wasLiked && currentUser() && target.authorId && target.authorId !== currentUser().id) {
-        addNotification(target.authorId, `${displayName(currentUser())} liked your story "${target.title}"`, target.id);
-      }
+      target.likes = nextLikes;
       return { liked: !wasLiked, count: nextLikes };
     }
     return { liked: !wasLiked, count: 0 };
   }
 
   function commentsForPost(postId) {
-    const all = readStore(STORAGE.comments, []);
-    return (Array.isArray(all) ? all : [])
+    return commentRows
       .filter((c) => c.postId === postId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  function addCommentToPost(postId, content) {
+  async function addCommentToPost(postId, content) {
     const user = currentUser();
-    if (!user) return null;
-    const all = readStore(STORAGE.comments, []);
+    if (!user) throw new Error("Log in to leave a response.");
+    const { data, error } = await supabase.from("comments").insert({
+      post_id: postId,
+      user_id: user.id,
+      author_name: displayName(user),
+      content: content.trim()
+    }).select("*").single();
+    if (error) throw error;
     const comment = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `c-${Date.now()}`,
-      postId,
-      authorId: user.id,
-      authorName: displayName(user),
-      content: content.trim(),
-      createdAt: new Date().toISOString()
+      id: data.id, postId: data.post_id, authorId: data.user_id,
+      authorName: data.author_name, content: data.content, createdAt: data.created_at
     };
-    writeStore(STORAGE.comments, [...(Array.isArray(all) ? all : []), comment]);
-    const post = allPosts().find((p) => p.id === postId);
-    if (post && post.authorId !== user.id) {
-      addNotification(post.authorId, `${displayName(user)} commented on "${post.title}"`, postId);
-    }
+    commentRows.push(comment);
     return comment;
   }
 
-  function deleteCommentById(commentId) {
+  async function deleteCommentById(commentId) {
     const user = currentUser();
     if (!user) return;
-    const all = readStore(STORAGE.comments, []);
-    writeStore(STORAGE.comments, (Array.isArray(all) ? all : []).filter((c) => !(c.id === commentId && c.authorId === user.id)));
+    const { error } = await supabase.from("comments").delete().eq("id", commentId).eq("user_id", user.id);
+    if (error) throw error;
+    commentRows = commentRows.filter((comment) => comment.id !== commentId);
   }
 
   function followingList(userId) {
-    const all = readStore(STORAGE.follows, {});
-    const key = userId || currentUser()?.id || "guest";
-    return Array.isArray(all[key]) ? all[key] : [];
+    const id = userId || currentUser()?.id;
+    return followRows.filter((follow) => follow.follower_id === id).map((follow) => follow.following_id);
   }
 
   function followersCountFor(writerId) {
     const baseWriter = users().find((u) => u.id === writerId);
-    const base = Number(baseWriter?.followers || 0);
-    const all = readStore(STORAGE.follows, {});
-    let extra = 0;
-    Object.values(all).forEach((arr) => {
-      if (Array.isArray(arr) && arr.includes(writerId)) extra++;
-    });
-    return base + extra;
+    return Number(baseWriter?.followers || 0);
   }
 
-  function toggleFollowWriter(targetWriterId) {
+  async function toggleFollowWriter(targetWriterId) {
     const user = currentUser();
-    const key = user?.id || "guest";
-    if (user && user.id === targetWriterId) {
-      notify("You cannot follow yourself.");
-      return false;
-    }
-    const all = readStore(STORAGE.follows, {});
-    const list = Array.isArray(all[key]) ? all[key] : [];
-    const isFollowing = list.includes(targetWriterId);
-    all[key] = isFollowing ? list.filter((id) => id !== targetWriterId) : [...new Set([...list, targetWriterId])];
-    writeStore(STORAGE.follows, all);
-    if (!isFollowing && user) {
-      addNotification(targetWriterId, `${displayName(user)} started following your writing.`, "");
-    }
+    if (!user) throw new Error("Log in to follow writers.");
+    if (user.id === targetWriterId) throw new Error("You cannot follow yourself.");
+    const isFollowing = followingList(user.id).includes(targetWriterId);
+    const query = isFollowing
+      ? supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId)
+      : supabase.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
+    const { error } = await query;
+    if (error) throw error;
+    followRows = isFollowing
+      ? followRows.filter((follow) => !(follow.follower_id === user.id && follow.following_id === targetWriterId))
+      : [...followRows, { follower_id: user.id, following_id: targetWriterId }];
     updateHeader();
     return !isFollowing;
   }
@@ -330,33 +310,15 @@
   function notificationsForCurrentUser() {
     const user = currentUser();
     if (!user) return [];
-    const all = readStore(STORAGE.notifications, []);
-    return (Array.isArray(all) ? all : [])
-      .filter((n) => n.recipientId === user.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return notificationRows;
   }
 
-  function addNotification(recipientId, message, postId = "") {
-    const all = readStore(STORAGE.notifications, []);
-    const item = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `n-${Date.now()}`,
-      recipientId,
-      postId,
-      message,
-      isRead: false,
-      createdAt: new Date().toISOString()
-    };
-    writeStore(STORAGE.notifications, [item, ...(Array.isArray(all) ? all : [])]);
-  }
-
-  function markAllNotificationsRead() {
+  async function markAllNotificationsRead() {
     const user = currentUser();
     if (!user) return;
-    const all = readStore(STORAGE.notifications, []);
-    const updated = (Array.isArray(all) ? all : []).map((n) =>
-      n.recipientId === user.id ? { ...n, isRead: true } : n
-    );
-    writeStore(STORAGE.notifications, updated);
+    const { error } = await supabase.from("notifications").update({ is_read: true }).eq("recipient_id", user.id);
+    if (error) throw error;
+    notificationRows = notificationRows.map((notification) => ({ ...notification, isRead: true }));
     updateHeader();
   }
 
@@ -491,8 +453,13 @@
   function navigate(route) {
     const value = String(route || "").replace(/^#/, "");
     if (value === "logout") {
-      writeStore(STORAGE.session, null);
-      location.href = "index.html?logout=1";
+      supabase.auth.signOut().then(({ error }) => {
+        if (error) throw error;
+        location.href = "index.html";
+      }).catch((error) => {
+        console.error("Supabase sign-out failed:", error);
+        notify("Unable to log out. Please try again.");
+      });
       return;
     }
     if (value.startsWith("post/")) {
@@ -548,8 +515,8 @@
     const isRTL = RTL_LANGUAGES.has(post.language);
     const artClass = post.artClass || "art-journal";
     const artEmoji = post.artEmoji || "✒️";
-    const coverHTML = post.imageData
-      ? `<div class="post-image"><img src="${escapeHTML(post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>`
+    const coverHTML = post.imageUrl || post.imageData
+      ? `<div class="post-image"><img src="${escapeHTML(post.imageUrl || post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>`
       : `<div class="post-image ${escapeHTML(artClass)}" aria-label="Story illustration"><span>${artEmoji}</span></div>`;
 
     return `
@@ -763,8 +730,8 @@
     const isRTL = RTL_LANGUAGES.has(post.language);
     const comments = commentsForPost(post.id);
 
-    const coverHTML = post.imageData
-      ? `<div class="detail-cover"><img src="${escapeHTML(post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;max-height:380px;object-fit:cover;border-radius:14px;"></div>`
+    const coverHTML = post.imageUrl || post.imageData
+      ? `<div class="detail-cover"><img src="${escapeHTML(post.imageUrl || post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;max-height:380px;object-fit:cover;border-radius:14px;"></div>`
       : `<div class="detail-cover ${escapeHTML(post.artClass || "art-journal")}" aria-hidden="true">${post.artEmoji || "✒️"}</div>`;
 
     const commentsHTML = comments.length
@@ -1036,7 +1003,11 @@
   }
 
   function renderProfilePage(writerId) {
-    const target = users().find((u) => u.id === writerId) || currentUser() || SEED_WRITERS[0];
+    const target = users().find((u) => u.id === writerId) || currentUser();
+    if (!target) {
+      setPage(`<div class="page-view">${pageHero("Profile unavailable", "We couldn't find this writer.", "The profile may have been removed or is not public.")}</div>`, { contentOnly: true });
+      return;
+    }
     const isSelf = currentUser()?.id === target.id;
     const isFollowing = followingList().includes(target.id);
     const writerPosts = allPosts()
@@ -1107,10 +1078,15 @@
 
     const markBtn = document.getElementById("markReadBtn");
     if (markBtn) {
-      markBtn.addEventListener("click", () => {
-        markAllNotificationsRead();
-        renderNotificationsPage();
-        notify("All notifications marked as read.");
+      markBtn.addEventListener("click", async () => {
+        try {
+          await markAllNotificationsRead();
+          renderNotificationsPage();
+          notify("All notifications marked as read.");
+        } catch (error) {
+          console.error("Unable to mark notifications as read:", error);
+          notify(error.message || "Unable to update notifications.");
+        }
       });
     }
   }
@@ -1153,12 +1129,11 @@
   function renderCompetitions() {
     setPage(
       `<div class="page-view">
-        ${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. A kitchen, a bus route, a language, or a person can all be home.")}
+        ${pageHero("Community writing prompts", "No active prompt right now", "New writing prompts will appear here when they are available.")}
         <section class="page-card">
-          <h2>How to enter</h2>
-          <p>Begin with a sensory detail you can see, hear, or smell. Publish your story in any supported language and include <strong>October prompt</strong> in your title or opening paragraph.</p>
-          <p><strong>Entries close October 31, 2026.</strong> Community favorites will be featured on the home banner.</p>
-          <a class="primary-button" href="write.html">Write your entry</a>
+          <h2>Have a story to share?</h2>
+          <p>Write about any topic you care about and publish it for the Qalamly community.</p>
+          <a class="primary-button" href="write.html">Write a story</a>
         </section>
       </div>`,
       { contentOnly: true }
@@ -1234,15 +1209,8 @@
 
   // --- ROUTER DISPATCH ---
   function renderRoute() {
-    ensureSeedData();
     updateHeader();
     const { path, params } = routeParts();
-
-    if (path === "home" && params.get("logout") === "1") {
-      writeStore(STORAGE.session, null);
-      updateHeader();
-      notify("You have been logged out.");
-    }
 
     const activeFile = path === "home" ? "index.html" : `${path}.html`;
     document.querySelectorAll(".top-nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === activeFile));
@@ -1279,7 +1247,7 @@
   }
 
   // --- GLOBAL EVENT LISTENERS ---
-  document.addEventListener("click", (event) => {
+  document.addEventListener("click", async (event) => {
     const signout = event.target.closest("[data-signout]");
     if (signout) {
       navigate("logout");
@@ -1295,10 +1263,15 @@
     const deletePostBtn = event.target.closest("[data-delete-post]");
     if (deletePostBtn) {
       const id = deletePostBtn.dataset.deletePost;
-      deletePostById(id);
-      notify("Story deleted.");
-      renderDashboard("all");
-      updateHeader();
+      try {
+        await deletePostById(id);
+        notify("Story deleted.");
+        renderDashboard("all");
+        updateHeader();
+      } catch (error) {
+        console.error("Unable to delete story:", error);
+        notify(error.message || "Unable to delete this story.");
+      }
       return;
     }
 
@@ -1306,18 +1279,28 @@
     if (followBtn) {
       event.preventDefault();
       const writerId = followBtn.dataset.followId;
-      const nowFollowing = toggleFollowWriter(writerId);
-      followBtn.classList.toggle("following", nowFollowing);
-      followBtn.textContent = nowFollowing ? "Following" : "Follow";
-      notify(nowFollowing ? "Writer followed!" : "Unfollowed writer.");
+      try {
+        const nowFollowing = await toggleFollowWriter(writerId);
+        followBtn.classList.toggle("following", nowFollowing);
+        followBtn.textContent = nowFollowing ? "Following" : "Follow";
+        notify(nowFollowing ? "Writer followed!" : "Unfollowed writer.");
+      } catch (error) {
+        console.error("Unable to update follow:", error);
+        notify(error.message || "Unable to update your follow.");
+      }
       return;
     }
 
     const detailLike = event.target.closest("[data-like-detail]");
     if (detailLike) {
       const id = detailLike.dataset.likeDetail;
-      const res = toggleLike(id);
-      detailLike.textContent = `${res.liked ? "♥ Liked" : "♡ Like"} · ${res.count}`;
+      try {
+        const res = await toggleLike(id);
+        detailLike.textContent = `${res.liked ? "♥ Liked" : "♡ Like"} · ${res.count}`;
+      } catch (error) {
+        console.error("Unable to update like:", error);
+        notify(error.message || "Unable to update your like.");
+      }
       return;
     }
 
@@ -1343,9 +1326,14 @@
 
     const deleteComment = event.target.closest("[data-delete-comment]");
     if (deleteComment) {
-      deleteCommentById(deleteComment.dataset.deleteComment);
-      renderDetail(deleteComment.dataset.postId);
-      notify("Response removed.");
+      try {
+        await deleteCommentById(deleteComment.dataset.deleteComment);
+        renderDetail(deleteComment.dataset.postId);
+        notify("Response removed.");
+      } catch (error) {
+        console.error("Unable to delete response:", error);
+        notify(error.message || "Unable to delete this response.");
+      }
       return;
     }
 
@@ -1354,12 +1342,17 @@
       event.stopPropagation();
       const card = likeButton.closest(".post-card");
       if (!card) return;
-      const res = toggleLike(card.dataset.postId);
-      likeButton.setAttribute("aria-pressed", String(res.liked));
-      likeButton.classList.toggle("liked", res.liked);
-      likeButton.textContent = res.liked ? "♥" : "♡";
-      const countEl = card.querySelector(".like-count");
-      if (countEl) countEl.textContent = String(res.count);
+      try {
+        const res = await toggleLike(card.dataset.postId);
+        likeButton.setAttribute("aria-pressed", String(res.liked));
+        likeButton.classList.toggle("liked", res.liked);
+        likeButton.textContent = res.liked ? "♥" : "♡";
+        const countEl = card.querySelector(".like-count");
+        if (countEl) countEl.textContent = String(res.count);
+      } catch (error) {
+        console.error("Unable to update like:", error);
+        notify(error.message || "Unable to update your like.");
+      }
       return;
     }
 
@@ -1387,8 +1380,12 @@
 
     if (form.id === "contactForm") {
       event.preventDefault();
-      form.reset();
-      notify("Thank you! Your message has been sent to the Qalamly team.");
+      const subject = encodeURIComponent(`Qalamly message from ${form.elements.contactName.value.trim()}`);
+      const body = encodeURIComponent(
+        `From: ${form.elements.contactName.value.trim()} (${form.elements.contactEmail.value.trim()})\n\n${form.elements.contactMsg.value.trim()}`
+      );
+      location.href = `mailto:hello@qalamly.com?subject=${subject}&body=${body}`;
+      notify("Your email app should open with your message.");
       return;
     }
 
@@ -1397,18 +1394,23 @@
       const postId = form.dataset.postId;
       const content = form.elements.content.value.trim();
       if (!content) return;
-      addCommentToPost(postId, content);
-      renderDetail(postId);
-      notify("Response published!");
+      try {
+        await addCommentToPost(postId, content);
+        renderDetail(postId);
+        notify("Response published!");
+      } catch (error) {
+        console.error("Unable to publish response:", error);
+        showFormError(error.message || "Unable to publish your response.");
+      }
       return;
     }
 
     if (form.id === "authForm") {
       event.preventDefault();
+      try {
       const isSignup = routeParts().path === "signup";
       const email = form.elements.email.value.trim().toLowerCase();
       const password = form.elements.password.value;
-      const list = readStore(STORAGE.users, SEED_WRITERS);
 
       if (isSignup) {
         const name = form.elements.name.value.trim();
@@ -1418,31 +1420,30 @@
         if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
         if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
         if (password !== confirm) { showFormError("Passwords do not match."); return; }
-        if (list.some((u) => u.email === email)) { showFormError("An account with this email already exists."); return; }
-
-        const newUser = {
-          id: crypto.randomUUID ? crypto.randomUUID() : `u-${Date.now()}`,
-          name,
-          poeticName,
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          role,
-          handle: `@${email.split("@")[0]}`,
-          bio: "Writer and reader on Qalamly.",
-          followers: 0,
-          following: 0
-        };
-        writeStore(STORAGE.users, [...list, newUser]);
-        writeStore(STORAGE.session, newUser.id);
-        notify("Account created! Welcome to Qalamly.");
+          options: { data: { full_name: name, poetic_name: poeticName, role } }
+        });
+        if (error) { showFormError(error.message); return; }
+        if (!data.session) {
+          showFormError("Check your email to confirm your account, then log in.");
+          return;
+        }
+        sessionUser = data.user;
+        await loadRemoteData();
         navigate("dashboard.html");
       } else {
-        const account = list.find((u) => u.email === email && u.password === password);
-        if (!account) { showFormError("Invalid email or password."); return; }
-        writeStore(STORAGE.session, account.id);
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) { showFormError(error.message); return; }
+        await loadRemoteData();
         const next = sessionStorage.getItem("qalamly.next") || "dashboard";
         sessionStorage.removeItem("qalamly.next");
         navigate(`${next}.html`);
+      }
+      } catch (error) {
+        console.error("Authentication request failed:", error);
+        showFormError(error.message || "Unable to authenticate. Please try again.");
       }
       return;
     }
@@ -1464,39 +1465,46 @@
         return;
       }
 
+      const existing = editId ? allPosts().find((p) => p.id === editId) : null;
       const fileInput = form.elements.image;
-      let imageData = "";
+      let imagePath = existing?.imagePath || "";
       if (fileInput && fileInput.files && fileInput.files[0]) {
         const file = fileInput.files[0];
         if (file.size > 2 * 1024 * 1024) {
           showFormError("Image must be under 2MB.");
           return;
         }
-        imageData = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.readAsDataURL(file);
-        });
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+        imagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+        try {
+          const { error } = await supabase.storage.from("post-images").upload(imagePath, file, { upsert: false });
+          if (error) { showFormError(error.message); return; }
+        } catch (error) {
+          console.error("Unable to upload story image:", error);
+          showFormError(error.message || "Unable to upload the cover image.");
+          return;
+        }
       }
-
-      const existing = editId ? allPosts().find((p) => p.id === editId) : null;
       const postObj = {
-        id: existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `post-${Date.now()}`),
+        ...(existing ? { id: existing.id } : {}),
         authorId: user.id,
-        authorName: displayName(user),
         title,
         category,
         language,
         body,
-        imageData: imageData || existing?.imageData || "",
+        imagePath,
         status,
-        likes: existing ? existing.likes : 0,
-        createdAt: existing ? existing.createdAt : new Date().toISOString()
+        likes: existing?.likes || 0
       };
 
-      savePostUpdate(postObj);
-      notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
-      navigate("dashboard.html");
+      try {
+        await savePostUpdate(postObj);
+        notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
+        navigate("dashboard.html");
+      } catch (error) {
+        console.error("Unable to save story:", error);
+        showFormError(error.message || "Unable to save your story.");
+      }
       return;
     }
 
@@ -1510,24 +1518,63 @@
       const bio = form.elements.bio.value.trim();
       const role = form.elements.role.value;
 
-      if (!handle.startsWith("@")) handle = `@${handle}`;
-      const list = users().map((u) => (u.id === user.id ? { ...u, name, poeticName, handle, bio, role } : u));
-      writeStore(STORAGE.users, list);
-
-      // Sync updated pen name across user's posts
-      const customPosts = readStore(STORAGE.posts, []);
-      if (Array.isArray(customPosts)) {
-        customPosts.forEach((p) => {
-          if (p.authorId === user.id) p.authorName = poeticName;
-        });
-        writeStore(STORAGE.posts, customPosts);
+      const username = handle.replace(/^@/, "").toLowerCase();
+      let error;
+      try {
+        ({ error } = await supabase.from("profiles").update({
+          full_name: name, username, bio, role
+        }).eq("id", user.id));
+      } catch (requestError) {
+        console.error("Unable to update profile:", requestError);
+        showFormError(requestError.message || "Unable to save profile settings.");
+        return;
       }
-
-      updateHeader();
-      notify("Profile settings saved.");
-      navigate("dashboard.html");
+      if (error) {
+        console.error("Unable to update profile:", error);
+        showFormError(error.message || "Unable to save profile settings.");
+        return;
+      }
+      let metadataError;
+      try {
+        ({ error: metadataError } = await supabase.auth.updateUser({
+          data: { full_name: name, poetic_name: poeticName, role }
+        }));
+      } catch (requestError) {
+        console.error("Profile saved, but account metadata update failed:", requestError);
+        showFormError("Profile details saved, but your pen name could not be updated.");
+        return;
+      }
+      if (metadataError) {
+        console.error("Profile fields saved, but account metadata update failed:", metadataError);
+        showFormError("Profile details saved, but your pen name could not be updated.");
+        return;
+      }
+      try {
+        await loadRemoteData();
+        updateHeader();
+        notify("Profile settings saved.");
+        navigate("dashboard.html");
+      } catch (loadError) {
+        console.error("Profile saved but refresh failed:", loadError);
+        notify("Profile saved, but refreshing the page data failed.");
+      }
     }
   });
 
-  renderRoute();
+  async function startApp() {
+    try {
+      supabase = await window.getSupabaseClient();
+      const user = await loadRemoteData();
+      if (user && !profileRows.some((profile) => profile.id === user.id)) profileRows.push(user);
+      renderRoute();
+    } catch (error) {
+      console.error("Unable to load Qalamly from Supabase:", error);
+      setPage(
+        `<div class="page-view"><section class="page-hero"><div class="page-kicker">Connection problem</div><h1>Qalamly couldn't load its data.</h1><p>${escapeHTML(error.message || "Check your connection and Supabase configuration, then try again.")}</p><button class="primary-button" type="button" onclick="location.reload()">Try again</button></section></div>`,
+        { contentOnly: true }
+      );
+    }
+  }
+
+  startApp();
 })();
