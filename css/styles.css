@@ -702,3 +702,102 @@
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
+
+/* === Qalamly Production Additions: RTL, Comments, Notifications & Badges === */
+[dir="rtl"] {
+  font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Urdu Typesetting", system-ui, sans-serif;
+  text-align: right;
+  line-height: 2.1;
+}
+
+.lang-badge {
+  background: var(--mint);
+  color: #2b6cb0;
+}
+
+.notif-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #74758a;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.notif-bell:hover {
+  color: var(--purple);
+  background: var(--purple-pale);
+}
+
+.notif-bell svg {
+  width: 19px;
+  height: 19px;
+}
+
+.notif-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e46d8a;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+
+.dashboard-delete,
+.comment-delete {
+  border: 0;
+  background: #fff0f1;
+  color: #a1364d;
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dashboard-delete:hover,
+.comment-delete:hover {
+  background: #f7d8dd;
+}
+
+.comments-list {
+  display: grid;
+  gap: 12px;
+}
+
+.comment-item {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fafafe;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.comment-header span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.comment-item p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.6;
+}
