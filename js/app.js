@@ -1184,12 +1184,11 @@
         <section class="page-card page-form">
           <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
           <form id="authForm" novalidate>
-            ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" placeholder="Your full name"></div>' : ""}
-            ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" placeholder="The name readers will see"></div>' : ""}
-            <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required placeholder="you@example.com"></div>
-            <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
-            ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" placeholder="Re-enter password"></div>' : ""}
-            ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role"><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
+            ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" autocomplete="name" required maxlength="60" placeholder="Your full name"></div>' : ""}
+            ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" autocomplete="nickname" required maxlength="60" placeholder="The name readers will see"></div>' : ""}
+            <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com"></div>
+            <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" autocomplete="${signup ? "new-password" : "current-password"}" required minlength="${signup ? "8" : "1"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
+            ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
             <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           </form>
           <p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p>
@@ -1415,11 +1414,9 @@
       if (isSignup) {
         const name = form.elements.name.value.trim();
         const poeticName = form.elements.poeticName.value.trim();
-        const confirm = form.elements.confirmPassword.value;
         const role = form.elements.role.value;
         if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
         if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
-        if (password !== confirm) { showFormError("Passwords do not match."); return; }
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
