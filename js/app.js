@@ -2,16 +2,26 @@
   "use strict";
 
   const STORAGE = {
-    users: "qalamly.users.v2",
-    posts: "qalamly.posts.v2",
-    session: "qalamly.session.v2",
-    bookmarks: "qalamly.bookmarks.v2",
-    likes: "qalamly.likes.v2",
-    comments: "qalamly.comments.v2",
-    follows: "qalamly.follows.v2",
-    notifications: "qalamly.notifications.v2",
-    messages: "qalamly.messages.v2"
+    users: "qalamly.users.v3",
+    posts: "qalamly.posts.v3",
+    session: "qalamly.session.v3",
+    bookmarks: "qalamly.bookmarks.v3",
+    likes: "qalamly.likes.v3",
+    comments: "qalamly.comments.v3",
+    follows: "qalamly.follows.v3",
+    notifications: "qalamly.notifications.v3",
+    messages: "qalamly.messages.v3"
   };
+
+  // Purge any old demo localStorage keys from earlier versions
+  [
+    "sunday.users.v1", "sunday.posts.v1", "sunday.session.v1", "sunday.bookmarks.v1",
+    "qalamly.users.v2", "qalamly.posts.v2", "qalamly.session.v2", "qalamly.bookmarks.v2",
+    "qalamly.likes.v2", "qalamly.comments.v2", "qalamly.follows.v2", "qalamly.notifications.v2",
+    "qalamly.messages.v2"
+  ].forEach((legacyKey) => {
+    try { localStorage.removeItem(legacyKey); } catch {}
+  });
 
   const STORY_CATEGORIES = [
     "Life", "Lifestyle", "Love", "Skill", "Creativity",
@@ -24,102 +34,6 @@
   ];
 
   const RTL_LANGUAGES = new Set(["Urdu", "Balochi"]);
-
-  const SEED_WRITERS = [
-    { id: "writer-avery", name: "Avery Morgan", poeticName: "Avery Morgan", handle: "@averymorgan", bio: "Writing about slow mornings, tea rituals, and mindful living.", role: "both", avatarColor: "green", followers: 142, following: 38 },
-    { id: "writer-leo", name: "Leo Chen", poeticName: "Leo Chen", handle: "@leochen", bio: "Sketchbook keeper, imperfect maker, and essayist.", role: "both", avatarColor: "gold", followers: 118, following: 44 },
-    { id: "writer-nina", name: "Nina Shah", poeticName: "Nina Shah", handle: "@ninashah", bio: "Capturing corner cafes, city walks, and Urdu & English reflections.", role: "both", avatarColor: "blue", followers: 96, following: 29 },
-    { id: "writer-oliver", name: "Oliver Tate", poeticName: "Oliver Tate", handle: "@olivertate", bio: "Wandering narrow lanes without an itinerary.", role: "both", avatarColor: "purple", followers: 89, following: 51 },
-    { id: "writer-rory", name: "Rory Kim", poeticName: "Rory Kim", handle: "@rorykim", bio: "Interior architecture and spaces that leave room for life.", role: "both", avatarColor: "green", followers: 74, following: 19 },
-    { id: "writer-freya", name: "Freya Park", poeticName: "Freya Park", handle: "@freyapark", bio: "Gentle notes on wellness, poetry, and human connection.", role: "both", avatarColor: "gold", followers: 67, following: 22 }
-  ];
-
-  const SEED_POSTS = [
-    {
-      id: "seed-0",
-      authorId: "writer-avery",
-      authorName: "Avery Morgan",
-      title: "The tiny rituals that make an ordinary day feel like yours",
-      category: "Lifestyle",
-      language: "English",
-      createdAt: "2026-10-04T12:00:00.000Z",
-      likes: 248,
-      artClass: "art-garden",
-      artEmoji: "🌿",
-      status: "published",
-      body: "A slower morning, a proper cup of tea, five minutes with the window open. Small ways to make everyday life feel a little more like living.\n\nI used to think a good day had to begin with a perfect plan. The mornings that stay with me are the quieter ones: opening the curtains, watering the basil, and letting the kettle take its time.\n\nThese little rituals don't fix everything. They simply make a bit of space to notice where I am and what I need. That is a lovely place to begin."
-    },
-    {
-      id: "seed-1",
-      authorId: "writer-leo",
-      authorName: "Leo Chen",
-      title: "A love letter to making things badly",
-      category: "Creativity",
-      language: "English",
-      createdAt: "2026-10-03T12:00:00.000Z",
-      likes: 186,
-      artClass: "art-journal",
-      artEmoji: "📓",
-      status: "published",
-      body: "What if the point isn't to be good at it? On giving yourself permission to make a mess, follow the fun, and create without an audience in mind.\n\nFor years I saved my sketchbooks for the days when I had a good idea. The blank pages got more intimidating every week. Then I started filling one page a day with deliberately imperfect things: crooked buildings, strange little creatures, color combinations that probably shouldn't work.\n\nSomewhere in the mess, making things became fun again. You don't have to be good at something for it to belong to you."
-    },
-    {
-      id: "seed-2",
-      authorId: "writer-nina",
-      authorName: "Nina Shah",
-      title: "The neighborhood cafe that taught me how to slow down",
-      category: "Life",
-      language: "English",
-      createdAt: "2026-10-02T12:00:00.000Z",
-      likes: 152,
-      artClass: "art-coffee",
-      artEmoji: "☕",
-      status: "published",
-      body: "I went in for a quick coffee and found a new favorite table, a friendly hello, and a reminder that not every moment needs to be optimized.\n\nThe cafe on the corner has one table by the front window that catches the afternoon sun. I started stopping there between errands, telling myself I had ten minutes. The owner learned my order; I learned which plants were real and which were painted on the wall.\n\nNothing dramatic happened. I just found a place where I could sit without having to earn the pause. Now I take the long way home."
-    },
-    {
-      id: "seed-3",
-      authorId: "writer-oliver",
-      authorName: "Oliver Tate",
-      title: "Getting wonderfully lost in a city that wasn't on the list",
-      category: "Story",
-      language: "English",
-      createdAt: "2026-10-01T12:00:00.000Z",
-      likes: 129,
-      artClass: "art-travel",
-      artEmoji: "🧭",
-      status: "published",
-      body: "No itinerary, no must-see checklist—just one long afternoon of turning down streets because they looked interesting. My favorite kind of trip.\n\nI missed the tram on purpose after spotting a narrow lane full of laundry and flowerpots. It led to a bookshop, which led to lunch, which led to a conversation with a woman who had lived on that block for fifty years.\n\nI came home with no photographs of the famous landmarks and a pocket full of tiny details I would have missed if I had kept to the plan."
-    },
-    {
-      id: "seed-4",
-      authorId: "writer-rory",
-      authorName: "Rory Kim",
-      title: "Why the best rooms leave a little room for life",
-      category: "Skill",
-      language: "English",
-      createdAt: "2026-09-30T12:00:00.000Z",
-      likes: 98,
-      artClass: "art-design",
-      artEmoji: "🪑",
-      status: "published",
-      body: "A home isn't a finished photograph. It's the book left open, the afternoon light, and the chair that never stays where you put it.\n\nThe rooms I love most are not the ones where nothing is out of place. They have a surface for unfinished things, a soft lamp for the evenings, and enough clear space to move around in. They change as the people in them change.\n\nA home can be thoughtfully designed and still leave room for life to happen."
-    },
-    {
-      id: "seed-5",
-      authorId: "writer-freya",
-      authorName: "Freya Park",
-      title: "An unambitious guide to feeling a little better",
-      category: "Poetry",
-      language: "English",
-      createdAt: "2026-09-29T12:00:00.000Z",
-      likes: 84,
-      artClass: "art-city",
-      artEmoji: "✨",
-      status: "published",
-      body: "Drink a glass of water. Step outside. Text someone back. No grand reinvention required—sometimes a gentle nudge is more than enough.\n\nWhen I feel overwhelmed, ambitious routines can start to look like another list I'm failing to complete. So I try one small thing instead: open a window, stretch my shoulders, or put a song on while the kettle boils.\n\nA little better is still better. You are allowed to start there."
-    }
-  ];
 
   const feed = document.querySelector(".feed");
   const layout = document.querySelector(".layout");
@@ -167,32 +81,6 @@
     return `${base}/storage/v1/object/public/post-images/${imagePath}`;
   }
 
-  // --- PASSWORD HASHING (PBKDF2 / SHA-256) ---
-  async function hashPassword(password, saltHex) {
-    if (globalThis.crypto?.subtle) {
-      const enc = new TextEncoder();
-      const salt = Uint8Array.from(saltHex.match(/.{2}/g), (byte) => parseInt(byte, 16));
-      const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
-      const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 120000, hash: "SHA-256" }, key, 256);
-      return Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, "0")).join("");
-    }
-    let hash = 2166136261;
-    const input = `${saltHex}:${password}`;
-    for (let i = 0; i < input.length; i++) {
-      hash ^= input.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-    return (hash >>> 0).toString(16).padStart(8, "0");
-  }
-
-  function generateSaltHex() {
-    if (globalThis.crypto?.getRandomValues) {
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    }
-    return Array.from({ length: 16 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0")).join("");
-  }
-
   // --- IMAGE COMPRESSION HELPER ---
   function compressImageFile(file, maxWidth = 1000, quality = 0.78) {
     return new Promise((resolve, reject) => {
@@ -235,29 +123,24 @@
         .from("profiles")
         .select("id, full_name, peotic_name, username, bio, avatar_url, role, stories_count, followers_count, following_count");
 
-      if (Array.isArray(profRows) && profRows.length) {
-        const localUsers = readStore(STORAGE.users, []);
-        const map = new Map();
-        (Array.isArray(localUsers) ? localUsers : []).forEach((u) => map.set(u.id, u));
-        profRows.forEach((r) => {
-          const existing = map.get(r.id) || {};
-          const handleRaw = r.username || existing.handle || `@writer`;
-          map.set(r.id, {
-            ...existing,
+      if (Array.isArray(profRows)) {
+        const mappedUsers = profRows.map((r) => {
+          const handleRaw = r.username || "writer";
+          return {
             id: r.id,
-            name: r.full_name || existing.name || "Writer",
-            poeticName: r.peotic_name || r.full_name || existing.poeticName || "Writer",
+            name: r.full_name || "Writer",
+            poeticName: r.peotic_name || r.full_name || "Writer",
             handle: handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`,
-            bio: r.bio || existing.bio || "Writer and reader on Qalamly.",
-            role: (r.role || existing.role || "both").toLowerCase(),
-            followers: Number(r.followers_count ?? existing.followers ?? 0),
-            following: Number(r.following_count ?? existing.following ?? 0)
-          });
+            bio: r.bio || "Writer and reader on Qalamly.",
+            role: (r.role || "both").toLowerCase(),
+            followers: Number(r.followers_count ?? 0),
+            following: Number(r.following_count ?? 0)
+          };
         });
-        writeStore(STORAGE.users, [...map.values()]);
+        writeStore(STORAGE.users, mappedUsers);
       }
 
-      // If logged into Supabase Auth, ensure active session matches
+      // Sync active Supabase Auth session
       if (sbUser) {
         const allU = users();
         if (!allU.some((u) => u.id === sbUser.id)) {
@@ -273,9 +156,11 @@
             followers: 0,
             following: 0
           };
-          writeStore(STORAGE.users, [...readStore(STORAGE.users, []), fallbackUser]);
+          writeStore(STORAGE.users, [...allU, fallbackUser]);
         }
         writeStore(STORAGE.session, sbUser.id);
+      } else {
+        writeStore(STORAGE.session, null);
       }
 
       // 2. Fetch posts (`posts`) & likes count (`likes_table`)
@@ -285,7 +170,7 @@
       ]);
 
       const likeCountsByPost = new Map();
-      const userLikesMap = readStore(STORAGE.likes, {});
+      const userLikesMap = {};
       if (Array.isArray(likeRows)) {
         likeRows.forEach((lr) => {
           if (!lr.post_id) return;
@@ -300,30 +185,22 @@
         writeStore(STORAGE.likes, userLikesMap);
       }
 
-      if (Array.isArray(postRows) && postRows.length) {
-        const localPosts = readStore(STORAGE.posts, []);
-        const postMap = new Map();
-        (Array.isArray(localPosts) ? localPosts : []).forEach((p) => postMap.set(p.id, p));
-        postRows.forEach((r) => {
-          const prev = postMap.get(r.id) || {};
-          const dbLikes = likeCountsByPost.get(r.id);
-          postMap.set(r.id, {
-            ...prev,
-            id: r.id,
-            authorId: r.user_id || prev.authorId || "",
-            authorName: r.author_name || prev.authorName || "Writer",
-            title: r.title || prev.title || "Untitled story",
-            category: r.category || prev.category || "Life",
-            language: r.language || prev.language || "English",
-            body: r.content || prev.body || "",
-            status: r.status || prev.status || "published",
-            imagePath: r.image_path || prev.imagePath || "",
-            imageData: r.image_path ? publicImageUrl(r.image_path) : (prev.imageData || ""),
-            likes: dbLikes !== undefined ? dbLikes : Number(prev.likes || 0),
-            createdAt: r.created_at || prev.createdAt || new Date().toISOString()
-          });
-        });
-        writeStore(STORAGE.posts, [...postMap.values()]);
+      if (Array.isArray(postRows)) {
+        const mappedPosts = postRows.map((r) => ({
+          id: r.id,
+          authorId: r.user_id || "",
+          authorName: r.author_name || "Writer",
+          title: r.title || "Untitled story",
+          category: r.category || "Life",
+          language: r.language || "English",
+          body: r.content || "",
+          status: r.status || "published",
+          imagePath: r.image_path || "",
+          imageData: r.image_path ? publicImageUrl(r.image_path) : "",
+          likes: likeCountsByPost.get(r.id) || 0,
+          createdAt: r.created_at || new Date().toISOString()
+        }));
+        writeStore(STORAGE.posts, mappedPosts);
       }
 
       // 3. Fetch comments (`comments`)
@@ -332,56 +209,48 @@
         .select("id, created_at, post_id, user_id, author_name, content")
         .order("created_at", { ascending: true });
 
-      if (Array.isArray(commentRows) && commentRows.length) {
-        const localComments = readStore(STORAGE.comments, []);
-        const cMap = new Map();
-        (Array.isArray(localComments) ? localComments : []).forEach((c) => cMap.set(String(c.id), c));
-        commentRows.forEach((c) => {
-          cMap.set(String(c.id), {
-            id: String(c.id),
-            postId: c.post_id,
-            authorId: c.user_id,
-            authorName: c.author_name || "Reader",
-            content: c.content || "",
-            createdAt: c.created_at || new Date().toISOString()
-          });
-        });
-        writeStore(STORAGE.comments, [...cMap.values()]);
+      if (Array.isArray(commentRows)) {
+        const mappedComments = commentRows.map((c) => ({
+          id: String(c.id),
+          postId: c.post_id,
+          authorId: c.user_id,
+          authorName: c.author_name || "Reader",
+          content: c.content || "",
+          createdAt: c.created_at || new Date().toISOString()
+        }));
+        writeStore(STORAGE.comments, mappedComments);
       }
 
-      // 4. Fetch authenticated user's bookmarks, follows, and notifications
-      const activeUserId = sbUser?.id || currentUser()?.id;
+      // 4. Fetch follows (`follows`)
+      const { data: followRows } = await sb.from("follows").select("follower_id, following_id");
+      if (Array.isArray(followRows)) {
+        const allFollows = {};
+        followRows.forEach((f) => {
+          if (!f.follower_id || !f.following_id) return;
+          const list = Array.isArray(allFollows[f.follower_id]) ? allFollows[f.follower_id] : [];
+          if (!list.includes(f.following_id)) {
+            allFollows[f.follower_id] = [...list, f.following_id];
+          }
+        });
+        writeStore(STORAGE.follows, allFollows);
+      }
+
+      // 5. Fetch authenticated user's bookmarks and notifications
+      const activeUserId = sbUser?.id;
       if (activeUserId && isUUID(activeUserId)) {
-        const [{ data: bmRows }, { data: followRows }, { data: notifRows }] = await Promise.all([
+        const [{ data: bmRows }, { data: notifRows }] = await Promise.all([
           sb.from("bookmarks").select("post_id, user_id").eq("user_id", activeUserId),
-          sb.from("follows").select("follower_id, following_id").or(`follower_id.eq.${activeUserId},following_id.eq.${activeUserId}`),
           sb.from("notifications").select("id, created_at, recipient_id, actor_id, type, post_id, is_read").eq("recipient_id", activeUserId).order("created_at", { ascending: false })
         ]);
 
         if (Array.isArray(bmRows)) {
-          const allBm = readStore(STORAGE.bookmarks, {});
-          const merged = new Set([...(allBm[activeUserId] || []), ...bmRows.map((b) => b.post_id)]);
-          allBm[activeUserId] = [...merged];
+          const allBm = {};
+          allBm[activeUserId] = bmRows.map((b) => b.post_id);
           writeStore(STORAGE.bookmarks, allBm);
         }
 
-        if (Array.isArray(followRows)) {
-          const allFollows = readStore(STORAGE.follows, {});
-          followRows.forEach((f) => {
-            if (!f.follower_id || !f.following_id) return;
-            const list = Array.isArray(allFollows[f.follower_id]) ? allFollows[f.follower_id] : [];
-            if (!list.includes(f.following_id)) {
-              allFollows[f.follower_id] = [...list, f.following_id];
-            }
-          });
-          writeStore(STORAGE.follows, allFollows);
-        }
-
-        if (Array.isArray(notifRows) && notifRows.length) {
-          const localNotifs = readStore(STORAGE.notifications, []);
-          const nMap = new Map();
-          (Array.isArray(localNotifs) ? localNotifs : []).forEach((n) => nMap.set(n.id, n));
-          notifRows.forEach((n) => {
+        if (Array.isArray(notifRows)) {
+          const mappedNotifs = notifRows.map((n) => {
             const actor = users().find((u) => u.id === n.actor_id);
             const post = allPosts().find((p) => p.id === n.post_id);
             const actorLabel = actor ? displayName(actor) : "A community member";
@@ -390,16 +259,16 @@
               : n.type === "follow"
                 ? `${actorLabel} started following your writing.`
                 : `${actorLabel} liked your story "${post?.title || "your story"}"`;
-            nMap.set(n.id, {
+            return {
               id: n.id,
               recipientId: n.recipient_id,
               postId: n.post_id || "",
               message: n.message || defaultMsg,
               isRead: Boolean(n.is_read),
               createdAt: n.created_at || new Date().toISOString()
-            });
+            };
           });
-          writeStore(STORAGE.notifications, [...nMap.values()]);
+          writeStore(STORAGE.notifications, mappedNotifs);
         }
       }
 
@@ -419,38 +288,38 @@
 
   async function syncPostToSupabase(postObj, imageFile) {
     if (typeof window.getSupabaseClient !== "function") return;
-    try {
-      const sb = await window.getSupabaseClient();
-      const { data: sessionData } = await sb.auth.getSession();
-      const authUser = sessionData?.session?.user;
-      const authorUuid = authUser?.id || (isUUID(postObj.authorId) ? postObj.authorId : null);
-      if (!authorUuid) return;
+    const sb = await window.getSupabaseClient();
+    const { data: sessionData } = await sb.auth.getSession();
+    const authUser = sessionData?.session?.user;
+    const authorUuid = authUser?.id || (isUUID(postObj.authorId) ? postObj.authorId : null);
+    if (!authorUuid) return;
 
-      let imagePath = postObj.imagePath || null;
-      if (imageFile && authUser) {
-        const ext = (imageFile.name.split(".").pop() || "jpg").toLowerCase();
-        const storagePath = `${authUser.id}/${postObj.id}.${ext}`;
-        const { error: uploadErr } = await sb.storage
-          .from("post-images")
-          .upload(storagePath, imageFile, { upsert: true });
-        if (!uploadErr) imagePath = storagePath;
+    let imagePath = postObj.imagePath || null;
+    if (imageFile && authUser) {
+      const ext = (imageFile.name.split(".").pop() || "jpg").toLowerCase();
+      const storagePath = `${authUser.id}/${postObj.id}.${ext}`;
+      const { error: uploadErr } = await sb.storage
+        .from("post-images")
+        .upload(storagePath, imageFile, { upsert: true });
+      if (!uploadErr) {
+        imagePath = storagePath;
+        postObj.imagePath = storagePath;
+        postObj.imageData = publicImageUrl(storagePath);
       }
-
-      await sb.from("posts").upsert({
-        id: postObj.id,
-        user_id: authorUuid,
-        author_name: postObj.authorName,
-        title: postObj.title,
-        category: postObj.category,
-        language: postObj.language || "English",
-        content: postObj.body,
-        status: postObj.status,
-        image_path: imagePath,
-        created_at: postObj.createdAt
-      });
-    } catch {
-      // Local storage remains primary if offline
     }
+
+    await sb.from("posts").upsert({
+      id: postObj.id,
+      user_id: authorUuid,
+      author_name: postObj.authorName,
+      title: postObj.title,
+      category: postObj.category,
+      language: postObj.language || "English",
+      content: postObj.body,
+      status: postObj.status,
+      image_path: imagePath,
+      created_at: postObj.createdAt
+    });
   }
 
   async function syncDeletePostFromSupabase(postId) {
@@ -574,43 +443,22 @@
     } catch {}
   }
 
-  function ensureSeedData() {
-    const existingUsers = readStore(STORAGE.users, []);
-    if (!existingUsers.length) {
-      writeStore(STORAGE.users, SEED_WRITERS);
-    }
-    const existingComments = readStore(STORAGE.comments, null);
-    if (!existingComments) {
-      writeStore(STORAGE.comments, [
-        { id: "c-1", postId: "seed-0", authorId: "writer-leo", authorName: "Leo Chen", content: "Opening the window for five minutes every morning changed my entire week.", createdAt: "2026-10-04T14:20:00.000Z" },
-        { id: "c-2", postId: "seed-1", authorId: "writer-avery", authorName: "Avery Morgan", content: "Filling one page a day with imperfect sketches is the best advice!", createdAt: "2026-10-03T16:10:00.000Z" }
-      ]);
-    }
-  }
-
+  // --- STATE READERS ---
   function users() {
     const stored = readStore(STORAGE.users, []);
-    const map = new Map();
-    SEED_WRITERS.forEach((w) => map.set(w.id, w));
-    if (Array.isArray(stored)) {
-      stored.forEach((u) => map.set(u.id, u));
-    }
-    return [...map.values()];
+    return Array.isArray(stored) ? stored : [];
   }
 
   function allPosts() {
     const custom = readStore(STORAGE.posts, []);
-    const customArr = Array.isArray(custom) ? custom : [];
-    const customIds = new Set(customArr.map((p) => p.id));
-    const seeds = SEED_POSTS.filter((p) => !customIds.has(p.id));
-    return [...customArr, ...seeds];
+    return Array.isArray(custom) ? custom : [];
   }
 
   function savePostUpdate(updatedPost) {
     const custom = readStore(STORAGE.posts, []);
     const arr = Array.isArray(custom) ? custom : [];
     const exists = arr.some((p) => p.id === updatedPost.id);
-    const next = exists ? arr.map((p) => (p.id === updatedPost.id ? updatedPost : p)) : [...arr, updatedPost];
+    const next = exists ? arr.map((p) => (p.id === updatedPost.id ? updatedPost : p)) : [updatedPost, ...arr];
     writeStore(STORAGE.posts, next);
   }
 
@@ -724,30 +572,32 @@
   }
 
   function followersCountFor(writerId) {
-    const baseWriter = users().find((u) => u.id === writerId);
-    const base = Number(baseWriter?.followers || 0);
     const all = readStore(STORAGE.follows, {});
-    let extra = 0;
+    let count = 0;
     Object.values(all).forEach((arr) => {
-      if (Array.isArray(arr) && arr.includes(writerId)) extra++;
+      if (Array.isArray(arr) && arr.includes(writerId)) count++;
     });
-    return base + extra;
+    const baseWriter = users().find((u) => u.id === writerId);
+    return Math.max(count, Number(baseWriter?.followers || 0));
   }
 
   function toggleFollowWriter(targetWriterId) {
     const user = currentUser();
-    const key = user?.id || "guest";
-    if (user && user.id === targetWriterId) {
+    if (!user) {
+      navigate("login.html");
+      return false;
+    }
+    if (user.id === targetWriterId) {
       notify("You cannot follow yourself.");
       return false;
     }
     const all = readStore(STORAGE.follows, {});
-    const list = Array.isArray(all[key]) ? all[key] : [];
+    const list = Array.isArray(all[user.id]) ? all[user.id] : [];
     const isFollowing = list.includes(targetWriterId);
     const nowFollowing = !isFollowing;
-    all[key] = isFollowing ? list.filter((id) => id !== targetWriterId) : [...new Set([...list, targetWriterId])];
+    all[user.id] = isFollowing ? list.filter((id) => id !== targetWriterId) : [...new Set([...list, targetWriterId])];
     writeStore(STORAGE.follows, all);
-    if (nowFollowing && user) {
+    if (nowFollowing) {
       addNotification(targetWriterId, `${displayName(user)} started following your writing.`, "");
     }
     syncFollowToSupabase(targetWriterId, nowFollowing);
@@ -1031,21 +881,25 @@
     if (writerSuggestions) {
       const currentId = currentUser()?.id;
       const list = users().filter((u) => u.id !== currentId).slice(0, 4);
-      writerSuggestions.innerHTML = list.map((w) => {
-        const isFollowing = followed.includes(w.id);
-        return `
-          <div class="person">
-            <a href="profile.html?id=${encodeURIComponent(w.id)}" style="display:flex;align-items:center;gap:9px;flex:1;min-width:0;">
-              <div class="avatar ${escapeHTML(w.avatarColor || "purple")}">${escapeHTML(initials(displayName(w)))}</div>
-              <div class="person-info">
-                <strong>${escapeHTML(displayName(w))}</strong>
-                <span>${escapeHTML(w.bio || "Qalamly community writer")}</span>
-              </div>
-            </a>
-            <button class="follow-button ${isFollowing ? "following" : ""}" type="button" data-follow-id="${escapeHTML(w.id)}">${isFollowing ? "Following" : "Follow"}</button>
-          </div>
-        `;
-      }).join("");
+      if (list.length) {
+        writerSuggestions.innerHTML = list.map((w) => {
+          const isFollowing = followed.includes(w.id);
+          return `
+            <div class="person">
+              <a href="profile.html?id=${encodeURIComponent(w.id)}" style="display:flex;align-items:center;gap:9px;flex:1;min-width:0;">
+                <div class="avatar ${escapeHTML(w.avatarColor || "purple")}">${escapeHTML(initials(displayName(w)))}</div>
+                <div class="person-info">
+                  <strong>${escapeHTML(displayName(w))}</strong>
+                  <span>${escapeHTML(w.bio || "Qalamly community writer")}</span>
+                </div>
+              </a>
+              <button class="follow-button ${isFollowing ? "following" : ""}" type="button" data-follow-id="${escapeHTML(w.id)}">${isFollowing ? "Following" : "Follow"}</button>
+            </div>
+          `;
+        }).join("");
+      } else {
+        writerSuggestions.innerHTML = `<p class="sidebar-promo-copy">Registered community writers will appear here.</p>`;
+      }
     }
 
     const trendingContainer = document.getElementById("trendingPosts");
@@ -1054,15 +908,19 @@
         .filter((p) => p.status === "published")
         .sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0))
         .slice(0, 3);
-      trendingContainer.innerHTML = topPosts.map((p, idx) => `
-        <a class="trending-item" href="post.html?id=${encodeURIComponent(p.id)}">
-          <span class="trend-number">0${idx + 1}</span>
-          <div>
-            <strong>${escapeHTML(p.title)}</strong>
-            <span>${escapeHTML(p.category)} · ${Number(p.likes || 0)} likes</span>
-          </div>
-        </a>
-      `).join("");
+      if (topPosts.length) {
+        trendingContainer.innerHTML = topPosts.map((p, idx) => `
+          <a class="trending-item" href="post.html?id=${encodeURIComponent(p.id)}">
+            <span class="trend-number">0${idx + 1}</span>
+            <div>
+              <strong>${escapeHTML(p.title)}</strong>
+              <span>${escapeHTML(p.category)} · ${Number(p.likes || 0)} likes</span>
+            </div>
+          </a>
+        `).join("");
+      } else {
+        trendingContainer.innerHTML = `<p class="sidebar-promo-copy">No trending stories yet. Publish the first story!</p>`;
+      }
     }
   }
 
@@ -1115,7 +973,7 @@
         </div>
       </div>
       <section class="post-list" id="postList" aria-label="All blog posts"></section>
-      <div class="empty-state" id="emptyState">No stories found. Try a different search, language, or topic.</div>
+      <div class="empty-state" id="emptyState">No stories published yet. Be the first to share a story with the community!</div>
     `;
 
     const postListEl = document.getElementById("postList");
@@ -1461,6 +1319,10 @@
         );
       });
 
+      if (!list.length) {
+        return `<div class="empty-dashboard">No community writers found yet.</div>`;
+      }
+
       return list.map((w) => {
         const isFollowing = followed.includes(w.id);
         const count = allPosts().filter((p) => p.authorId === w.id && p.status === "published").length;
@@ -1497,7 +1359,15 @@
   }
 
   function renderProfilePage(writerId) {
-    const target = users().find((u) => u.id === writerId) || currentUser() || SEED_WRITERS[0];
+    const target = (writerId ? users().find((u) => u.id === writerId) : currentUser()) || null;
+    if (!target) {
+      setPage(
+        `<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile unavailable</div><h1>Writer not found.</h1><p>This profile could not be found or has not been created yet.</p><a class="primary-button" href="writers.html">Browse writers</a></section></div>`,
+        { contentOnly: true }
+      );
+      return;
+    }
+
     const isSelf = currentUser()?.id === target.id;
     const isFollowing = followingList().includes(target.id);
     const writerPosts = allPosts()
@@ -1594,8 +1464,6 @@
   }
 
   function renderContact() {
-    const savedMessages = readStore(STORAGE.messages, []);
-    const recentCount = Array.isArray(savedMessages) ? savedMessages.length : 0;
     setPage(
       `<div class="page-view">
         ${pageHero("We'd love to hear from you", "Say hello.", "Questions, ideas, kind words, or feedback about Qalamly—send us a message below.")}
@@ -1608,7 +1476,6 @@
             <div class="form-field"><label for="contactMsg">Message</label><textarea id="contactMsg" name="message" rows="5" required placeholder="How can we help?"></textarea></div>
             <button class="primary-button" type="submit">Send message</button>
           </form>
-          ${recentCount > 0 ? `<p class="form-note">You have sent ${recentCount} ${recentCount === 1 ? "message" : "messages"} from this browser.</p>` : ""}
         </section>
       </div>`,
       { contentOnly: true }
@@ -1714,7 +1581,6 @@
 
   // --- ROUTER DISPATCH ---
   function renderRoute() {
-    ensureSeedData();
     updateHeader();
     const { path, params } = routeParts();
 
@@ -1812,6 +1678,10 @@
     const followBtn = event.target.closest("[data-follow-id]");
     if (followBtn) {
       event.preventDefault();
+      if (!currentUser()) {
+        navigate("login.html");
+        return;
+      }
       const writerId = followBtn.dataset.followId;
       const nowFollowing = toggleFollowWriter(writerId);
       const isProfileHeroBtn = followBtn.dataset.followLabel === "writer";
@@ -1912,7 +1782,6 @@
       const message = form.elements.message?.value.trim() || "";
       if (!name || !email || !message) return;
 
-      const existing = readStore(STORAGE.messages, []);
       const entry = {
         id: crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`,
         name,
@@ -1921,10 +1790,8 @@
         message,
         createdAt: new Date().toISOString()
       };
-      writeStore(STORAGE.messages, [entry, ...(Array.isArray(existing) ? existing : [])]);
-      syncContactToSupabase(entry);
+      await syncContactToSupabase(entry);
       form.reset();
-      renderContact();
       notify("Thank you! Your message has been sent to the Qalamly team.");
       return;
     }
@@ -1945,132 +1812,104 @@
       const isSignup = routeParts().path === "signup";
       const email = form.elements.email.value.trim().toLowerCase();
       const password = form.elements.password.value;
-      const list = readStore(STORAGE.users, SEED_WRITERS);
+      const list = users();
 
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         showFormError("Please enter a valid email address.");
         return;
       }
 
-      if (isSignup) {
-        const name = form.elements.name.value.trim();
-        const poeticName = form.elements.poeticName.value.trim();
-        const confirm = form.elements.confirmPassword.value;
-        const role = form.elements.role.value;
-        if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
-        if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
-        if (password !== confirm) { showFormError("Passwords do not match."); return; }
+      if (typeof window.getSupabaseClient !== "function") {
+        showFormError("Database client is unavailable. Check your connection.");
+        return;
+      }
 
-        let sbUserId = null;
-        if (typeof window.getSupabaseClient === "function") {
-          try {
-            const sb = await window.getSupabaseClient();
-            const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
-              email,
-              password,
-              options: {
-                data: {
-                  full_name: name,
-                  poetic_name: poeticName,
-                  peotic_name: poeticName,
-                  role
-                }
-              }
-            });
-            if (!signUpErr && signUpData?.user?.id) {
-              sbUserId = signUpData.user.id;
-              await sb.from("profiles").upsert({
-                id: sbUserId,
+      try {
+        const sb = await window.getSupabaseClient();
+
+        if (isSignup) {
+          const name = form.elements.name.value.trim();
+          const poeticName = form.elements.poeticName.value.trim();
+          const confirm = form.elements.confirmPassword.value;
+          const role = form.elements.role.value;
+          if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
+          if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
+          if (password !== confirm) { showFormError("Passwords do not match."); return; }
+
+          const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
                 full_name: name,
+                poetic_name: poeticName,
                 peotic_name: poeticName,
-                email,
-                role,
-                username: `${poeticName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${sbUserId.slice(0, 6)}`
-              });
-            } else if (signUpErr && /already registered/i.test(signUpErr.message)) {
-              showFormError("An account with this email already exists.");
-              return;
+                role
+              }
             }
-          } catch {}
-        }
+          });
 
-        if (!sbUserId && list.some((u) => u.email === email)) {
-          showFormError("An account with this email already exists.");
-          return;
-        }
-
-        const salt = generateSaltHex();
-        const passwordHash = await hashPassword(password, salt);
-
-        const newUser = {
-          id: sbUserId || (crypto.randomUUID ? crypto.randomUUID() : `u-${Date.now()}`),
-          name,
-          poeticName,
-          email,
-          salt,
-          passwordHash,
-          role,
-          handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
-          bio: "Writer and reader on Qalamly.",
-          followers: 0,
-          following: 0
-        };
-        writeStore(STORAGE.users, [...list.filter((u) => u.id !== newUser.id), newUser]);
-        writeStore(STORAGE.session, newUser.id);
-        notify("Account created! Welcome to Qalamly.");
-        navigate("dashboard.html");
-      } else {
-        // Try Supabase Auth signInWithPassword first
-        let loggedInUser = null;
-        if (typeof window.getSupabaseClient === "function") {
-          try {
-            const sb = await window.getSupabaseClient();
-            const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
-            if (!signInErr && signInData?.user) {
-              const sbU = signInData.user;
-              const meta = sbU.user_metadata || {};
-              loggedInUser = list.find((u) => u.id === sbU.id || u.email === email) || {
-                id: sbU.id,
-                name: meta.full_name || email.split("@")[0],
-                poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
-                email,
-                role: (meta.role || "both").toLowerCase(),
-                handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
-                bio: "Writer and reader on Qalamly.",
-                followers: 0,
-                following: 0
-              };
-              loggedInUser.id = sbU.id;
-              writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbU.id && u.email !== email), loggedInUser]);
-            }
-          } catch {}
-        }
-
-        if (!loggedInUser) {
-          const account = list.find((u) => u.email === email);
-          if (!account) { showFormError("Invalid email or password."); return; }
-
-          let authenticated = false;
-          if (account.salt && account.passwordHash) {
-            const checkHash = await hashPassword(password, account.salt);
-            authenticated = checkHash === account.passwordHash;
-          } else if (account.password) {
-            authenticated = account.password === password;
-            if (authenticated) {
-              account.salt = generateSaltHex();
-              account.passwordHash = await hashPassword(password, account.salt);
-              delete account.password;
-              writeStore(STORAGE.users, list);
-            }
+          if (signUpErr || !signUpData?.user?.id) {
+            showFormError(signUpErr?.message || "Could not create account. Please try again.");
+            return;
           }
-          if (!authenticated) { showFormError("Invalid email or password."); return; }
-          loggedInUser = account;
-        }
 
-        writeStore(STORAGE.session, loggedInUser.id);
-        const next = sessionStorage.getItem("qalamly.next") || "dashboard";
-        sessionStorage.removeItem("qalamly.next");
-        navigate(`${next}.html`);
+          const sbUserId = signUpData.user.id;
+          const cleanHandle = `${poeticName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${sbUserId.slice(0, 6)}`;
+
+          await sb.from("profiles").upsert({
+            id: sbUserId,
+            full_name: name,
+            peotic_name: poeticName,
+            email,
+            role,
+            username: cleanHandle
+          });
+
+          const newUser = {
+            id: sbUserId,
+            name,
+            poeticName,
+            email,
+            role,
+            handle: `@${cleanHandle}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+          writeStore(STORAGE.users, [...list.filter((u) => u.id !== newUser.id), newUser]);
+          writeStore(STORAGE.session, newUser.id);
+          notify("Account created! Welcome to Qalamly.");
+          navigate("dashboard.html");
+        } else {
+          const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+          if (signInErr || !signInData?.user) {
+            showFormError(signInErr?.message || "Invalid email or password.");
+            return;
+          }
+
+          const sbU = signInData.user;
+          const meta = sbU.user_metadata || {};
+          const loggedInUser = list.find((u) => u.id === sbU.id) || {
+            id: sbU.id,
+            name: meta.full_name || email.split("@")[0],
+            poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+            email,
+            role: (meta.role || "both").toLowerCase(),
+            handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+
+          writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbU.id), loggedInUser]);
+          writeStore(STORAGE.session, loggedInUser.id);
+          const next = sessionStorage.getItem("qalamly.next") || "dashboard";
+          sessionStorage.removeItem("qalamly.next");
+          navigate(`${next}.html`);
+        }
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
       }
       return;
     }
@@ -2113,7 +1952,7 @@
       const finalImage = removeImage ? "" : (imageData || existing?.imageData || "");
 
       const postObj = {
-        id: existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `post-${Date.now()}`),
+        id: existing ? existing.id : crypto.randomUUID(),
         authorId: user.id,
         authorName: displayName(user),
         title,
@@ -2127,8 +1966,8 @@
         createdAt: existing ? existing.createdAt : new Date().toISOString()
       };
 
-      savePostUpdate(postObj);
       await syncPostToSupabase(postObj, rawFile);
+      savePostUpdate(postObj);
       notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
       navigate("dashboard.html");
       return;
