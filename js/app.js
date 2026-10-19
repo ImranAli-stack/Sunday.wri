@@ -2,7 +2,15 @@
   "use strict";
 
   const STORAGE = {
-    bookmarks: "qalamly.bookmarks.v2"
+    users: "qalamly.users.v2",
+    posts: "qalamly.posts.v2",
+    session: "qalamly.session.v2",
+    bookmarks: "qalamly.bookmarks.v2",
+    likes: "qalamly.likes.v2",
+    comments: "qalamly.comments.v2",
+    follows: "qalamly.follows.v2",
+    notifications: "qalamly.notifications.v2",
+    messages: "qalamly.messages.v2"
   };
 
   const STORY_CATEGORIES = [
@@ -17,19 +25,107 @@
 
   const RTL_LANGUAGES = new Set(["Urdu", "Balochi"]);
 
+  const SEED_WRITERS = [
+    { id: "writer-avery", name: "Avery Morgan", poeticName: "Avery Morgan", handle: "@averymorgan", bio: "Writing about slow mornings, tea rituals, and mindful living.", role: "both", avatarColor: "green", followers: 142, following: 38 },
+    { id: "writer-leo", name: "Leo Chen", poeticName: "Leo Chen", handle: "@leochen", bio: "Sketchbook keeper, imperfect maker, and essayist.", role: "both", avatarColor: "gold", followers: 118, following: 44 },
+    { id: "writer-nina", name: "Nina Shah", poeticName: "Nina Shah", handle: "@ninashah", bio: "Capturing corner cafes, city walks, and Urdu & English reflections.", role: "both", avatarColor: "blue", followers: 96, following: 29 },
+    { id: "writer-oliver", name: "Oliver Tate", poeticName: "Oliver Tate", handle: "@olivertate", bio: "Wandering narrow lanes without an itinerary.", role: "both", avatarColor: "purple", followers: 89, following: 51 },
+    { id: "writer-rory", name: "Rory Kim", poeticName: "Rory Kim", handle: "@rorykim", bio: "Interior architecture and spaces that leave room for life.", role: "both", avatarColor: "green", followers: 74, following: 19 },
+    { id: "writer-freya", name: "Freya Park", poeticName: "Freya Park", handle: "@freyapark", bio: "Gentle notes on wellness, poetry, and human connection.", role: "both", avatarColor: "gold", followers: 67, following: 22 }
+  ];
+
+  const SEED_POSTS = [
+    {
+      id: "seed-0",
+      authorId: "writer-avery",
+      authorName: "Avery Morgan",
+      title: "The tiny rituals that make an ordinary day feel like yours",
+      category: "Lifestyle",
+      language: "English",
+      createdAt: "2026-10-04T12:00:00.000Z",
+      likes: 248,
+      artClass: "art-garden",
+      artEmoji: "🌿",
+      status: "published",
+      body: "A slower morning, a proper cup of tea, five minutes with the window open. Small ways to make everyday life feel a little more like living.\n\nI used to think a good day had to begin with a perfect plan. The mornings that stay with me are the quieter ones: opening the curtains, watering the basil, and letting the kettle take its time.\n\nThese little rituals don't fix everything. They simply make a bit of space to notice where I am and what I need. That is a lovely place to begin."
+    },
+    {
+      id: "seed-1",
+      authorId: "writer-leo",
+      authorName: "Leo Chen",
+      title: "A love letter to making things badly",
+      category: "Creativity",
+      language: "English",
+      createdAt: "2026-10-03T12:00:00.000Z",
+      likes: 186,
+      artClass: "art-journal",
+      artEmoji: "📓",
+      status: "published",
+      body: "What if the point isn't to be good at it? On giving yourself permission to make a mess, follow the fun, and create without an audience in mind.\n\nFor years I saved my sketchbooks for the days when I had a good idea. The blank pages got more intimidating every week. Then I started filling one page a day with deliberately imperfect things: crooked buildings, strange little creatures, color combinations that probably shouldn't work.\n\nSomewhere in the mess, making things became fun again. You don't have to be good at something for it to belong to you."
+    },
+    {
+      id: "seed-2",
+      authorId: "writer-nina",
+      authorName: "Nina Shah",
+      title: "The neighborhood cafe that taught me how to slow down",
+      category: "Life",
+      language: "English",
+      createdAt: "2026-10-02T12:00:00.000Z",
+      likes: 152,
+      artClass: "art-coffee",
+      artEmoji: "☕",
+      status: "published",
+      body: "I went in for a quick coffee and found a new favorite table, a friendly hello, and a reminder that not every moment needs to be optimized.\n\nThe cafe on the corner has one table by the front window that catches the afternoon sun. I started stopping there between errands, telling myself I had ten minutes. The owner learned my order; I learned which plants were real and which were painted on the wall.\n\nNothing dramatic happened. I just found a place where I could sit without having to earn the pause. Now I take the long way home."
+    },
+    {
+      id: "seed-3",
+      authorId: "writer-oliver",
+      authorName: "Oliver Tate",
+      title: "Getting wonderfully lost in a city that wasn't on the list",
+      category: "Story",
+      language: "English",
+      createdAt: "2026-10-01T12:00:00.000Z",
+      likes: 129,
+      artClass: "art-travel",
+      artEmoji: "🧭",
+      status: "published",
+      body: "No itinerary, no must-see checklist—just one long afternoon of turning down streets because they looked interesting. My favorite kind of trip.\n\nI missed the tram on purpose after spotting a narrow lane full of laundry and flowerpots. It led to a bookshop, which led to lunch, which led to a conversation with a woman who had lived on that block for fifty years.\n\nI came home with no photographs of the famous landmarks and a pocket full of tiny details I would have missed if I had kept to the plan."
+    },
+    {
+      id: "seed-4",
+      authorId: "writer-rory",
+      authorName: "Rory Kim",
+      title: "Why the best rooms leave a little room for life",
+      category: "Skill",
+      language: "English",
+      createdAt: "2026-09-30T12:00:00.000Z",
+      likes: 98,
+      artClass: "art-design",
+      artEmoji: "🪑",
+      status: "published",
+      body: "A home isn't a finished photograph. It's the book left open, the afternoon light, and the chair that never stays where you put it.\n\nThe rooms I love most are not the ones where nothing is out of place. They have a surface for unfinished things, a soft lamp for the evenings, and enough clear space to move around in. They change as the people in them change.\n\nA home can be thoughtfully designed and still leave room for life to happen."
+    },
+    {
+      id: "seed-5",
+      authorId: "writer-freya",
+      authorName: "Freya Park",
+      title: "An unambitious guide to feeling a little better",
+      category: "Poetry",
+      language: "English",
+      createdAt: "2026-09-29T12:00:00.000Z",
+      likes: 84,
+      artClass: "art-city",
+      artEmoji: "✨",
+      status: "published",
+      body: "Drink a glass of water. Step outside. Text someone back. No grand reinvention required—sometimes a gentle nudge is more than enough.\n\nWhen I feel overwhelmed, ambitious routines can start to look like another list I'm failing to complete. So I try one small thing instead: open a window, stretch my shoulders, or put a song on while the kettle boils.\n\nA little better is still better. You are allowed to start there."
+    }
+  ];
+
   const feed = document.querySelector(".feed");
   const layout = document.querySelector(".layout");
   const toast = document.getElementById("toast");
   const authLink = document.getElementById("authLink");
   const headerProfile = document.getElementById("headerProfile");
-  let supabase;
-  let sessionUser = null;
-  let profileRows = [];
-  let postRows = [];
-  let commentRows = [];
-  let likeRows = [];
-  let followRows = [];
-  let notificationRows = [];
   let toastTimer;
 
   // --- STORAGE & STATE HELPERS ---
@@ -60,144 +156,501 @@
     }
   }
 
+  function isUUID(val) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ""));
+  }
+
+  function publicImageUrl(imagePath) {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("data:") || imagePath.startsWith("http")) return imagePath;
+    const base = window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
+    return `${base}/storage/v1/object/public/post-images/${imagePath}`;
+  }
+
+  // --- PASSWORD HASHING (PBKDF2 / SHA-256) ---
+  async function hashPassword(password, saltHex) {
+    if (globalThis.crypto?.subtle) {
+      const enc = new TextEncoder();
+      const salt = Uint8Array.from(saltHex.match(/.{2}/g), (byte) => parseInt(byte, 16));
+      const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+      const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 120000, hash: "SHA-256" }, key, 256);
+      return Array.from(new Uint8Array(bits), (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    let hash = 2166136261;
+    const input = `${saltHex}:${password}`;
+    for (let i = 0; i < input.length; i++) {
+      hash ^= input.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  }
+
+  function generateSaltHex() {
+    if (globalThis.crypto?.getRandomValues) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    return Array.from({ length: 16 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0")).join("");
+  }
+
+  // --- IMAGE COMPRESSION HELPER ---
+  function compressImageFile(file, maxWidth = 1000, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read image file."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("Invalid image format."));
+        img.onload = () => {
+          const scale = Math.min(1, maxWidth / (img.width || maxWidth));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(String(reader.result || ""));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.src = String(reader.result || "");
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // =========================================================================
+  // SUPABASE CLOUD SYNCHRONIZATION (ALL 8 TABLES + STORAGE + AUTH)
+  // =========================================================================
+  async function hydrateFromSupabase() {
+    if (typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data: sessionRes } = await sb.auth.getSession();
+      const sbUser = sessionRes?.session?.user || null;
+
+      // 1. Fetch public profiles (`profiles`)
+      const { data: profRows } = await sb
+        .from("profiles")
+        .select("id, full_name, peotic_name, username, bio, avatar_url, role, stories_count, followers_count, following_count");
+
+      if (Array.isArray(profRows) && profRows.length) {
+        const localUsers = readStore(STORAGE.users, []);
+        const map = new Map();
+        (Array.isArray(localUsers) ? localUsers : []).forEach((u) => map.set(u.id, u));
+        profRows.forEach((r) => {
+          const existing = map.get(r.id) || {};
+          const handleRaw = r.username || existing.handle || `@writer`;
+          map.set(r.id, {
+            ...existing,
+            id: r.id,
+            name: r.full_name || existing.name || "Writer",
+            poeticName: r.peotic_name || r.full_name || existing.poeticName || "Writer",
+            handle: handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`,
+            bio: r.bio || existing.bio || "Writer and reader on Qalamly.",
+            role: (r.role || existing.role || "both").toLowerCase(),
+            followers: Number(r.followers_count ?? existing.followers ?? 0),
+            following: Number(r.following_count ?? existing.following ?? 0)
+          });
+        });
+        writeStore(STORAGE.users, [...map.values()]);
+      }
+
+      // If logged into Supabase Auth, ensure active session matches
+      if (sbUser) {
+        const allU = users();
+        if (!allU.some((u) => u.id === sbUser.id)) {
+          const meta = sbUser.user_metadata || {};
+          const fallbackUser = {
+            id: sbUser.id,
+            name: meta.full_name || sbUser.email?.split("@")[0] || "Writer",
+            poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+            email: sbUser.email || "",
+            role: (meta.role || "both").toLowerCase(),
+            handle: `@${(sbUser.email || "writer").split("@")[0]}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+          writeStore(STORAGE.users, [...readStore(STORAGE.users, []), fallbackUser]);
+        }
+        writeStore(STORAGE.session, sbUser.id);
+      }
+
+      // 2. Fetch posts (`posts`) & likes count (`likes_table`)
+      const [{ data: postRows }, { data: likeRows }] = await Promise.all([
+        sb.from("posts").select("id, created_at, user_id, category, content, author_name, status, title, image_path, language").order("created_at", { ascending: false }),
+        sb.from("likes_table").select("post_id, user_id")
+      ]);
+
+      const likeCountsByPost = new Map();
+      const userLikesMap = readStore(STORAGE.likes, {});
+      if (Array.isArray(likeRows)) {
+        likeRows.forEach((lr) => {
+          if (!lr.post_id) return;
+          likeCountsByPost.set(lr.post_id, (likeCountsByPost.get(lr.post_id) || 0) + 1);
+          if (lr.user_id) {
+            const list = Array.isArray(userLikesMap[lr.user_id]) ? userLikesMap[lr.user_id] : [];
+            if (!list.includes(lr.post_id)) {
+              userLikesMap[lr.user_id] = [...list, lr.post_id];
+            }
+          }
+        });
+        writeStore(STORAGE.likes, userLikesMap);
+      }
+
+      if (Array.isArray(postRows) && postRows.length) {
+        const localPosts = readStore(STORAGE.posts, []);
+        const postMap = new Map();
+        (Array.isArray(localPosts) ? localPosts : []).forEach((p) => postMap.set(p.id, p));
+        postRows.forEach((r) => {
+          const prev = postMap.get(r.id) || {};
+          const dbLikes = likeCountsByPost.get(r.id);
+          postMap.set(r.id, {
+            ...prev,
+            id: r.id,
+            authorId: r.user_id || prev.authorId || "",
+            authorName: r.author_name || prev.authorName || "Writer",
+            title: r.title || prev.title || "Untitled story",
+            category: r.category || prev.category || "Life",
+            language: r.language || prev.language || "English",
+            body: r.content || prev.body || "",
+            status: r.status || prev.status || "published",
+            imagePath: r.image_path || prev.imagePath || "",
+            imageData: r.image_path ? publicImageUrl(r.image_path) : (prev.imageData || ""),
+            likes: dbLikes !== undefined ? dbLikes : Number(prev.likes || 0),
+            createdAt: r.created_at || prev.createdAt || new Date().toISOString()
+          });
+        });
+        writeStore(STORAGE.posts, [...postMap.values()]);
+      }
+
+      // 3. Fetch comments (`comments`)
+      const { data: commentRows } = await sb
+        .from("comments")
+        .select("id, created_at, post_id, user_id, author_name, content")
+        .order("created_at", { ascending: true });
+
+      if (Array.isArray(commentRows) && commentRows.length) {
+        const localComments = readStore(STORAGE.comments, []);
+        const cMap = new Map();
+        (Array.isArray(localComments) ? localComments : []).forEach((c) => cMap.set(String(c.id), c));
+        commentRows.forEach((c) => {
+          cMap.set(String(c.id), {
+            id: String(c.id),
+            postId: c.post_id,
+            authorId: c.user_id,
+            authorName: c.author_name || "Reader",
+            content: c.content || "",
+            createdAt: c.created_at || new Date().toISOString()
+          });
+        });
+        writeStore(STORAGE.comments, [...cMap.values()]);
+      }
+
+      // 4. Fetch authenticated user's bookmarks, follows, and notifications
+      const activeUserId = sbUser?.id || currentUser()?.id;
+      if (activeUserId && isUUID(activeUserId)) {
+        const [{ data: bmRows }, { data: followRows }, { data: notifRows }] = await Promise.all([
+          sb.from("bookmarks").select("post_id, user_id").eq("user_id", activeUserId),
+          sb.from("follows").select("follower_id, following_id").or(`follower_id.eq.${activeUserId},following_id.eq.${activeUserId}`),
+          sb.from("notifications").select("id, created_at, recipient_id, actor_id, type, post_id, is_read").eq("recipient_id", activeUserId).order("created_at", { ascending: false })
+        ]);
+
+        if (Array.isArray(bmRows)) {
+          const allBm = readStore(STORAGE.bookmarks, {});
+          const merged = new Set([...(allBm[activeUserId] || []), ...bmRows.map((b) => b.post_id)]);
+          allBm[activeUserId] = [...merged];
+          writeStore(STORAGE.bookmarks, allBm);
+        }
+
+        if (Array.isArray(followRows)) {
+          const allFollows = readStore(STORAGE.follows, {});
+          followRows.forEach((f) => {
+            if (!f.follower_id || !f.following_id) return;
+            const list = Array.isArray(allFollows[f.follower_id]) ? allFollows[f.follower_id] : [];
+            if (!list.includes(f.following_id)) {
+              allFollows[f.follower_id] = [...list, f.following_id];
+            }
+          });
+          writeStore(STORAGE.follows, allFollows);
+        }
+
+        if (Array.isArray(notifRows) && notifRows.length) {
+          const localNotifs = readStore(STORAGE.notifications, []);
+          const nMap = new Map();
+          (Array.isArray(localNotifs) ? localNotifs : []).forEach((n) => nMap.set(n.id, n));
+          notifRows.forEach((n) => {
+            const actor = users().find((u) => u.id === n.actor_id);
+            const post = allPosts().find((p) => p.id === n.post_id);
+            const actorLabel = actor ? displayName(actor) : "A community member";
+            const defaultMsg = n.type === "comment"
+              ? `${actorLabel} commented on "${post?.title || "your story"}"`
+              : n.type === "follow"
+                ? `${actorLabel} started following your writing.`
+                : `${actorLabel} liked your story "${post?.title || "your story"}"`;
+            nMap.set(n.id, {
+              id: n.id,
+              recipientId: n.recipient_id,
+              postId: n.post_id || "",
+              message: n.message || defaultMsg,
+              isRead: Boolean(n.is_read),
+              createdAt: n.created_at || new Date().toISOString()
+            });
+          });
+          writeStore(STORAGE.notifications, [...nMap.values()]);
+        }
+      }
+
+      updateHeader();
+      const { path, params } = routeParts();
+      if (path === "home") showHome(params);
+      else if (path === "writers") renderWritersPage();
+      else if (path === "bookmarks") renderBookmarks();
+      else if (path === "notifications") renderNotificationsPage();
+      else if (path === "dashboard") renderDashboard(params.get("tab") || "all");
+      else if (path === "profile") renderProfilePage(params.get("id") || "");
+      else if (path === "post") renderDetail(params.get("id") || "");
+    } catch (err) {
+      console.warn("Supabase cloud sync skipped or offline:", err);
+    }
+  }
+
+  async function syncPostToSupabase(postObj, imageFile) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data: sessionData } = await sb.auth.getSession();
+      const authUser = sessionData?.session?.user;
+      const authorUuid = authUser?.id || (isUUID(postObj.authorId) ? postObj.authorId : null);
+      if (!authorUuid) return;
+
+      let imagePath = postObj.imagePath || null;
+      if (imageFile && authUser) {
+        const ext = (imageFile.name.split(".").pop() || "jpg").toLowerCase();
+        const storagePath = `${authUser.id}/${postObj.id}.${ext}`;
+        const { error: uploadErr } = await sb.storage
+          .from("post-images")
+          .upload(storagePath, imageFile, { upsert: true });
+        if (!uploadErr) imagePath = storagePath;
+      }
+
+      await sb.from("posts").upsert({
+        id: postObj.id,
+        user_id: authorUuid,
+        author_name: postObj.authorName,
+        title: postObj.title,
+        category: postObj.category,
+        language: postObj.language || "English",
+        content: postObj.body,
+        status: postObj.status,
+        image_path: imagePath,
+        created_at: postObj.createdAt
+      });
+    } catch {
+      // Local storage remains primary if offline
+    }
+  }
+
+  async function syncDeletePostFromSupabase(postId) {
+    if (!isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("posts").delete().eq("id", postId);
+    } catch {}
+  }
+
+  async function syncLikeToSupabase(postId, liked) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (liked) {
+        await sb.from("likes_table").insert({ user_id: user.id, post_id: postId });
+        const target = allPosts().find((p) => p.id === postId);
+        if (target && isUUID(target.authorId) && target.authorId !== user.id) {
+          await sb.from("notifications").insert({
+            recipient_id: target.authorId,
+            actor_id: user.id,
+            post_id: postId,
+            type: "like",
+            is_read: false
+          });
+        }
+      } else {
+        await sb.from("likes_table").delete().eq("user_id", user.id).eq("post_id", postId);
+      }
+    } catch {}
+  }
+
+  async function syncBookmarkToSupabase(postId, isSaved) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (isSaved) {
+        await sb.from("bookmarks").upsert({ user_id: user.id, post_id: postId });
+      } else {
+        await sb.from("bookmarks").delete().eq("user_id", user.id).eq("post_id", postId);
+      }
+    } catch {}
+  }
+
+  async function syncCommentToSupabase(postId, commentObj) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data } = await sb
+        .from("comments")
+        .insert({
+          post_id: postId,
+          user_id: user.id,
+          author_name: commentObj.authorName,
+          content: commentObj.content
+        })
+        .select("id")
+        .single();
+
+      if (data?.id) {
+        const all = readStore(STORAGE.comments, []);
+        writeStore(
+          STORAGE.comments,
+          (Array.isArray(all) ? all : []).map((c) => (c.id === commentObj.id ? { ...c, id: String(data.id) } : c))
+        );
+      }
+
+      const target = allPosts().find((p) => p.id === postId);
+      if (target && isUUID(target.authorId) && target.authorId !== user.id) {
+        await sb.from("notifications").insert({
+          recipient_id: target.authorId,
+          actor_id: user.id,
+          post_id: postId,
+          type: "comment",
+          is_read: false
+        });
+      }
+    } catch {}
+  }
+
+  async function syncDeleteCommentFromSupabase(commentId) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    const numericId = Number(commentId);
+    if (!Number.isFinite(numericId)) return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("comments").delete().eq("id", numericId);
+    } catch {}
+  }
+
+  async function syncFollowToSupabase(targetWriterId, isFollowing) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(targetWriterId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (isFollowing) {
+        await sb.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
+        await sb.from("notifications").insert({
+          recipient_id: targetWriterId,
+          actor_id: user.id,
+          type: "follow",
+          is_read: false
+        });
+      } else {
+        await sb.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId);
+      }
+    } catch {}
+  }
+
+  async function syncMarkNotificationsReadInSupabase() {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("notifications").update({ is_read: true }).eq("recipient_id", user.id).eq("is_read", false);
+    } catch {}
+  }
+
+  async function syncProfileSettingsToSupabase(userObj) {
+    if (!userObj || !isUUID(userObj.id) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("profiles").upsert({
+        id: userObj.id,
+        full_name: userObj.name,
+        peotic_name: userObj.poeticName,
+        email: userObj.email || "",
+        username: (userObj.handle || "").replace(/^@/, "") || `writer-${userObj.id.slice(0, 6)}`,
+        bio: userObj.bio || "",
+        role: userObj.role || "both"
+      });
+    } catch {}
+  }
+
+  async function syncContactToSupabase(entry) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("contact").insert({
+        name: entry.name,
+        email: entry.email,
+        subject: entry.subject || "Qalamly Community Inquiry",
+        message: entry.message
+      });
+    } catch {}
+  }
+
+  function ensureSeedData() {
+    const existingUsers = readStore(STORAGE.users, []);
+    if (!existingUsers.length) {
+      writeStore(STORAGE.users, SEED_WRITERS);
+    }
+    const existingComments = readStore(STORAGE.comments, null);
+    if (!existingComments) {
+      writeStore(STORAGE.comments, [
+        { id: "c-1", postId: "seed-0", authorId: "writer-leo", authorName: "Leo Chen", content: "Opening the window for five minutes every morning changed my entire week.", createdAt: "2026-10-04T14:20:00.000Z" },
+        { id: "c-2", postId: "seed-1", authorId: "writer-avery", authorName: "Avery Morgan", content: "Filling one page a day with imperfect sketches is the best advice!", createdAt: "2026-10-03T16:10:00.000Z" }
+      ]);
+    }
+  }
+
   function users() {
-    return profileRows;
+    const stored = readStore(STORAGE.users, []);
+    const map = new Map();
+    SEED_WRITERS.forEach((w) => map.set(w.id, w));
+    if (Array.isArray(stored)) {
+      stored.forEach((u) => map.set(u.id, u));
+    }
+    return [...map.values()];
   }
 
   function allPosts() {
-    return postRows;
+    const custom = readStore(STORAGE.posts, []);
+    const customArr = Array.isArray(custom) ? custom : [];
+    const customIds = new Set(customArr.map((p) => p.id));
+    const seeds = SEED_POSTS.filter((p) => !customIds.has(p.id));
+    return [...customArr, ...seeds];
   }
 
-  function mapProfile(row) {
-    return {
-      id: row.id,
-      name: row.full_name || row.username || "Writer",
-      poeticName: row.id === sessionUser?.id
-        ? sessionUser.user_metadata?.poetic_name || row.full_name || row.username
-        : row.full_name || row.username || "Writer",
-      handle: row.username ? `@${row.username}` : "",
-      bio: row.bio || "",
-      role: row.role || "both",
-      followers: Number(row.followers_count) || 0,
-      following: Number(row.following_count) || 0,
-      avatarUrl: row.avatar_url || ""
-    };
+  function savePostUpdate(updatedPost) {
+    const custom = readStore(STORAGE.posts, []);
+    const arr = Array.isArray(custom) ? custom : [];
+    const exists = arr.some((p) => p.id === updatedPost.id);
+    const next = exists ? arr.map((p) => (p.id === updatedPost.id ? updatedPost : p)) : [...arr, updatedPost];
+    writeStore(STORAGE.posts, next);
   }
 
-  function mapPost(row) {
-    const author = profileRows.find((profile) => profile.id === row.user_id);
-    const imagePath = row.image_path || "";
-    const imageUrl = imagePath ? supabase.storage.from("post-images").getPublicUrl(imagePath).data.publicUrl : "";
-    return {
-      id: row.id,
-      authorId: row.user_id,
-      authorName: author ? displayName(author) : "Writer",
-      title: row.title || "",
-      category: row.category || "Other",
-      language: row.language || "English",
-      body: row.content || row.body || "",
-      createdAt: row.created_at,
-      likes: Number(row.likes_count ?? row.likes) || 0,
-      status: row.status || "published",
-      imagePath,
-      imageUrl,
-      imageData: ""
-    };
-  }
-
-  async function loadRemoteData() {
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    sessionUser = sessionData.session?.user || null;
-
-    const profileFields = "id,username,full_name,bio,avatar_url,role,stories_count,followers_count,following_count,total_likes,total_comments,created_at";
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .select(profileFields)
-      .order("created_at", { ascending: false });
-    if (profileError) throw profileError;
-    profileRows = (profileData || []).map(mapProfile);
-
-    let postsQuery = supabase.from("posts").select("*").order("created_at", { ascending: false });
-    postsQuery = sessionUser
-      ? postsQuery.or(`status.eq.published,user_id.eq.${sessionUser.id}`)
-      : postsQuery.eq("status", "published");
-    const { data: postsData, error: postsError } = await postsQuery;
-    if (postsError) throw postsError;
-    postRows = (postsData || []).map(mapPost);
-
-    const { data: comments, error: commentsError } = await supabase
-      .from("comments")
-      .select("*")
-      .order("created_at", { ascending: true });
-    if (commentsError) throw commentsError;
-    commentRows = (comments || []).map((row) => ({
-      id: row.id, postId: row.post_id, authorId: row.user_id,
-      authorName: row.author_name, content: row.content, createdAt: row.created_at
-    }));
-
-    if (sessionUser) {
-      const [followsResult, likesResult, notificationsResult] = await Promise.all([
-        supabase.from("follows").select("follower_id,following_id").eq("follower_id", sessionUser.id),
-        supabase.from("likes_table").select("post_id,user_id").eq("user_id", sessionUser.id),
-        supabase.from("notifications").select("*").eq("recipient_id", sessionUser.id).order("created_at", { ascending: false })
-      ]);
-      const failed = [followsResult, likesResult, notificationsResult].find((result) => result.error);
-      if (failed?.error) throw failed.error;
-      followRows = followsResult.data || [];
-      likeRows = likesResult.data || [];
-      notificationRows = (notificationsResult.data || []).map((row) => ({
-        id: row.id, recipientId: row.recipient_id, postId: row.post_id,
-        message: row.message, isRead: row.is_read, createdAt: row.created_at
-      }));
-    } else {
-      followRows = [];
-      likeRows = [];
-      notificationRows = [];
-    }
-
-    if (!sessionUser) return null;
-    let ownProfile = profileRows.find((profile) => profile.id === sessionUser.id);
-    if (!ownProfile) {
-      ownProfile = mapProfile({
-        id: sessionUser.id,
-        username: sessionUser.user_metadata?.poetic_name,
-        full_name: sessionUser.user_metadata?.full_name,
-        role: sessionUser.user_metadata?.role
-      });
-      profileRows.push(ownProfile);
-    }
-    return ownProfile;
-  }
-
-  async function savePostUpdate(post) {
-    const record = {
-      ...(post.id ? { id: post.id } : {}),
-      user_id: sessionUser.id,
-      title: post.title,
-      content: post.body,
-      category: post.category,
-      language: post.language,
-      status: post.status,
-      image_path: post.imagePath || null
-    };
-    const { data, error } = await supabase.from("posts").upsert(record).select("*").single();
-    if (error) throw error;
-    const saved = mapPost(data);
-    const index = postRows.findIndex((item) => item.id === saved.id);
-    if (index < 0) postRows.unshift(saved);
-    else postRows[index] = saved;
-    return saved;
-  }
-
-  async function deletePostById(postId) {
-    const { error } = await supabase.from("posts").delete().eq("id", postId).eq("user_id", sessionUser.id);
-    if (error) throw error;
-    postRows = postRows.filter((post) => post.id !== postId);
+  function deletePostById(postId) {
+    const custom = readStore(STORAGE.posts, []);
+    const arr = Array.isArray(custom) ? custom : [];
+    writeStore(STORAGE.posts, arr.filter((p) => p.id !== postId));
+    syncDeletePostFromSupabase(postId);
   }
 
   function currentUser() {
-    return sessionUser ? users().find((user) => user.id === sessionUser.id) || null : null;
+    const id = readStore(STORAGE.session, null);
+    return id ? users().find((u) => u.id === id) || null : null;
   }
 
   function displayName(user) {
@@ -219,106 +672,147 @@
     const key = currentUser()?.id || "guest";
     const list = Array.isArray(all[key]) ? all[key] : [];
     const isSaved = list.includes(postId);
+    const nextSaved = !isSaved;
     all[key] = isSaved ? list.filter((id) => id !== postId) : [...new Set([...list, postId])];
     writeStore(STORAGE.bookmarks, all);
-    return !isSaved;
+    syncBookmarkToSupabase(postId, nextSaved);
+    return nextSaved;
   }
 
   function likedPostsList() {
-    return likeRows.filter((like) => like.user_id === sessionUser?.id).map((like) => like.post_id);
+    const all = readStore(STORAGE.likes, {});
+    const key = currentUser()?.id || "guest";
+    return Array.isArray(all[key]) ? all[key] : [];
   }
 
-  async function toggleLike(postId) {
-    if (!sessionUser) throw new Error("Log in to like a story.");
-    const wasLiked = likedPostsList().includes(postId);
-    const query = wasLiked
-      ? supabase.from("likes_table").delete().eq("post_id", postId).eq("user_id", sessionUser.id)
-      : supabase.from("likes_table").insert({ post_id: postId, user_id: sessionUser.id });
-    const { error } = await query;
-    if (error) throw error;
-    likeRows = wasLiked
-      ? likeRows.filter((like) => !(like.post_id === postId && like.user_id === sessionUser.id))
-      : [...likeRows, { post_id: postId, user_id: sessionUser.id }];
+  function toggleLike(postId) {
+    const all = readStore(STORAGE.likes, {});
+    const key = currentUser()?.id || "guest";
+    const list = Array.isArray(all[key]) ? all[key] : [];
+    const wasLiked = list.includes(postId);
+    const nowLiked = !wasLiked;
+    all[key] = wasLiked ? list.filter((id) => id !== postId) : [...new Set([...list, postId])];
+    writeStore(STORAGE.likes, all);
+
     const target = allPosts().find((p) => p.id === postId);
     if (target) {
       const nextLikes = Math.max(0, Number(target.likes || 0) + (wasLiked ? -1 : 1));
-      target.likes = nextLikes;
-      return { liked: !wasLiked, count: nextLikes };
+      const updated = { ...target, likes: nextLikes };
+      savePostUpdate(updated);
+      if (nowLiked && currentUser() && target.authorId && target.authorId !== currentUser().id) {
+        addNotification(target.authorId, `${displayName(currentUser())} liked your story "${target.title}"`, target.id);
+      }
+      syncLikeToSupabase(postId, nowLiked);
+      return { liked: nowLiked, count: nextLikes };
     }
-    return { liked: !wasLiked, count: 0 };
+    return { liked: nowLiked, count: 0 };
   }
 
   function commentsForPost(postId) {
-    return commentRows
+    const all = readStore(STORAGE.comments, []);
+    return (Array.isArray(all) ? all : [])
       .filter((c) => c.postId === postId)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async function addCommentToPost(postId, content) {
+  function addCommentToPost(postId, content) {
     const user = currentUser();
-    if (!user) throw new Error("Log in to leave a response.");
-    const { data, error } = await supabase.from("comments").insert({
-      post_id: postId,
-      user_id: user.id,
-      author_name: displayName(user),
-      content: content.trim()
-    }).select("*").single();
-    if (error) throw error;
+    if (!user) return null;
+    const all = readStore(STORAGE.comments, []);
     const comment = {
-      id: data.id, postId: data.post_id, authorId: data.user_id,
-      authorName: data.author_name, content: data.content, createdAt: data.created_at
+      id: crypto.randomUUID ? crypto.randomUUID() : `c-${Date.now()}`,
+      postId,
+      authorId: user.id,
+      authorName: displayName(user),
+      content: content.trim(),
+      createdAt: new Date().toISOString()
     };
-    commentRows.push(comment);
+    writeStore(STORAGE.comments, [...(Array.isArray(all) ? all : []), comment]);
+    const post = allPosts().find((p) => p.id === postId);
+    if (post && post.authorId !== user.id) {
+      addNotification(post.authorId, `${displayName(user)} commented on "${post.title}"`, postId);
+    }
+    syncCommentToSupabase(postId, comment);
     return comment;
   }
 
-  async function deleteCommentById(commentId) {
+  function deleteCommentById(commentId) {
     const user = currentUser();
     if (!user) return;
-    const { error } = await supabase.from("comments").delete().eq("id", commentId).eq("user_id", user.id);
-    if (error) throw error;
-    commentRows = commentRows.filter((comment) => comment.id !== commentId);
+    const all = readStore(STORAGE.comments, []);
+    writeStore(STORAGE.comments, (Array.isArray(all) ? all : []).filter((c) => !(String(c.id) === String(commentId) && c.authorId === user.id)));
+    syncDeleteCommentFromSupabase(commentId);
   }
 
   function followingList(userId) {
-    const id = userId || currentUser()?.id;
-    return followRows.filter((follow) => follow.follower_id === id).map((follow) => follow.following_id);
+    const all = readStore(STORAGE.follows, {});
+    const key = userId || currentUser()?.id || "guest";
+    return Array.isArray(all[key]) ? all[key] : [];
   }
 
   function followersCountFor(writerId) {
     const baseWriter = users().find((u) => u.id === writerId);
-    return Number(baseWriter?.followers || 0);
+    const base = Number(baseWriter?.followers || 0);
+    const all = readStore(STORAGE.follows, {});
+    let extra = 0;
+    Object.values(all).forEach((arr) => {
+      if (Array.isArray(arr) && arr.includes(writerId)) extra++;
+    });
+    return base + extra;
   }
 
-  async function toggleFollowWriter(targetWriterId) {
+  function toggleFollowWriter(targetWriterId) {
     const user = currentUser();
-    if (!user) throw new Error("Log in to follow writers.");
-    if (user.id === targetWriterId) throw new Error("You cannot follow yourself.");
-    const isFollowing = followingList(user.id).includes(targetWriterId);
-    const query = isFollowing
-      ? supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId)
-      : supabase.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
-    const { error } = await query;
-    if (error) throw error;
-    followRows = isFollowing
-      ? followRows.filter((follow) => !(follow.follower_id === user.id && follow.following_id === targetWriterId))
-      : [...followRows, { follower_id: user.id, following_id: targetWriterId }];
+    const key = user?.id || "guest";
+    if (user && user.id === targetWriterId) {
+      notify("You cannot follow yourself.");
+      return false;
+    }
+    const all = readStore(STORAGE.follows, {});
+    const list = Array.isArray(all[key]) ? all[key] : [];
+    const isFollowing = list.includes(targetWriterId);
+    const nowFollowing = !isFollowing;
+    all[key] = isFollowing ? list.filter((id) => id !== targetWriterId) : [...new Set([...list, targetWriterId])];
+    writeStore(STORAGE.follows, all);
+    if (nowFollowing && user) {
+      addNotification(targetWriterId, `${displayName(user)} started following your writing.`, "");
+    }
+    syncFollowToSupabase(targetWriterId, nowFollowing);
     updateHeader();
-    return !isFollowing;
+    return nowFollowing;
   }
 
   function notificationsForCurrentUser() {
     const user = currentUser();
     if (!user) return [];
-    return notificationRows;
+    const all = readStore(STORAGE.notifications, []);
+    return (Array.isArray(all) ? all : [])
+      .filter((n) => n.recipientId === user.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async function markAllNotificationsRead() {
+  function addNotification(recipientId, message, postId = "") {
+    const all = readStore(STORAGE.notifications, []);
+    const item = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `n-${Date.now()}`,
+      recipientId,
+      postId,
+      message,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+    writeStore(STORAGE.notifications, [item, ...(Array.isArray(all) ? all : [])]);
+  }
+
+  function markAllNotificationsRead() {
     const user = currentUser();
     if (!user) return;
-    const { error } = await supabase.from("notifications").update({ is_read: true }).eq("recipient_id", user.id);
-    if (error) throw error;
-    notificationRows = notificationRows.map((notification) => ({ ...notification, isRead: true }));
+    const all = readStore(STORAGE.notifications, []);
+    const updated = (Array.isArray(all) ? all : []).map((n) =>
+      n.recipientId === user.id ? { ...n, isRead: true } : n
+    );
+    writeStore(STORAGE.notifications, updated);
+    syncMarkNotificationsReadInSupabase();
     updateHeader();
   }
 
@@ -366,21 +860,27 @@
     }
 
     const leftSidebar = document.querySelector(".left-sidebar");
-    if (leftSidebar && !leftSidebar.querySelector('a[href="writers.html"]')) {
+    if (leftSidebar) {
       const settingsLink = leftSidebar.querySelector('a[href="settings.html"]');
-      const writersLink = document.createElement("a");
-      writersLink.className = "side-link";
-      writersLink.href = "writers.html";
-      writersLink.setAttribute("data-side-link", "");
-      writersLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> Writers`;
-      const notifSideLink = document.createElement("a");
-      notifSideLink.className = "side-link";
-      notifSideLink.href = "notifications.html";
-      notifSideLink.setAttribute("data-side-link", "");
-      notifSideLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> Notifications`;
-      if (settingsLink) {
-        leftSidebar.insertBefore(writersLink, settingsLink);
-        leftSidebar.insertBefore(notifSideLink, settingsLink);
+      const divider = leftSidebar.querySelector(".side-divider");
+      const anchorNode = settingsLink || divider || null;
+
+      if (!leftSidebar.querySelector('a[href="writers.html"]')) {
+        const writersLink = document.createElement("a");
+        writersLink.className = "side-link";
+        writersLink.href = "writers.html";
+        writersLink.setAttribute("data-side-link", "");
+        writersLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> Writers`;
+        leftSidebar.insertBefore(writersLink, anchorNode);
+      }
+
+      if (!leftSidebar.querySelector('a[href="notifications.html"]')) {
+        const notifSideLink = document.createElement("a");
+        notifSideLink.className = "side-link";
+        notifSideLink.href = "notifications.html";
+        notifSideLink.setAttribute("data-side-link", "");
+        notifSideLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> Notifications`;
+        leftSidebar.insertBefore(notifSideLink, anchorNode);
       }
     }
   }
@@ -453,13 +953,11 @@
   function navigate(route) {
     const value = String(route || "").replace(/^#/, "");
     if (value === "logout") {
-      supabase.auth.signOut().then(({ error }) => {
-        if (error) throw error;
-        location.href = "index.html";
-      }).catch((error) => {
-        console.error("Supabase sign-out failed:", error);
-        notify("Unable to log out. Please try again.");
-      });
+      writeStore(STORAGE.session, null);
+      if (typeof window.getSupabaseClient === "function") {
+        window.getSupabaseClient().then((sb) => sb.auth.signOut()).catch(() => {});
+      }
+      location.href = "index.html?logout=1";
       return;
     }
     if (value.startsWith("post/")) {
@@ -515,8 +1013,9 @@
     const isRTL = RTL_LANGUAGES.has(post.language);
     const artClass = post.artClass || "art-journal";
     const artEmoji = post.artEmoji || "✒️";
-    const coverHTML = post.imageUrl || post.imageData
-      ? `<div class="post-image"><img src="${escapeHTML(post.imageUrl || post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>`
+    const resolvedImg = post.imageData || (post.imagePath ? publicImageUrl(post.imagePath) : "");
+    const coverHTML = resolvedImg
+      ? `<div class="post-image"><img src="${escapeHTML(resolvedImg)}" alt="${escapeHTML(post.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>`
       : `<div class="post-image ${escapeHTML(artClass)}" aria-label="Story illustration"><span>${artEmoji}</span></div>`;
 
     return `
@@ -602,7 +1101,6 @@
     const initialQuery = params.get("q") || "";
     const initialLang = params.get("lang") || "All";
 
-    // Build dynamic topic list in left sidebar
     const topicContainer = document.getElementById("topicList");
     if (topicContainer) {
       topicContainer.innerHTML = ["All", ...STORY_CATEGORIES].map((cat) => `
@@ -729,9 +1227,10 @@
     const isSaved = bookmarkList().includes(post.id);
     const isRTL = RTL_LANGUAGES.has(post.language);
     const comments = commentsForPost(post.id);
+    const resolvedImg = post.imageData || (post.imagePath ? publicImageUrl(post.imagePath) : "");
 
-    const coverHTML = post.imageUrl || post.imageData
-      ? `<div class="detail-cover"><img src="${escapeHTML(post.imageUrl || post.imageData)}" alt="${escapeHTML(post.title)}" style="width:100%;max-height:380px;object-fit:cover;border-radius:14px;"></div>`
+    const coverHTML = resolvedImg
+      ? `<div class="detail-cover"><img src="${escapeHTML(resolvedImg)}" alt="${escapeHTML(post.title)}" style="width:100%;max-height:380px;object-fit:cover;border-radius:14px;"></div>`
       : `<div class="detail-cover ${escapeHTML(post.artClass || "art-journal")}" aria-hidden="true">${post.artEmoji || "✒️"}</div>`;
 
     const commentsHTML = comments.length
@@ -769,7 +1268,7 @@
           ${coverHTML}
           <div class="detail-body" ${isRTL ? 'dir="rtl" lang="ur"' : ""}>${escapeHTML(post.body)}</div>
           <div class="detail-actions">
-            <button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}">${isLiked ? "♥ Liked" : "♡ Like"} · ${Number(post.likes) || 0}</button>
+            <button class="primary-button ${isLiked ? "liked" : ""}" type="button" data-like-detail="${escapeHTML(post.id)}">${isLiked ? "♥ Liked" : "♡ Like"} · ${Number(post.likes) || 0}</button>
             <button class="secondary-button" type="button" data-bookmark-detail="${escapeHTML(post.id)}">${isSaved ? "🔖 Bookmarked" : "🏷️ Bookmark"}</button>
             <button class="secondary-button" type="button" data-share-post="${escapeHTML(post.id)}">Share link</button>
             ${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a>` : ""}
@@ -878,6 +1377,7 @@
     const body = existing?.body || "";
     const category = existing?.category || "Life";
     const language = existing?.language || "English";
+    const existingImg = existing?.imageData || (existing?.imagePath ? publicImageUrl(existing.imagePath) : "");
 
     setPage(
       `<div class="page-view">
@@ -904,8 +1404,12 @@
               </div>
             </div>
             <div class="form-field">
-              <label for="postImage">Cover Image <span class="form-label-note">(optional, max 2MB)</span></label>
+              <label for="postImage">Cover Image <span class="form-label-note">(optional, auto-compressed, max 5MB)</span></label>
               <input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+              <div class="image-preview ${existingImg ? "visible" : ""}" id="imagePreviewWrap">
+                <img id="imagePreviewEl" src="${escapeHTML(existingImg)}" alt="Story cover preview">
+              </div>
+              ${existingImg ? `<label class="remove-image-option"><input type="checkbox" id="removeCoverCheckbox" name="removeImage"> Remove current cover image</label>` : ""}
             </div>
             <div class="form-field">
               <label for="postBody">Your story</label>
@@ -927,6 +1431,23 @@
       langSelect.addEventListener("change", () => {
         const isRTL = RTL_LANGUAGES.has(langSelect.value);
         bodyArea.dir = isRTL ? "rtl" : "ltr";
+      });
+    }
+
+    const imageInput = document.getElementById("postImage");
+    const previewWrap = document.getElementById("imagePreviewWrap");
+    const previewEl = document.getElementById("imagePreviewEl");
+    if (imageInput && previewWrap && previewEl) {
+      imageInput.addEventListener("change", async () => {
+        const file = imageInput.files?.[0];
+        if (!file) return;
+        try {
+          const dataUrl = await compressImageFile(file, 900, 0.78);
+          previewEl.src = dataUrl;
+          previewWrap.classList.add("visible");
+        } catch {
+          notify("Could not preview selected image.");
+        }
       });
     }
   }
@@ -976,7 +1497,7 @@
               <div class="avatar ${escapeHTML(w.avatarColor || "purple")}" style="width:48px;height:48px;font-size:15px;">${escapeHTML(initials(displayName(w)))}</div>
               <div style="min-width:0;">
                 <strong style="font-size:15px;display:block;">${escapeHTML(displayName(w))}</strong>
-                <span style="font-size:11px;color:var(--muted);display:block;margin:3px 0;">${escapeHTML(w.handle || "")} · ${count} stories · ${followersCountFor(w.id)} followers</span>
+                <span style="font-size:11px;color:var(--muted);display:block;margin:3px 0;">${escapeHTML(w.handle || "")} · ${count} stories · <span data-writer-followers="${escapeHTML(w.id)}">${followersCountFor(w.id)}</span> followers</span>
                 <p style="margin:4px 0 0;font-size:12px;">${escapeHTML(w.bio || "Writer in the Qalamly community.")}</p>
               </div>
             </a>
@@ -1003,11 +1524,7 @@
   }
 
   function renderProfilePage(writerId) {
-    const target = users().find((u) => u.id === writerId) || currentUser();
-    if (!target) {
-      setPage(`<div class="page-view">${pageHero("Profile unavailable", "We couldn't find this writer.", "The profile may have been removed or is not public.")}</div>`, { contentOnly: true });
-      return;
-    }
+    const target = users().find((u) => u.id === writerId) || currentUser() || SEED_WRITERS[0];
     const isSelf = currentUser()?.id === target.id;
     const isFollowing = followingList().includes(target.id);
     const writerPosts = allPosts()
@@ -1024,11 +1541,11 @@
               <h1 style="margin:4px 0;">${escapeHTML(displayName(target))}</h1>
               <p>${escapeHTML(target.bio || "Writer and reader on Qalamly.")}</p>
             </div>
-            ${!isSelf ? `<button class="primary-button" type="button" data-follow-id="${escapeHTML(target.id)}">${isFollowing ? "Following" : "Follow writer"}</button>` : `<a class="secondary-button" href="settings.html">Edit profile</a>`}
+            ${!isSelf ? `<button class="primary-button ${isFollowing ? "following" : ""}" type="button" data-follow-id="${escapeHTML(target.id)}" data-follow-label="writer">${isFollowing ? "Following" : "Follow writer"}</button>` : `<a class="secondary-button" href="settings.html">Edit profile</a>`}
           </div>
           <div class="dashboard-stats" style="margin-top:20px;margin-bottom:0;">
             <div class="dashboard-stat"><strong>${writerPosts.length}</strong><span>Published stories</span></div>
-            <div class="dashboard-stat"><strong>${followersCountFor(target.id)}</strong><span>Followers</span></div>
+            <div class="dashboard-stat"><strong id="profileFollowersCount" data-writer-followers="${escapeHTML(target.id)}">${followersCountFor(target.id)}</strong><span>Followers</span></div>
             <div class="dashboard-stat"><strong>${Number(target.following || followingList(target.id).length)}</strong><span>Following</span></div>
           </div>
         </section>
@@ -1078,15 +1595,10 @@
 
     const markBtn = document.getElementById("markReadBtn");
     if (markBtn) {
-      markBtn.addEventListener("click", async () => {
-        try {
-          await markAllNotificationsRead();
-          renderNotificationsPage();
-          notify("All notifications marked as read.");
-        } catch (error) {
-          console.error("Unable to mark notifications as read:", error);
-          notify(error.message || "Unable to update notifications.");
-        }
+      markBtn.addEventListener("click", () => {
+        markAllNotificationsRead();
+        renderNotificationsPage();
+        notify("All notifications marked as read.");
       });
     }
   }
@@ -1109,17 +1621,21 @@
   }
 
   function renderContact() {
+    const savedMessages = readStore(STORAGE.messages, []);
+    const recentCount = Array.isArray(savedMessages) ? savedMessages.length : 0;
     setPage(
       `<div class="page-view">
         ${pageHero("We'd love to hear from you", "Say hello.", "Questions, ideas, kind words, or feedback about Qalamly—send us a message below.")}
         <section class="page-card page-form">
           <h2>Send a message</h2>
           <form id="contactForm">
-            <div class="form-field"><label for="contactName">Your name</label><input id="contactName" required placeholder="Your name"></div>
-            <div class="form-field"><label for="contactEmail">Your email</label><input id="contactEmail" type="email" required placeholder="you@example.com"></div>
-            <div class="form-field"><label for="contactMsg">Message</label><textarea id="contactMsg" rows="5" required placeholder="How can we help?"></textarea></div>
+            <div class="form-field"><label for="contactName">Your name</label><input id="contactName" name="name" required placeholder="Your name"></div>
+            <div class="form-field"><label for="contactEmail">Your email</label><input id="contactEmail" name="email" type="email" required placeholder="you@example.com"></div>
+            <div class="form-field"><label for="contactSubject">Subject</label><input id="contactSubject" name="subject" placeholder="Story question, feedback, or hello"></div>
+            <div class="form-field"><label for="contactMsg">Message</label><textarea id="contactMsg" name="message" rows="5" required placeholder="How can we help?"></textarea></div>
             <button class="primary-button" type="submit">Send message</button>
           </form>
+          ${recentCount > 0 ? `<p class="form-note">You have sent ${recentCount} ${recentCount === 1 ? "message" : "messages"} from this browser.</p>` : ""}
         </section>
       </div>`,
       { contentOnly: true }
@@ -1129,11 +1645,12 @@
   function renderCompetitions() {
     setPage(
       `<div class="page-view">
-        ${pageHero("Community writing prompts", "No active prompt right now", "New writing prompts will appear here when they are available.")}
+        ${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. A kitchen, a bus route, a language, or a person can all be home.")}
         <section class="page-card">
-          <h2>Have a story to share?</h2>
-          <p>Write about any topic you care about and publish it for the Qalamly community.</p>
-          <a class="primary-button" href="write.html">Write a story</a>
+          <h2>How to enter</h2>
+          <p>Begin with a sensory detail you can see, hear, or smell. Publish your story in any supported language and include <strong>October prompt</strong> in your title or opening paragraph.</p>
+          <p><strong>Entries close October 31, 2026.</strong> Community favorites will be featured on the home banner.</p>
+          <a class="primary-button" href="write.html">Write your entry</a>
         </section>
       </div>`,
       { contentOnly: true }
@@ -1178,17 +1695,33 @@
       return;
     }
     const signup = mode === "signup";
+    const eyeToggleHTML = (targetId) => `
+      <button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="${targetId}" aria-label="Show password" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path>
+          <circle cx="12" cy="12" r="2.5"></circle>
+          <path class="password-eye-slash" d="m4 4 16 16"></path>
+        </svg>
+      </button>`;
+
     setPage(
       `<div class="page-view">
         ${pageHero(signup ? "A page of your own" : "Your words are waiting", signup ? "Create your Qalamly account" : "Welcome back", signup ? "Join Qalamly to keep private drafts, follow writers, and publish stories." : "Log in to pick up where your reading and writing left off.")}
         <section class="page-card page-form">
           <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
           <form id="authForm" novalidate>
-            ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" autocomplete="name" required maxlength="60" placeholder="Your full name"></div>' : ""}
-            ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" autocomplete="nickname" required maxlength="60" placeholder="The name readers will see"></div>' : ""}
-            <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com"></div>
-            <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" autocomplete="${signup ? "new-password" : "current-password"}" required minlength="${signup ? "8" : "1"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
-            ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
+            ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="Your full name"></div>' : ""}
+            ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
+            <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
+            <div class="form-field">
+              <label for="authPassword">Password</label>
+              <div class="password-input-wrap">
+                <input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}">
+                ${eyeToggleHTML("authPassword")}
+              </div>
+            </div>
+            ${signup ? `<div class="form-field"><label for="authConfirmPassword">Confirm password</label><div class="password-input-wrap"><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Re-enter password">${eyeToggleHTML("authConfirmPassword")}</div></div>` : ""}
+            ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role"><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
             <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           </form>
           <p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p>
@@ -1208,14 +1741,23 @@
 
   // --- ROUTER DISPATCH ---
   function renderRoute() {
+    ensureSeedData();
     updateHeader();
     const { path, params } = routeParts();
+
+    if (path === "home" && params.get("logout") === "1") {
+      writeStore(STORAGE.session, null);
+      if (typeof window.getSupabaseClient === "function") {
+        window.getSupabaseClient().then((sb) => sb.auth.signOut()).catch(() => {});
+      }
+      updateHeader();
+      notify("You have been logged out.");
+    }
 
     const activeFile = path === "home" ? "index.html" : `${path}.html`;
     document.querySelectorAll(".top-nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === activeFile));
     document.querySelectorAll("[data-side-link]").forEach((a) => a.classList.toggle("selected", a.getAttribute("href") === activeFile));
 
-    // Global search bar connection from non-home pages
     const globalSearch = document.getElementById("searchInput");
     if (globalSearch && path !== "home" && path !== "writers") {
       globalSearch.onkeydown = (e) => {
@@ -1243,10 +1785,35 @@
       case "notifications": renderNotificationsPage(); break;
       default: showHome(params);
     }
+
+    // Hydrate live data from Supabase tables asynchronously
+    hydrateFromSupabase();
   }
 
-  // --- GLOBAL EVENT LISTENERS ---
-  document.addEventListener("click", async (event) => {
+  // --- KEYBOARD NAVIGATION FOR STORY CARDS ---
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".post-card[data-post-id]");
+    if (!card || event.target !== card) return;
+    event.preventDefault();
+    navigate(`post/${card.dataset.postId}`);
+  });
+
+  // --- GLOBAL CLICK LISTENERS ---
+  document.addEventListener("click", (event) => {
+    const passwordToggle = event.target.closest("[data-password-toggle]");
+    if (passwordToggle) {
+      const inputId = passwordToggle.getAttribute("aria-controls");
+      const passwordInput = inputId ? document.getElementById(inputId) : null;
+      if (passwordInput) {
+        const show = passwordInput.type === "password";
+        passwordInput.type = show ? "text" : "password";
+        passwordToggle.setAttribute("aria-pressed", String(show));
+        passwordToggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      }
+      return;
+    }
+
     const signout = event.target.closest("[data-signout]");
     if (signout) {
       navigate("logout");
@@ -1262,15 +1829,10 @@
     const deletePostBtn = event.target.closest("[data-delete-post]");
     if (deletePostBtn) {
       const id = deletePostBtn.dataset.deletePost;
-      try {
-        await deletePostById(id);
-        notify("Story deleted.");
-        renderDashboard("all");
-        updateHeader();
-      } catch (error) {
-        console.error("Unable to delete story:", error);
-        notify(error.message || "Unable to delete this story.");
-      }
+      deletePostById(id);
+      notify("Story deleted.");
+      renderDashboard("all");
+      updateHeader();
       return;
     }
 
@@ -1278,28 +1840,26 @@
     if (followBtn) {
       event.preventDefault();
       const writerId = followBtn.dataset.followId;
-      try {
-        const nowFollowing = await toggleFollowWriter(writerId);
-        followBtn.classList.toggle("following", nowFollowing);
-        followBtn.textContent = nowFollowing ? "Following" : "Follow";
-        notify(nowFollowing ? "Writer followed!" : "Unfollowed writer.");
-      } catch (error) {
-        console.error("Unable to update follow:", error);
-        notify(error.message || "Unable to update your follow.");
-      }
+      const nowFollowing = toggleFollowWriter(writerId);
+      const isProfileHeroBtn = followBtn.dataset.followLabel === "writer";
+      followBtn.classList.toggle("following", nowFollowing);
+      followBtn.textContent = nowFollowing ? "Following" : (isProfileHeroBtn ? "Follow writer" : "Follow");
+
+      const updatedCount = followersCountFor(writerId);
+      document.querySelectorAll(`[data-writer-followers="${CSS.escape ? CSS.escape(writerId) : writerId}"]`).forEach((el) => {
+        el.textContent = String(updatedCount);
+      });
+
+      notify(nowFollowing ? "Writer followed!" : "Unfollowed writer.");
       return;
     }
 
     const detailLike = event.target.closest("[data-like-detail]");
     if (detailLike) {
       const id = detailLike.dataset.likeDetail;
-      try {
-        const res = await toggleLike(id);
-        detailLike.textContent = `${res.liked ? "♥ Liked" : "♡ Like"} · ${res.count}`;
-      } catch (error) {
-        console.error("Unable to update like:", error);
-        notify(error.message || "Unable to update your like.");
-      }
+      const res = toggleLike(id);
+      detailLike.classList.toggle("liked", res.liked);
+      detailLike.textContent = `${res.liked ? "♥ Liked" : "♡ Like"} · ${res.count}`;
       return;
     }
 
@@ -1325,14 +1885,9 @@
 
     const deleteComment = event.target.closest("[data-delete-comment]");
     if (deleteComment) {
-      try {
-        await deleteCommentById(deleteComment.dataset.deleteComment);
-        renderDetail(deleteComment.dataset.postId);
-        notify("Response removed.");
-      } catch (error) {
-        console.error("Unable to delete response:", error);
-        notify(error.message || "Unable to delete this response.");
-      }
+      deleteCommentById(deleteComment.dataset.deleteComment);
+      renderDetail(deleteComment.dataset.postId);
+      notify("Response removed.");
       return;
     }
 
@@ -1341,17 +1896,12 @@
       event.stopPropagation();
       const card = likeButton.closest(".post-card");
       if (!card) return;
-      try {
-        const res = await toggleLike(card.dataset.postId);
-        likeButton.setAttribute("aria-pressed", String(res.liked));
-        likeButton.classList.toggle("liked", res.liked);
-        likeButton.textContent = res.liked ? "♥" : "♡";
-        const countEl = card.querySelector(".like-count");
-        if (countEl) countEl.textContent = String(res.count);
-      } catch (error) {
-        console.error("Unable to update like:", error);
-        notify(error.message || "Unable to update your like.");
-      }
+      const res = toggleLike(card.dataset.postId);
+      likeButton.setAttribute("aria-pressed", String(res.liked));
+      likeButton.classList.toggle("liked", res.liked);
+      likeButton.textContent = res.liked ? "♥" : "♡";
+      const countEl = card.querySelector(".like-count");
+      if (countEl) countEl.textContent = String(res.count);
       return;
     }
 
@@ -1364,6 +1914,9 @@
       bookmarkButton.setAttribute("aria-pressed", String(saved));
       bookmarkButton.classList.toggle("bookmarked", saved);
       bookmarkButton.textContent = saved ? "🔖" : "🏷️";
+      if (routeParts().path === "bookmarks" && !saved) {
+        renderBookmarks();
+      }
       notify(saved ? "Story saved to bookmarks" : "Removed from bookmarks");
       return;
     }
@@ -1374,17 +1927,32 @@
     }
   });
 
+  // --- GLOBAL FORM SUBMISSIONS ---
   document.addEventListener("submit", async (event) => {
     const form = event.target;
 
     if (form.id === "contactForm") {
       event.preventDefault();
-      const subject = encodeURIComponent(`Qalamly message from ${form.elements.contactName.value.trim()}`);
-      const body = encodeURIComponent(
-        `From: ${form.elements.contactName.value.trim()} (${form.elements.contactEmail.value.trim()})\n\n${form.elements.contactMsg.value.trim()}`
-      );
-      location.href = `mailto:hello@qalamly.com?subject=${subject}&body=${body}`;
-      notify("Your email app should open with your message.");
+      const name = form.elements.name?.value.trim() || "";
+      const email = form.elements.email?.value.trim() || "";
+      const subject = form.elements.subject?.value.trim() || "Qalamly Community Inquiry";
+      const message = form.elements.message?.value.trim() || "";
+      if (!name || !email || !message) return;
+
+      const existing = readStore(STORAGE.messages, []);
+      const entry = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`,
+        name,
+        email,
+        subject,
+        message,
+        createdAt: new Date().toISOString()
+      };
+      writeStore(STORAGE.messages, [entry, ...(Array.isArray(existing) ? existing : [])]);
+      syncContactToSupabase(entry);
+      form.reset();
+      renderContact();
+      notify("Thank you! Your message has been sent to the Qalamly team.");
       return;
     }
 
@@ -1393,54 +1961,143 @@
       const postId = form.dataset.postId;
       const content = form.elements.content.value.trim();
       if (!content) return;
-      try {
-        await addCommentToPost(postId, content);
-        renderDetail(postId);
-        notify("Response published!");
-      } catch (error) {
-        console.error("Unable to publish response:", error);
-        showFormError(error.message || "Unable to publish your response.");
-      }
+      addCommentToPost(postId, content);
+      renderDetail(postId);
+      notify("Response published!");
       return;
     }
 
     if (form.id === "authForm") {
       event.preventDefault();
-      try {
       const isSignup = routeParts().path === "signup";
       const email = form.elements.email.value.trim().toLowerCase();
       const password = form.elements.password.value;
+      const list = readStore(STORAGE.users, SEED_WRITERS);
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFormError("Please enter a valid email address.");
+        return;
+      }
 
       if (isSignup) {
         const name = form.elements.name.value.trim();
         const poeticName = form.elements.poeticName.value.trim();
+        const confirm = form.elements.confirmPassword.value;
         const role = form.elements.role.value;
         if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
         if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { full_name: name, poetic_name: poeticName, role } }
-        });
-        if (error) { showFormError(error.message); return; }
-        if (!data.session) {
-          showFormError("Check your email to confirm your account, then log in.");
+        if (password !== confirm) { showFormError("Passwords do not match."); return; }
+
+        let sbUserId = null;
+        if (typeof window.getSupabaseClient === "function") {
+          try {
+            const sb = await window.getSupabaseClient();
+            const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+              email,
+              password,
+              options: {
+                data: {
+                  full_name: name,
+                  poetic_name: poeticName,
+                  peotic_name: poeticName,
+                  role
+                }
+              }
+            });
+            if (!signUpErr && signUpData?.user?.id) {
+              sbUserId = signUpData.user.id;
+              await sb.from("profiles").upsert({
+                id: sbUserId,
+                full_name: name,
+                peotic_name: poeticName,
+                email,
+                role,
+                username: `${poeticName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${sbUserId.slice(0, 6)}`
+              });
+            } else if (signUpErr && /already registered/i.test(signUpErr.message)) {
+              showFormError("An account with this email already exists.");
+              return;
+            }
+          } catch {}
+        }
+
+        if (!sbUserId && list.some((u) => u.email === email)) {
+          showFormError("An account with this email already exists.");
           return;
         }
-        sessionUser = data.user;
-        await loadRemoteData();
+
+        const salt = generateSaltHex();
+        const passwordHash = await hashPassword(password, salt);
+
+        const newUser = {
+          id: sbUserId || (crypto.randomUUID ? crypto.randomUUID() : `u-${Date.now()}`),
+          name,
+          poeticName,
+          email,
+          salt,
+          passwordHash,
+          role,
+          handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
+          bio: "Writer and reader on Qalamly.",
+          followers: 0,
+          following: 0
+        };
+        writeStore(STORAGE.users, [...list.filter((u) => u.id !== newUser.id), newUser]);
+        writeStore(STORAGE.session, newUser.id);
+        notify("Account created! Welcome to Qalamly.");
         navigate("dashboard.html");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) { showFormError(error.message); return; }
-        await loadRemoteData();
+        // Try Supabase Auth signInWithPassword first
+        let loggedInUser = null;
+        if (typeof window.getSupabaseClient === "function") {
+          try {
+            const sb = await window.getSupabaseClient();
+            const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+            if (!signInErr && signInData?.user) {
+              const sbU = signInData.user;
+              const meta = sbU.user_metadata || {};
+              loggedInUser = list.find((u) => u.id === sbU.id || u.email === email) || {
+                id: sbU.id,
+                name: meta.full_name || email.split("@")[0],
+                poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+                email,
+                role: (meta.role || "both").toLowerCase(),
+                handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
+                bio: "Writer and reader on Qalamly.",
+                followers: 0,
+                following: 0
+              };
+              loggedInUser.id = sbU.id;
+              writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbU.id && u.email !== email), loggedInUser]);
+            }
+          } catch {}
+        }
+
+        if (!loggedInUser) {
+          const account = list.find((u) => u.email === email);
+          if (!account) { showFormError("Invalid email or password."); return; }
+
+          let authenticated = false;
+          if (account.salt && account.passwordHash) {
+            const checkHash = await hashPassword(password, account.salt);
+            authenticated = checkHash === account.passwordHash;
+          } else if (account.password) {
+            authenticated = account.password === password;
+            if (authenticated) {
+              account.salt = generateSaltHex();
+              account.passwordHash = await hashPassword(password, account.salt);
+              delete account.password;
+              writeStore(STORAGE.users, list);
+            }
+          }
+          if (!authenticated) { showFormError("Invalid email or password."); return; }
+          loggedInUser = account;
+        }
+
+        writeStore(STORAGE.session, loggedInUser.id);
         const next = sessionStorage.getItem("qalamly.next") || "dashboard";
         sessionStorage.removeItem("qalamly.next");
         navigate(`${next}.html`);
-      }
-      } catch (error) {
-        console.error("Authentication request failed:", error);
-        showFormError(error.message || "Unable to authenticate. Please try again.");
       }
       return;
     }
@@ -1456,52 +2113,51 @@
       const language = form.elements.language.value;
       const status = event.submitter?.value === "draft" ? "draft" : "published";
       const editId = form.dataset.editId;
+      const removeImage = Boolean(form.elements.removeImage?.checked);
 
       if (!title || body.length < 10) {
         showFormError("Please enter a title and at least 10 characters for your story.");
         return;
       }
 
-      const existing = editId ? allPosts().find((p) => p.id === editId) : null;
       const fileInput = form.elements.image;
-      let imagePath = existing?.imagePath || "";
-      if (fileInput && fileInput.files && fileInput.files[0]) {
-        const file = fileInput.files[0];
-        if (file.size > 2 * 1024 * 1024) {
-          showFormError("Image must be under 2MB.");
+      const rawFile = fileInput?.files?.[0] || null;
+      let imageData = "";
+      if (rawFile) {
+        if (rawFile.size > 5 * 1024 * 1024) {
+          showFormError("Image must be under 5MB.");
           return;
         }
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-        imagePath = `${user.id}/${crypto.randomUUID()}-${safeName}`;
         try {
-          const { error } = await supabase.storage.from("post-images").upload(imagePath, file, { upsert: false });
-          if (error) { showFormError(error.message); return; }
-        } catch (error) {
-          console.error("Unable to upload story image:", error);
-          showFormError(error.message || "Unable to upload the cover image.");
+          imageData = await compressImageFile(rawFile, 1000, 0.78);
+        } catch (err) {
+          showFormError(err instanceof Error ? err.message : "Could not process image.");
           return;
         }
       }
+
+      const existing = editId ? allPosts().find((p) => p.id === editId) : null;
+      const finalImage = removeImage ? "" : (imageData || existing?.imageData || "");
+
       const postObj = {
-        ...(existing ? { id: existing.id } : {}),
+        id: existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : `post-${Date.now()}`),
         authorId: user.id,
+        authorName: displayName(user),
         title,
         category,
         language,
         body,
-        imagePath,
+        imageData: finalImage,
+        imagePath: removeImage ? "" : (existing?.imagePath || ""),
         status,
-        likes: existing?.likes || 0
+        likes: existing ? existing.likes : 0,
+        createdAt: existing ? existing.createdAt : new Date().toISOString()
       };
 
-      try {
-        await savePostUpdate(postObj);
-        notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
-        navigate("dashboard.html");
-      } catch (error) {
-        console.error("Unable to save story:", error);
-        showFormError(error.message || "Unable to save your story.");
-      }
+      savePostUpdate(postObj);
+      await syncPostToSupabase(postObj, rawFile);
+      notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
+      navigate("dashboard.html");
       return;
     }
 
@@ -1515,63 +2171,38 @@
       const bio = form.elements.bio.value.trim();
       const role = form.elements.role.value;
 
-      const username = handle.replace(/^@/, "").toLowerCase();
-      let error;
-      try {
-        ({ error } = await supabase.from("profiles").update({
-          full_name: name, username, bio, role
-        }).eq("id", user.id));
-      } catch (requestError) {
-        console.error("Unable to update profile:", requestError);
-        showFormError(requestError.message || "Unable to save profile settings.");
+      if (name.length < 2 || poeticName.length < 2) {
+        showFormError("Name and poetic name must be at least 2 characters.");
         return;
       }
-      if (error) {
-        console.error("Unable to update profile:", error);
-        showFormError(error.message || "Unable to save profile settings.");
-        return;
+
+      if (!handle.startsWith("@")) handle = `@${handle}`;
+      const updatedUser = { ...user, name, poeticName, handle, bio, role };
+      const list = users().map((u) => (u.id === user.id ? updatedUser : u));
+      writeStore(STORAGE.users, list);
+
+      const customPosts = readStore(STORAGE.posts, []);
+      if (Array.isArray(customPosts)) {
+        customPosts.forEach((p) => {
+          if (p.authorId === user.id) p.authorName = poeticName;
+        });
+        writeStore(STORAGE.posts, customPosts);
       }
-      let metadataError;
-      try {
-        ({ error: metadataError } = await supabase.auth.updateUser({
-          data: { full_name: name, poetic_name: poeticName, role }
-        }));
-      } catch (requestError) {
-        console.error("Profile saved, but account metadata update failed:", requestError);
-        showFormError("Profile details saved, but your pen name could not be updated.");
-        return;
+
+      const allComments = readStore(STORAGE.comments, []);
+      if (Array.isArray(allComments)) {
+        allComments.forEach((c) => {
+          if (c.authorId === user.id) c.authorName = poeticName;
+        });
+        writeStore(STORAGE.comments, allComments);
       }
-      if (metadataError) {
-        console.error("Profile fields saved, but account metadata update failed:", metadataError);
-        showFormError("Profile details saved, but your pen name could not be updated.");
-        return;
-      }
-      try {
-        await loadRemoteData();
-        updateHeader();
-        notify("Profile settings saved.");
-        navigate("dashboard.html");
-      } catch (loadError) {
-        console.error("Profile saved but refresh failed:", loadError);
-        notify("Profile saved, but refreshing the page data failed.");
-      }
+
+      await syncProfileSettingsToSupabase(updatedUser);
+      updateHeader();
+      notify("Profile settings saved.");
+      navigate("dashboard.html");
     }
   });
 
-  async function startApp() {
-    try {
-      supabase = await window.getSupabaseClient();
-      const user = await loadRemoteData();
-      if (user && !profileRows.some((profile) => profile.id === user.id)) profileRows.push(user);
-      renderRoute();
-    } catch (error) {
-      console.error("Unable to load Qalamly from Supabase:", error);
-      setPage(
-        `<div class="page-view"><section class="page-hero"><div class="page-kicker">Connection problem</div><h1>Qalamly couldn't load its data.</h1><p>${escapeHTML(error.message || "Check your connection and Supabase configuration, then try again.")}</p><button class="primary-button" type="button" onclick="location.reload()">Try again</button></section></div>`,
-        { contentOnly: true }
-      );
-    }
-  }
-
-  startApp();
+  renderRoute();
 })();
