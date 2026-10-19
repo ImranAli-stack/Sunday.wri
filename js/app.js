@@ -468,16 +468,6 @@
       const sb = await window.getSupabaseClient();
       if (liked) {
         await sb.from("likes_table").insert({ user_id: user.id, post_id: postId });
-        const target = allPosts().find((p) => p.id === postId);
-        if (target && isUUID(target.authorId) && target.authorId !== user.id) {
-          await sb.from("notifications").insert({
-            recipient_id: target.authorId,
-            actor_id: user.id,
-            post_id: postId,
-            type: "like",
-            is_read: false
-          });
-        }
       } else {
         await sb.from("likes_table").delete().eq("user_id", user.id).eq("post_id", postId);
       }
@@ -520,17 +510,6 @@
           (Array.isArray(all) ? all : []).map((c) => (c.id === commentObj.id ? { ...c, id: String(data.id) } : c))
         );
       }
-
-      const target = allPosts().find((p) => p.id === postId);
-      if (target && isUUID(target.authorId) && target.authorId !== user.id) {
-        await sb.from("notifications").insert({
-          recipient_id: target.authorId,
-          actor_id: user.id,
-          post_id: postId,
-          type: "comment",
-          is_read: false
-        });
-      }
     } catch {}
   }
 
@@ -551,12 +530,6 @@
       const sb = await window.getSupabaseClient();
       if (isFollowing) {
         await sb.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
-        await sb.from("notifications").insert({
-          recipient_id: targetWriterId,
-          actor_id: user.id,
-          type: "follow",
-          is_read: false
-        });
       } else {
         await sb.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId);
       }
