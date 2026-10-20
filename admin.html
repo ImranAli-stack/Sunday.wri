@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="Dedicated Admin Database Dashboard for Qalamly — CRUD & Moderation.">
+  <title>Admin Studio · Qalamly Database Dashboard</title>
+  <link rel="stylesheet" href="admin-dashboard/styles.css">
+  <script src="js/supabase.js" defer></script>
+  <script src="admin-dashboard/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="Qalamly admin home">
+        <span class="brand-mark">q</span><span>qalamly<span class="brand-period">.</span><small>ADMIN STUDIO</small></span>
+      </a>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="nav-list" aria-label="Admin sections">
+        <button class="nav-item active" type="button" data-view="overview"><span class="nav-icon">⌂</span>Overview</button>
+        <button class="nav-item" type="button" data-view="posts"><span class="nav-icon">▤</span>Posts<span class="nav-count" id="pendingNavCount">0</span></button>
+        <button class="nav-item" type="button" data-view="comments"><span class="nav-icon">▧</span>Comments</button>
+        <button class="nav-item" type="button" data-view="likes"><span class="nav-icon">♡</span>Likes</button>
+        <button class="nav-item" type="button" data-view="users"><span class="nav-icon">♙</span>Users</button>
+        <button class="nav-item" type="button" data-view="monetization"><span class="nav-icon">◈</span>Monetization</button>
+        <button class="nav-item" type="button" data-view="applications"><span class="nav-icon">✎</span>Applications<span class="nav-count" id="applicationsNavCount">0</span></button>
+        <button class="nav-item" type="button" data-view="messages"><span class="nav-icon">✉</span>Messages<span class="nav-count" id="unreadNavCount">0</span></button>
+        <button class="nav-item" type="button" data-view="database"><span class="nav-icon">⛁</span>Database Console</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="admin-card"><div class="admin-avatar">AD</div><div class="admin-copy"><strong>Admin Owner</strong><span>Supabase Studio</span></div><span class="online-dot"></span></div>
+        <p class="local-note connected" id="dbStatusIndicator"><span aria-hidden="true">●</span> Connected to Database: Supabase</p>
+        <button class="button secondary compact" data-action="lock-admin" style="width:100%;margin-top:8px;">🔒 Lock Studio</button>
+      </div>
+    </aside>
+
+    <div class="main-column">
+      <header class="topbar">
+        <button class="icon-button menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation">☰</button>
+        <div class="breadcrumb"><span>Workspace</span><span class="crumb-slash">/</span><strong id="pageName">Overview</strong></div>
+        <div class="topbar-spacer"></div>
+        <label class="global-search"><span aria-hidden="true">⌕</span><input id="globalSearch" type="search" placeholder="Search this section..." aria-label="Search current section"></label>
+        <button class="icon-button notification-button" type="button" data-view="messages" aria-label="Open messages">♧<i></i></button>
+        <div class="top-admin"><span class="admin-avatar small">AD</span><span>Admin Owner</span><span class="chevron">⌄</span></div>
+      </header>
+      <main class="content" id="content" tabindex="-1"></main>
+      <footer class="page-footer">Qalamly Admin Studio <span>·</span> Direct Supabase Database Interface</footer>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog class="editor-dialog" id="editorDialog" aria-labelledby="dialogTitle">
+    <form id="editorForm" method="dialog">
+      <div class="dialog-heading"><div><div class="eyebrow">ADMIN ACTION</div><h2 id="dialogTitle">Edit record</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Close">×</button></div>
+      <div id="dialogFields" class="dialog-fields"></div>
+      <div class="dialog-actions" id="dialogActions"><button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save changes</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

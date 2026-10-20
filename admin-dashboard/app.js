@@ -1,0 +1,1397 @@
+(() => {
+  "use strict";
+
+  const SUPABASE_URL = window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+  const ADMIN_PASSKEY = "admin2026";
+  const ADMIN_SESSION_KEY = "qalamly_admin_auth_v1";
+  const STORAGE_KEY = "qalamly-admin-demo-v1";
+
+  // Default seed fallback if offline
+  const seed = {
+    posts: [
+      { id: "P-1048", title: "The quiet art of starting over", excerpt: "Some beginnings arrive softly. A cup of coffee, an open window, a blank page.", author: "Maya Chen", handle: "@mayawrites", date: "2026-10-15", status: "published", topic: "Personal growth", language: "English", likes: 128, comments: 14 }
+    ],
+    comments: [],
+    likes: [],
+    users: [],
+    payouts: [],
+    messages: [],
+    applications: []
+  };
+
+  const headings = {
+    overview: ["Overview", "Here’s what’s happening across your database and community."],
+    posts: ["Post management", "Review, edit, publish, or delete posts directly in the database."],
+    comments: ["Comment moderation", "Manage and delete community comments in the database."],
+    likes: ["Likes activity", "Inspect and manage story likes stored in the database."],
+    users: ["User directory", "Manage user profiles and roles in the database."],
+    monetization: ["Monetization & Payouts", "Review creator earnings and manage payout records."],
+    applications: ["Creator applications", "Review creator monetization applications submitted on the apply page."],
+    messages: ["Community messages", "Read and manage incoming inquiries from the contact table."],
+    database: ["Database console", "Live table explorer and raw record interface for Supabase."]
+  };
+
+  let state = {
+    posts: [],
+    comments: [],
+    likes: [],
+    users: [],
+    payouts: [],
+    messages: [],
+    applications: [],
+    notifications: [],
+    view: "overview",
+    postFilter: "All",
+    commentFilter: "All",
+    userFilter: "All",
+    payoutFilter: "All",
+    applicationFilter: "All",
+    dbTable: "posts",
+    search: "",
+    selectedMessage: null,
+    isLiveDb: false,
+    dbLoading: false
+  };
+
+  const content = document.getElementById("content");
+  const searchInput = document.getElementById("globalSearch");
+  const dialog = document.getElementById("editorDialog");
+  const editorForm = document.getElementById("editorForm");
+  const dialogFields = document.getElementById("dialogFields");
+  const dialogActions = document.getElementById("dialogActions");
+  let editing = null;
+  let toastTimeout;
+
+  // --- SUPABASE CLIENT HELPER ---
+  async function getClient() {
+    if (window.getSupabaseClient) {
+      try { return await window.getSupabaseClient(); } catch {}
+    }
+    if (window.supabase?.createClient) {
+      return window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    }
+    // Load script dynamically if needed
+    if (!window.supabase) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+      return window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    }
+    return null;
+  }
+
+  // --- ADMIN AUTH CHECK ---
+  function checkAdminAuth() {
+    // Check URL parameter for instant key access
+    const params = new URLSearchParams(window.location.search);
+    const keyParam = params.get("key") || params.get("passkey") || params.get("token");
+    if (keyParam === ADMIN_PASSKEY) {
+      sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
+      return true;
+    }
+
+    // Check session storage
+    if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "true") {
+      return true;
+    }
+
+    // Check if logged in user is admin email
+    try {
+      const sessionId = JSON.parse(localStorage.getItem("qalamly.session.v3"));
+      const users = JSON.parse(localStorage.getItem("qalamly.users.v3")) || [];
+      const user = users.find(u => u.id === sessionId);
+      if (user && (user.email === "ia050866@gmail.com" || user.email === "imran0ali0ahmed@gmail.com" || user.role === "admin")) {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
+        return true;
+      }
+    } catch {}
+
+    return false;
+  }
+
+  function showAdminAuthGate() {
+    content.innerHTML = `
+      <div style="max-width:440px;margin:70px auto;padding:32px;background:white;border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow);text-align:center;">
+        <div style="width:54px;height:54px;border-radius:16px;background:var(--purple-pale);color:var(--purple);display:grid;place-items:center;margin:0 auto 16px;font-size:24px;">🔒</div>
+        <div class="eyebrow" style="margin-bottom:6px;">RESTRICTED ACCESS</div>
+        <h1 style="font-size:22px;margin:0 0 10px;">Admin Studio Authentication</h1>
+        <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 24px;">This database dashboard gives full read, edit, and delete access. Please verify your admin credentials to continue.</p>
+        <form id="adminAuthForm" style="text-align:left;">
+          <div class="field" style="margin-bottom:16px;">
+            <label for="adminPasskeyInput" style="display:block;font-size:11px;font-weight:700;margin-bottom:6px;">Admin Passkey</label>
+            <input id="adminPasskeyInput" type="password" placeholder="Enter passkey..." required style="width:100%;height:40px;border-radius:8px;border:1px solid #dcdde8;padding:0 12px;font-size:13px;">
+            <span style="font-size:10px;color:var(--muted);margin-top:4px;display:block;">Default security passkey: <code>${ADMIN_PASSKEY}</code></span>
+          </div>
+          <button class="button primary" type="submit" style="width:100%;height:40px;font-size:12px;">Unlock Admin Dashboard →</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById("adminAuthForm")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const val = document.getElementById("adminPasskeyInput").value.trim();
+      if (val === ADMIN_PASSKEY) {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
+        showToast("Admin access verified. Loading database...");
+        initAdmin();
+      } else {
+        showToast("Incorrect passkey. Please try again.", true);
+      }
+    });
+  }
+
+  // --- DATABASE HYDRATION ---
+  async function fetchAllFromDatabase() {
+    state.dbLoading = true;
+    updateStatusBadge("Connecting to database...");
+
+    try {
+      const sb = await getClient();
+      if (!sb) throw new Error("Could not initialize database client.");
+
+      // Fetch all tables in parallel
+      const [
+        { data: postRows, error: postErr },
+        { data: profileRows, error: profErr },
+        { data: commentRows, error: commErr },
+        { data: likeRows, error: likeErr },
+        { data: appRows, error: appErr },
+        { data: payoutRows, error: payErr },
+        { data: contactRows, error: contactErr }
+      ] = await Promise.all([
+        sb.from("posts").select("*").order("created_at", { ascending: false }),
+        sb.from("profiles").select("*").order("created_at", { ascending: false }),
+        sb.from("comments").select("*").order("created_at", { ascending: false }),
+        sb.from("likes_table").select("*").order("created_at", { ascending: false }),
+        sb.from("monetization_applications").select("*").order("submitted_at", { ascending: false }),
+        sb.from("payouts").select("*").order("created_at", { ascending: false }),
+        sb.from("contact").select("*").order("created_at", { ascending: false })
+      ]);
+
+      if (postErr) console.warn("Posts fetch error:", postErr);
+      if (profErr) console.warn("Profiles fetch error:", profErr);
+
+      // Map Posts
+      const likesByPost = new Map();
+      if (Array.isArray(likeRows)) {
+        likeRows.forEach(l => {
+          if (l.post_id) likesByPost.set(l.post_id, (likesByPost.get(l.post_id) || 0) + 1);
+        });
+      }
+      const commentsByPost = new Map();
+      if (Array.isArray(commentRows)) {
+        commentRows.forEach(c => {
+          if (c.post_id) commentsByPost.set(c.post_id, (commentsByPost.get(c.post_id) || 0) + 1);
+        });
+      }
+
+      state.posts = Array.isArray(postRows) ? postRows.map(p => ({
+        id: p.id,
+        title: p.title || "Untitled Story",
+        excerpt: (p.content || "").slice(0, 160) + ((p.content || "").length > 160 ? "..." : ""),
+        body: p.content || "",
+        author: p.author_name || "Writer",
+        handle: `@${(p.author_name || "writer").toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+        date: p.created_at ? p.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+        status: p.status || "published",
+        topic: p.category || "General",
+        language: p.language || "English",
+        likes: likesByPost.get(p.id) || 0,
+        comments: commentsByPost.get(p.id) || 0,
+        userId: p.user_id
+      })) : [];
+
+      // Map Profiles / Users
+      state.users = Array.isArray(profileRows) ? profileRows.map(u => ({
+        id: u.id,
+        name: u.full_name || "Writer",
+        handle: u.username ? `@${u.username}` : `@writer-${u.id.slice(0, 6)}`,
+        peoticName: u.peotic_name || u.full_name,
+        email: u.email || "No email",
+        joined: u.created_at ? u.created_at.slice(0, 10) : "2026-10-15",
+        posts: u.stories_count || state.posts.filter(p => p.userId === u.id).length,
+        followers: u.followers_count || 0,
+        role: u.role || "both",
+        status: "Active",
+        bio: u.bio || "Writer and reader on Qalamly."
+      })) : [];
+
+      // Map Comments
+      state.comments = Array.isArray(commentRows) ? commentRows.map(c => {
+        const post = state.posts.find(p => p.id === c.post_id);
+        return {
+          id: String(c.id),
+          author: c.author_name || "Reader",
+          handle: `@${(c.author_name || "reader").toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+          text: c.content || "",
+          postId: c.post_id,
+          postTitle: post ? post.title : "Community Story",
+          date: c.created_at ? c.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+          status: "Visible"
+        };
+      }) : [];
+
+      // Map Likes
+      state.likes = Array.isArray(likeRows) ? likeRows.map(l => {
+        const post = state.posts.find(p => p.id === l.post_id);
+        const user = state.users.find(u => u.id === l.user_id);
+        return {
+          id: l.id,
+          user: user ? user.name : "Reader",
+          handle: user ? user.handle : "@reader",
+          postId: l.post_id,
+          postTitle: post ? post.title : "Story",
+          date: l.created_at ? l.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)
+        };
+      }) : [];
+
+      // Map Applications
+      state.applications = Array.isArray(appRows) ? appRows.map(a => ({
+        id: a.id,
+        name: a.name,
+        handle: a.handle,
+        email: a.email,
+        profileUrl: a.profile_url,
+        note: a.note || "",
+        status: a.status || "Pending",
+        reviewNote: a.review_note || "",
+        submittedAt: a.submitted_at || new Date().toISOString(),
+        reviewedAt: a.reviewed_at,
+        userId: a.user_id
+      })) : [];
+
+      // Map Payouts
+      state.payouts = Array.isArray(payoutRows) ? payoutRows.map(p => ({
+        id: p.id,
+        creator: p.creator,
+        handle: p.handle,
+        email: p.email,
+        period: p.period,
+        amount: Number(p.amount) || 0,
+        status: p.status || "Pending",
+        createdAt: p.created_at,
+        paidAt: p.paid_at
+      })) : [];
+
+      // Map Messages (from contact table)
+      state.messages = Array.isArray(contactRows) ? contactRows.map(m => ({
+        id: m.id,
+        name: m.name || "Inquirer",
+        email: m.email,
+        subject: m.subject || "Inquiry",
+        status: "Unread",
+        date: m.created_at ? m.created_at.slice(0, 10) : "Today",
+        messages: [{ from: "user", text: m.message, time: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Today" }]
+      })) : [];
+
+      state.isLiveDb = true;
+      state.dbLoading = false;
+      updateStatusBadge("Connected to Database: Supabase (Live)");
+
+      // Update counters in nav
+      updateNavCounters();
+      render();
+    } catch (err) {
+      console.error("Database fetch failed, falling back to cached state:", err);
+      state.isLiveDb = false;
+      state.dbLoading = false;
+      updateStatusBadge("Offline Cache Mode · Database Unreachable", true);
+      render();
+    }
+  }
+
+  function updateStatusBadge(text, isError = false) {
+    const badge = document.getElementById("dbStatusIndicator");
+    if (badge) {
+      badge.textContent = text;
+      badge.className = isError ? "local-note error" : "local-note connected";
+    }
+  }
+
+  function updateNavCounters() {
+    const pendingPosts = state.posts.filter(p => p.status === "Pending" || p.status === "draft").length;
+    const pendingApps = state.applications.filter(a => a.status === "Pending").length;
+    const unreadMsgs = state.messages.filter(m => m.status === "Unread").length;
+
+    const elP = document.getElementById("pendingNavCount");
+    const elA = document.getElementById("applicationsNavCount");
+    const elM = document.getElementById("unreadNavCount");
+
+    if (elP) elP.textContent = String(pendingPosts);
+    if (elA) elA.textContent = String(pendingApps);
+    if (elM) elM.textContent = String(unreadMsgs);
+  }
+
+  function showToast(message, error = false) {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.toggle("error", error);
+    toast.classList.add("show");
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => toast.classList.remove("show"), 2800);
+  }
+
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]);
+  }
+
+  function initials(name) {
+    return String(name || "AD").split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join("").toUpperCase();
+  }
+
+  function formatMoney(value) {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);
+  }
+
+  function badge(status) {
+    const s = String(status || "default").toLowerCase();
+    return `<span class="badge ${esc(s)}">${esc(status)}</span>`;
+  }
+
+  function person(name, handle, avatar = true) {
+    return `<div class="person-cell">${avatar ? `<span class="person-avatar">${esc(initials(name))}</span>` : ""}<span><span class="person-name">${esc(name)}</span><span class="person-handle">${esc(handle)}</span></span></div>`;
+  }
+
+  function pageHeader(eyebrow, title, description, actions = "") {
+    return `<div class="page-heading"><div><div class="eyebrow">${esc(eyebrow)}</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
+  }
+
+  function matchSearch(...values) {
+    if (!state.search) return true;
+    const needle = state.search.toLowerCase();
+    return values.some(val => String(val || "").toLowerCase().includes(needle));
+  }
+
+  function table(headers, rows, emptyMessage = "No matching records found.") {
+    return `<div class="table-wrap"><table class="data-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}" class="table-empty">${esc(emptyMessage)}</td></tr>`}</tbody></table></div>`;
+  }
+
+  // --- RENDER VIEWS ---
+  function renderOverview() {
+    const totalPosts = state.posts.length;
+    const totalUsers = state.users.length;
+    const totalApps = state.applications.length;
+    const pendingApps = state.applications.filter(a => a.status === "Pending").length;
+    const totalPayouts = state.payouts.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+    return `
+      ${pageHeader("SYSTEM DASHBOARD", "Database & Community Overview", "Real-time records from your Supabase Postgres database.", `<button class="button primary" data-action="sync-db">↻ Sync from Database</button>`)}
+      <div class="stat-grid">
+        <article class="stat-card">
+          <div class="stat-top">Posts in Database<span class="stat-icon">▤</span></div>
+          <div class="stat-value">${totalPosts}</div>
+          <div class="stat-foot">${state.posts.filter(p => p.status === "published").length} published stories</div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top">Registered Members<span class="stat-icon green">♙</span></div>
+          <div class="stat-value">${totalUsers}</div>
+          <div class="stat-foot">${state.users.filter(u => u.role === "writer" || u.role === "both").length} active writers</div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top">Creator Applications<span class="stat-icon amber">✎</span></div>
+          <div class="stat-value">${totalApps}</div>
+          <div class="stat-foot"><strong>${pendingApps}</strong> awaiting your review</div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top">Total Creator Payouts<span class="stat-icon rose">◈</span></div>
+          <div class="stat-value">${formatMoney(totalPayouts)}</div>
+          <div class="stat-foot">${state.payouts.length} payout records</div>
+        </article>
+      </div>
+
+      <div class="overview-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Recent Database Activity</h2>
+              <p>Latest stories and creator requests in the database.</p>
+            </div>
+            <button class="text-button" data-view="posts">View all posts →</button>
+          </div>
+          <div style="padding:14px 16px;">
+            ${state.posts.slice(0, 5).map(p => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f2f2f7;">
+                <div>
+                  <strong>${esc(p.title)}</strong>
+                  <div style="font-size:10px;color:var(--muted);">${esc(p.author)} · ${esc(p.topic)} · ${esc(p.date)}</div>
+                </div>
+                <div>${badge(p.status)}</div>
+              </div>
+            `).join("") || `<p class="table-note">No posts in the database yet.</p>`}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Creator Applications</h2>
+              <p>Applicants waiting for monetization review.</p>
+            </div>
+            <button class="text-button" data-view="applications">Manage →</button>
+          </div>
+          <div style="padding:14px 16px;">
+            ${state.applications.slice(0, 4).map(a => `
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f2f2f7;">
+                <div>
+                  <strong>${esc(a.name)}</strong> <span style="font-size:10px;color:var(--muted);">${esc(a.handle)}</span>
+                  <div style="font-size:10px;color:var(--muted);">${esc(a.email)}</div>
+                </div>
+                <div>${badge(a.status)}</div>
+              </div>
+            `).join("") || `<p class="table-note">No creator applications yet.</p>`}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  function renderPosts() {
+    const posts = state.posts.filter(p =>
+      (state.postFilter === "All" || p.status.toLowerCase() === state.postFilter.toLowerCase()) &&
+      matchSearch(p.title, p.author, p.handle, p.topic, p.id, p.language)
+    );
+
+    const rows = posts.map(p => `
+      <tr>
+        <td><span class="record-title">${esc(p.title)}</span><span class="record-sub">ID: ${esc(p.id)} · ${esc(p.language)}</span></td>
+        <td>${person(p.author, p.handle)}</td>
+        <td>${esc(p.topic)}</td>
+        <td>${badge(p.status)}</td>
+        <td>♥ ${p.likes} · 💬 ${p.comments}</td>
+        <td>
+          <div class="table-actions">
+            <button class="row-action" data-action="edit-post" data-id="${esc(p.id)}">Edit</button>
+            ${p.status !== "published" ? `<button class="row-action good" data-action="publish-post" data-id="${esc(p.id)}">Publish</button>` : `<button class="row-action" data-action="draft-post" data-id="${esc(p.id)}">Draft</button>`}
+            <button class="row-action danger" data-action="delete-post" data-id="${esc(p.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    const actions = `
+      <button class="button secondary" data-action="add-post">+ New Post</button>
+      <button class="button secondary" data-action="export-posts">Export CSV</button>
+      <button class="button primary" data-action="sync-db">↻ Sync</button>
+    `;
+
+    return `
+      ${pageHeader("DATABASE RECORDS", "Post Management", "View, edit, toggle status, and delete posts directly from the Supabase database.", actions)}
+      <div class="filters">
+        <select class="filter-select" id="postFilter" aria-label="Filter posts by status">
+          ${["All", "Published", "Draft", "Pending", "Rejected"].map(item => `<option${state.postFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${posts.length} posts found</span>
+      </div>
+      ${table(["TITLE", "AUTHOR", "TOPIC", "STATUS", "ENGAGEMENT", "ACTIONS"], rows, "No posts match your search or filter.")}
+    `;
+  }
+
+  function renderUsers() {
+    const users = state.users.filter(u =>
+      (state.userFilter === "All" || u.role.toLowerCase() === state.userFilter.toLowerCase()) &&
+      matchSearch(u.name, u.handle, u.email, u.bio, u.id)
+    );
+
+    const rows = users.map(u => `
+      <tr>
+        <td>${person(u.name, u.handle)}</td>
+        <td><span class="record-title">${esc(u.email)}</span><span class="record-sub">ID: ${esc(u.id)}</span></td>
+        <td>${esc(u.role)}</td>
+        <td>${u.posts} stories · ${u.followers} followers</td>
+        <td>${badge(u.status)}</td>
+        <td>
+          <div class="table-actions">
+            <button class="row-action" data-action="edit-user" data-id="${esc(u.id)}">Edit</button>
+            <button class="row-action danger" data-action="delete-user" data-id="${esc(u.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    return `
+      ${pageHeader("MEMBERS", "User Directory", "Manage registered profiles and authors in the Supabase database.")}
+      <div class="filters">
+        <select class="filter-select" id="userFilter" aria-label="Filter users by role">
+          ${["All", "Writer", "Reader", "Both", "Admin"].map(item => `<option${state.userFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${users.length} members</span>
+      </div>
+      ${table(["PROFILE", "CONTACT", "ROLE", "ACTIVITY", "STATUS", "ACTIONS"], rows, "No user records match your search.")}
+    `;
+  }
+
+  function renderComments() {
+    const comments = state.comments.filter(c => matchSearch(c.author, c.text, c.postTitle, c.id));
+    const rows = comments.map(c => `
+      <tr>
+        <td><span class="record-title">${esc(c.postTitle)}</span><span class="record-sub">Comment ID: ${esc(c.id)}</span></td>
+        <td>${person(c.author, c.handle)}</td>
+        <td><p style="margin:0;max-width:380px;font-size:11px;">${esc(c.text)}</p></td>
+        <td>${esc(c.date)}</td>
+        <td>
+          <div class="table-actions">
+            <button class="row-action" data-action="edit-comment" data-id="${esc(c.id)}">Edit</button>
+            <button class="row-action danger" data-action="delete-comment" data-id="${esc(c.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    return `
+      ${pageHeader("MODERATION", "Comment Moderation", "Review and moderate reader comments stored in the comments table.")}
+      <div class="filters">
+        <span class="result-count">${comments.length} comments</span>
+      </div>
+      ${table(["STORY", "AUTHOR", "COMMENT CONTENT", "DATE", "ACTIONS"], rows, "No comments found.")}
+    `;
+  }
+
+  function renderLikes() {
+    const likes = state.likes.filter(l => matchSearch(l.user, l.postTitle, l.id, l.postId));
+    const rows = likes.map(l => `
+      <tr>
+        <td><span class="record-title">${esc(l.postTitle)}</span><span class="record-sub">Post ID: ${esc(l.postId)}</span></td>
+        <td>${person(l.user, l.handle)}</td>
+        <td>${esc(l.date)}</td>
+        <td>
+          <button class="row-action danger" data-action="delete-like" data-id="${esc(l.id)}">Remove Like</button>
+        </td>
+      </tr>
+    `).join("");
+
+    return `
+      ${pageHeader("ENGAGEMENT", "Likes Activity", "Inspect reactions recorded in the likes_table.")}
+      <div class="filters"><span class="result-count">${likes.length} total likes</span></div>
+      ${table(["STORY", "USER", "DATE", "ACTION"], rows, "No likes found.")}
+    `;
+  }
+
+  function renderApplications() {
+    const applications = state.applications.filter(a =>
+      (state.applicationFilter === "All" || a.status.toLowerCase() === state.applicationFilter.toLowerCase()) &&
+      matchSearch(a.name, a.handle, a.email, a.id, a.note)
+    );
+
+    const rows = applications.map(a => {
+      const actions = a.status === "Pending"
+        ? `
+          <button class="row-action" data-action="review-application" data-id="${esc(a.id)}">Review</button>
+          <button class="row-action good" data-action="approve-application" data-id="${esc(a.id)}">Approve</button>
+          <button class="row-action danger" data-action="reject-application" data-id="${esc(a.id)}">Reject</button>
+          <button class="row-action danger" data-action="delete-application" data-id="${esc(a.id)}">Delete</button>
+        `
+        : `
+          <button class="row-action" data-action="review-application" data-id="${esc(a.id)}">View</button>
+          <button class="row-action danger" data-action="delete-application" data-id="${esc(a.id)}">Delete</button>
+        `;
+
+      const submittedDate = a.submittedAt ? new Date(a.submittedAt).toLocaleDateString() : "Recently";
+      return `
+        <tr>
+          <td><span class="record-title">${esc(a.id)}</span><span class="record-sub">Submitted: ${esc(submittedDate)}</span></td>
+          <td>${person(a.name, a.handle)}</td>
+          <td><span class="record-title">${esc(a.email)}</span><span class="record-sub">${esc(a.note)}</span></td>
+          <td>${badge(a.status)}</td>
+          <td><div class="table-actions">${actions}</div></td>
+        </tr>
+      `;
+    }).join("");
+
+    const actions = `<a class="button secondary" href="../apply.html" target="_blank">Open Creator Apply Page ↗</a>`;
+
+    return `
+      ${pageHeader("CREATOR PROGRAM", "Monetization Applications", "Applications submitted from the Creator Program page are saved in public.monetization_applications for your review.", actions)}
+      <div class="filters">
+        <select class="filter-select" id="applicationFilter" aria-label="Filter applications by status">
+          ${["All", "Pending", "Approved", "Rejected"].map(item => `<option${state.applicationFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${state.applications.filter(a => a.status === "Pending").length} awaiting review · ${applications.length} shown</span>
+      </div>
+      ${table(["APPLICATION ID", "CREATOR", "EMAIL & NOTE", "STATUS", "ACTIONS"], rows, "No applications yet.")}
+    `;
+  }
+
+  function renderMonetization() {
+    const payouts = state.payouts.filter(p =>
+      (state.payoutFilter === "All" || p.status.toLowerCase() === state.payoutFilter.toLowerCase()) &&
+      matchSearch(p.creator, p.handle, p.id, p.period)
+    );
+
+    const pendingTotal = state.payouts.filter(p => p.status === "Pending").reduce((t, p) => t + Number(p.amount), 0);
+    const paidTotal = state.payouts.filter(p => p.status === "Paid").reduce((t, p) => t + Number(p.amount), 0);
+
+    const rows = payouts.map(p => `
+      <tr>
+        <td><span class="record-title">${esc(p.id)}</span><span class="record-sub">${esc(p.period)}</span></td>
+        <td>${person(p.creator, p.handle)}</td>
+        <td><strong>${formatMoney(p.amount)}</strong></td>
+        <td>${badge(p.status)}</td>
+        <td>
+          <div class="table-actions">
+            ${p.status === "Pending" ? `<button class="row-action good" data-action="approve-payout" data-id="${esc(p.id)}">Mark Paid</button>` : ""}
+            ${p.status === "Pending" ? `<button class="row-action danger" data-action="reject-payout" data-id="${esc(p.id)}">Reject</button>` : ""}
+            <button class="row-action danger" data-action="delete-payout" data-id="${esc(p.id)}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    const actions = `<button class="button primary" data-action="add-payout">+ Record Payout</button>`;
+
+    return `
+      ${pageHeader("CREATOR ECONOMY", "Monetization & Payouts", "Track earnings, record payouts, and mark requests paid in the payouts table.", actions)}
+      <div class="stat-grid" style="grid-template-columns:1fr 1fr;margin-bottom:18px;">
+        <article class="stat-card">
+          <div class="stat-top">Pending Payouts<span class="stat-icon amber">◈</span></div>
+          <div class="stat-value">${formatMoney(pendingTotal)}</div>
+          <div class="stat-foot">${state.payouts.filter(p => p.status === "Pending").length} pending requests</div>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top">Completed Payouts<span class="stat-icon green">✓</span></div>
+          <div class="stat-value">${formatMoney(paidTotal)}</div>
+          <div class="stat-foot">${state.payouts.filter(p => p.status === "Paid").length} completed transfers</div>
+        </article>
+      </div>
+      <div class="filters">
+        <select class="filter-select" id="payoutFilter" aria-label="Filter payouts">
+          ${["All", "Pending", "Paid", "Rejected"].map(item => `<option${state.payoutFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${payouts.length} records</span>
+      </div>
+      ${table(["PAYOUT ID", "CREATOR", "AMOUNT", "STATUS", "ACTIONS"], rows, "No payout records found.")}
+    `;
+  }
+
+  function renderMessages() {
+    const messages = state.messages.filter(m => matchSearch(m.name, m.email, m.subject, ...m.messages.map(i => i.text)));
+    if (!messages.some(m => m.id === state.selectedMessage)) state.selectedMessage = messages[0]?.id || null;
+    const selected = messages.find(m => m.id === state.selectedMessage);
+
+    const list = messages.map(m => `
+      <button class="conversation${m.id === state.selectedMessage ? " selected" : ""}" data-action="select-message" data-id="${esc(m.id)}">
+        <span class="person-avatar">${esc(initials(m.name))}</span>
+        <span class="conversation-copy">
+          <span class="conversation-top"><strong>${esc(m.name)}</strong><time>${esc(m.date)}</time></span>
+          <span class="conversation-preview">${esc(m.subject)}</span>
+        </span>
+      </button>
+    `).join("");
+
+    const thread = selected ? `
+      <div class="thread-head">
+        ${person(selected.name, selected.email)}
+        <div class="table-actions">
+          <button class="row-action danger" data-action="delete-message" data-id="${esc(selected.id)}">Delete Inqury</button>
+        </div>
+      </div>
+      <div class="thread-messages">
+        <div style="padding:14px;background:#f9f9fc;border-radius:10px;margin-bottom:12px;">
+          <strong style="display:block;margin-bottom:4px;font-size:12px;">Subject: ${esc(selected.subject)}</strong>
+          <p style="margin:0;font-size:12px;line-height:1.6;color:#444658;">${esc(selected.messages[0]?.text)}</p>
+        </div>
+      </div>
+      <form class="reply-form" id="replyForm" data-id="${esc(selected.id)}">
+        <input id="replyInput" name="reply" maxlength="1000" placeholder="Type a response to this inquiry..." required>
+        <button class="button primary" type="submit">Send Reply</button>
+      </form>
+    ` : `<div class="empty-state"><strong>No messages</strong>Select a conversation or check back later.</div>`;
+
+    return `
+      ${pageHeader("INBOX", "Community Inquiries", "Messages submitted through the contact page stored in public.contact table.")}
+      <div class="message-layout">
+        <section class="inbox-list">
+          <div class="inbox-head"><h2>Inbox</h2><span class="result-count">${messages.length} inquiries</span></div>
+          ${list || `<div class="empty-state">No inquiries found.</div>`}
+        </section>
+        <section class="thread">${thread}</section>
+      </div>
+    `;
+  }
+
+  function renderDatabaseConsole() {
+    const tableCounts = {
+      posts: state.posts.length,
+      profiles: state.users.length,
+      comments: state.comments.length,
+      likes_table: state.likes.length,
+      monetization_applications: state.applications.length,
+      payouts: state.payouts.length,
+      contact: state.messages.length
+    };
+
+    const targetData = {
+      posts: state.posts,
+      profiles: state.users,
+      comments: state.comments,
+      likes_table: state.likes,
+      monetization_applications: state.applications,
+      payouts: state.payouts,
+      contact: state.messages
+    }[state.dbTable] || [];
+
+    const jsonPreview = JSON.stringify(targetData, null, 2);
+
+    return `
+      ${pageHeader("DATABASE CONSOLE", "Direct Table Explorer", "Inspect live Supabase Postgres schema and raw table rows.", `<button class="button primary" data-action="sync-db">↻ Refresh Database</button>`)}
+      
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        ${Object.keys(tableCounts).map(t => `
+          <button class="button ${state.dbTable === t ? "primary" : "secondary"}" data-action="switch-db-table" data-id="${esc(t)}">
+            ${esc(t)} (${tableCounts[t]})
+          </button>
+        `).join("")}
+      </div>
+
+      <section class="panel" style="padding:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <strong>Table: <code>public.${esc(state.dbTable)}</code> (${targetData.length} rows)</strong>
+          <span class="badge" style="background:#e8f7f0;color:#27966a;">● Supabase Cloud Active</span>
+        </div>
+        <pre style="background:#1e1e2f;color:#d4d4e2;padding:16px;border-radius:10px;font-size:11px;max-height:480px;overflow:auto;line-height:1.5;">${esc(jsonPreview)}</pre>
+      </section>
+    `;
+  }
+
+  function render() {
+    const pageName = document.getElementById("pageName");
+    if (pageName) pageName.textContent = headings[state.view]?.[0] || "Overview";
+
+    // Set active nav
+    document.querySelectorAll(".nav-item").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.view === state.view);
+    });
+
+    switch (state.view) {
+      case "overview": content.innerHTML = renderOverview(); break;
+      case "posts": content.innerHTML = renderPosts(); break;
+      case "users": content.innerHTML = renderUsers(); break;
+      case "comments": content.innerHTML = renderComments(); break;
+      case "likes": content.innerHTML = renderLikes(); break;
+      case "applications": content.innerHTML = renderApplications(); break;
+      case "monetization": content.innerHTML = renderMonetization(); break;
+      case "messages": content.innerHTML = renderMessages(); break;
+      case "database": content.innerHTML = renderDatabaseConsole(); break;
+      default: content.innerHTML = renderOverview();
+    }
+  }
+
+  // --- CRUD MODALS & DATABASE OPERATIONS ---
+  function openEditor(type, record) {
+    editing = { type, id: record.id };
+    dialogActions.innerHTML = `<button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save to Database</button>`;
+    const field = (label, key, value, multiline = false) => `
+      <div class="field">
+        <label for="field-${esc(key)}">${esc(label)}</label>
+        ${multiline ? `<textarea id="field-${esc(key)}" name="${esc(key)}" rows="4">${esc(value)}</textarea>` : `<input id="field-${esc(key)}" name="${esc(key)}" value="${esc(value)}" required>`}
+      </div>
+    `;
+
+    if (type === "post") {
+      document.getElementById("dialogTitle").textContent = "Edit Post (Supabase)";
+      dialogFields.innerHTML = `
+        ${field("Story Title", "title", record.title)}
+        ${field("Author Name", "author", record.author)}
+        ${field("Category / Topic", "topic", record.topic)}
+        ${field("Language", "language", record.language || "English")}
+        <div class="field">
+          <label for="field-status">Status</label>
+          <select id="field-status" name="status">
+            <option value="published" ${record.status === "published" ? "selected" : ""}>Published</option>
+            <option value="draft" ${record.status === "draft" ? "selected" : ""}>Draft</option>
+            <option value="Pending" ${record.status === "Pending" ? "selected" : ""}>Pending</option>
+            <option value="Rejected" ${record.status === "Rejected" ? "selected" : ""}>Rejected</option>
+          </select>
+        </div>
+        ${field("Story Content", "body", record.body || record.excerpt, true)}
+      `;
+    } else if (type === "user") {
+      document.getElementById("dialogTitle").textContent = "Edit Member Profile (Supabase)";
+      dialogFields.innerHTML = `
+        ${field("Full Name", "name", record.name)}
+        ${field("Username", "handle", (record.handle || "").replace(/^@/, ""))}
+        ${field("Pen / Poetic Name", "peoticName", record.peoticName || record.name)}
+        ${field("Email Address", "email", record.email)}
+        <div class="field">
+          <label for="field-role">Role</label>
+          <select id="field-role" name="role">
+            <option value="reader" ${record.role === "reader" ? "selected" : ""}>Reader</option>
+            <option value="writer" ${record.role === "writer" ? "selected" : ""}>Writer</option>
+            <option value="both" ${record.role === "both" ? "selected" : ""}>Both (Reader & Writer)</option>
+            <option value="admin" ${record.role === "admin" ? "selected" : ""}>Admin</option>
+          </select>
+        </div>
+        ${field("Bio", "bio", record.bio, true)}
+      `;
+    } else if (type === "comment") {
+      document.getElementById("dialogTitle").textContent = "Edit Comment (Supabase)";
+      dialogFields.innerHTML = `
+        ${field("Author Name", "author", record.author)}
+        ${field("Comment Content", "text", record.text, true)}
+      `;
+    }
+    dialog.showModal();
+  }
+
+  function openAddPostModal() {
+    editing = { type: "new-post" };
+    document.getElementById("dialogTitle").textContent = "Create Story in Database";
+    dialogActions.innerHTML = `<button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Create Post</button>`;
+    dialogFields.innerHTML = `
+      <div class="field"><label for="np-title">Title</label><input id="np-title" name="title" required placeholder="Story title..."></div>
+      <div class="field"><label for="np-author">Author Name</label><input id="np-author" name="author" required placeholder="Author or pen name..."></div>
+      <div class="field"><label for="np-category">Category</label><input id="np-category" name="category" value="Life" required></div>
+      <div class="field"><label for="np-language">Language</label><input id="np-language" name="language" value="English" required></div>
+      <div class="field">
+        <label for="np-status">Status</label>
+        <select id="np-status" name="status">
+          <option value="published" selected>Published</option>
+          <option value="draft">Draft</option>
+        </select>
+      </div>
+      <div class="field"><label for="np-content">Story Body</label><textarea id="np-content" name="content" rows="6" required placeholder="Write story text here..."></textarea></div>
+    `;
+    dialog.showModal();
+  }
+
+  function openAddPayoutModal() {
+    editing = { type: "new-payout" };
+    document.getElementById("dialogTitle").textContent = "Record Creator Payout";
+    dialogActions.innerHTML = `<button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Save Payout Record</button>`;
+    dialogFields.innerHTML = `
+      <div class="field"><label for="py-creator">Creator Name</label><input id="py-creator" name="creator" required placeholder="e.g. Maya Chen"></div>
+      <div class="field"><label for="py-handle">Username Handle</label><input id="py-handle" name="handle" required placeholder="@mayawrites"></div>
+      <div class="field"><label for="py-email">Email Address</label><input id="py-email" name="email" type="email" required placeholder="creator@example.com"></div>
+      <div class="field"><label for="py-period">Period</label><input id="py-period" name="period" value="Oct 2026" required></div>
+      <div class="field"><label for="py-amount">Amount ($)</label><input id="py-amount" name="amount" type="number" step="0.01" min="1" value="50.00" required></div>
+      <div class="field">
+        <label for="py-status">Status</label>
+        <select id="py-status" name="status">
+          <option value="Pending" selected>Pending Review</option>
+          <option value="Paid">Mark Paid</option>
+        </select>
+      </div>
+    `;
+    dialog.showModal();
+  }
+
+  function openApplicationReview(app) {
+    editing = null;
+    document.getElementById("dialogTitle").textContent = "Review Creator Application";
+    const matchingUser = state.users.find(u => (u.email || "").toLowerCase() === (app.email || "").toLowerCase());
+
+    const storiesCount = matchingUser ? matchingUser.posts : 0;
+    const followersCount = matchingUser ? matchingUser.followers : 0;
+    const isMet = storiesCount >= 3 && followersCount >= 5;
+
+    dialogFields.innerHTML = `
+      <div class="review-profile">
+        <div class="review-person">${person(app.name, app.handle)} ${badge(app.status)}</div>
+        <div class="review-detail"><span>Email:</span><strong>${esc(app.email)}</strong></div>
+        <div class="review-detail"><span>Submitted:</span><strong>${esc(new Date(app.submittedAt).toLocaleString())}</strong></div>
+        <div class="review-note"><span>Application Note:</span><p>${esc(app.note)}</p></div>
+        
+        <div class="review-section-title" style="margin-top:14px;font-weight:750;font-size:12px;color:var(--purple);">Live Profile Metrics Check</div>
+        <div class="review-detail"><span>Published Stories:</span><strong>${storiesCount} / 3 required ${storiesCount >= 3 ? "✓" : "○"}</strong></div>
+        <div class="review-detail"><span>Community Followers:</span><strong>${followersCount} / 5 required ${followersCount >= 5 ? "✓" : "○"}</strong></div>
+        <div class="review-detail"><span>Criteria Status:</span><strong style="color:${isMet ? "#27966a" : "#bd8424"}">${isMet ? "✓ All monetization criteria satisfied" : "○ Criteria in progress"}</strong></div>
+        ${app.profileUrl ? `<div style="margin-top:12px;"><a class="button secondary" href="${esc(app.profileUrl)}" target="_blank">Open Profile Link ↗</a></div>` : ""}
+      </div>
+    `;
+
+    dialogActions.innerHTML = `
+      <button class="button secondary" type="button" data-close-dialog>Close</button>
+      ${app.status === "Pending" ? `
+        <button class="button danger" type="button" data-action="reject-application" data-id="${esc(app.id)}">Reject Application</button>
+        <button class="button primary" type="button" data-action="approve-application" data-id="${esc(app.id)}">Approve &amp; Notify</button>
+      ` : ""}
+    `;
+    dialog.showModal();
+  }
+
+  // --- ACTIONS DISPATCHER ---
+  async function performAction(action, id) {
+    const sb = await getClient();
+
+    if (action === "sync-db") {
+      showToast("Fetching live database tables...");
+      await fetchAllFromDatabase();
+      showToast("Database synchronized successfully!");
+      return;
+    }
+
+    if (action === "switch-db-table") {
+      state.dbTable = id;
+      render();
+      return;
+    }
+
+    if (action === "add-post") return openAddPostModal();
+    if (action === "add-payout") return openAddPayoutModal();
+
+    if (action === "edit-post") {
+      const p = state.posts.find(item => item.id === id);
+      if (p) openEditor("post", p);
+      return;
+    }
+
+    if (action === "edit-user") {
+      const u = state.users.find(item => item.id === id);
+      if (u) openEditor("user", u);
+      return;
+    }
+
+    if (action === "edit-comment") {
+      const c = state.comments.find(item => item.id === id);
+      if (c) openEditor("comment", c);
+      return;
+    }
+
+    if (action === "review-application") {
+      const a = state.applications.find(item => item.id === id);
+      if (a) openApplicationReview(a);
+      return;
+    }
+
+    // --- DATABASE MUTATIONS ---
+    if (action === "publish-post" || action === "draft-post") {
+      const newStatus = action === "publish-post" ? "published" : "draft";
+      if (sb) {
+        await sb.from("posts").update({ status: newStatus }).eq("id", id);
+      }
+      const post = state.posts.find(p => p.id === id);
+      if (post) post.status = newStatus;
+      showToast(`Post marked as ${newStatus} in database.`);
+      render();
+      return;
+    }
+
+    if (action === "delete-post") {
+      const post = state.posts.find(p => p.id === id);
+      if (!confirm(`Permanently delete "${post?.title || "this story"}" from the Supabase database?`)) return;
+      if (sb) {
+        // Delete dependent records first, then post
+        await sb.from("comments").delete().eq("post_id", id);
+        await sb.from("likes_table").delete().eq("post_id", id);
+        await sb.from("bookmarks").delete().eq("post_id", id);
+        await sb.from("notifications").delete().eq("post_id", id);
+        const { error } = await sb.from("posts").delete().eq("id", id);
+        if (error) console.error("Post delete error:", error);
+      }
+      state.posts = state.posts.filter(p => p.id !== id);
+      showToast("Post deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "delete-user") {
+      const u = state.users.find(item => item.id === id);
+      if (!confirm(`Permanently delete profile "${u?.name}" from the database?`)) return;
+      if (sb) {
+        await sb.from("profiles").delete().eq("id", id);
+      }
+      state.users = state.users.filter(item => item.id !== id);
+      showToast("User profile deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "delete-comment") {
+      if (!confirm("Delete this comment from the database?")) return;
+      if (sb) {
+        await sb.from("comments").delete().eq("id", Number(id));
+      }
+      state.comments = state.comments.filter(c => c.id !== id);
+      showToast("Comment deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "delete-like") {
+      if (!confirm("Remove this like record from the database?")) return;
+      if (sb) {
+        await sb.from("likes_table").delete().eq("id", id);
+      }
+      state.likes = state.likes.filter(l => l.id !== id);
+      showToast("Like record removed from database.");
+      render();
+      return;
+    }
+
+    if (action === "approve-application") {
+      const app = state.applications.find(a => a.id === id);
+      if (!app) return;
+      if (sb) {
+        await sb.from("monetization_applications").update({
+          status: "Approved",
+          reviewed_at: new Date().toISOString()
+        }).eq("id", id);
+
+        // Send congratulatory notification to the applicant
+        if (app.userId) {
+          await sb.from("notifications").insert({
+            recipient_id: app.userId,
+            actor_id: null,
+            type: "monetization",
+            message: "🎉 Your Creator Monetization application has been APPROVED! Welcome to the Qalamly Creator Program.",
+            is_read: false
+          });
+        }
+      }
+      app.status = "Approved";
+      dialog.close();
+      showToast("Application approved and applicant notified!");
+      render();
+      return;
+    }
+
+    if (action === "reject-application") {
+      const reason = prompt("Enter a brief reason for declining this application (optional):", "Needs more published stories and reader engagement.");
+      if (reason === null) return;
+      const app = state.applications.find(a => a.id === id);
+      if (!app) return;
+      if (sb) {
+        await sb.from("monetization_applications").update({
+          status: "Rejected",
+          review_note: reason,
+          reviewed_at: new Date().toISOString()
+        }).eq("id", id);
+
+        if (app.userId) {
+          await sb.from("notifications").insert({
+            recipient_id: app.userId,
+            actor_id: null,
+            type: "monetization",
+            message: `Your Creator Monetization application was not approved: ${reason}`,
+            is_read: false
+          });
+        }
+      }
+      app.status = "Rejected";
+      app.reviewNote = reason;
+      dialog.close();
+      showToast("Application marked as rejected in database.");
+      render();
+      return;
+    }
+
+    if (action === "delete-application") {
+      if (!confirm("Delete this application record from database?")) return;
+      if (sb) {
+        await sb.from("monetization_applications").delete().eq("id", id);
+      }
+      state.applications = state.applications.filter(a => a.id !== id);
+      showToast("Application deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "approve-payout") {
+      if (sb) {
+        await sb.from("payouts").update({ status: "Paid", paid_at: new Date().toISOString() }).eq("id", id);
+      }
+      const p = state.payouts.find(item => item.id === id);
+      if (p) p.status = "Paid";
+      showToast("Payout marked as Paid in database.");
+      render();
+      return;
+    }
+
+    if (action === "reject-payout") {
+      if (!confirm("Reject this payout request?")) return;
+      if (sb) {
+        await sb.from("payouts").update({ status: "Rejected" }).eq("id", id);
+      }
+      const p = state.payouts.find(item => item.id === id);
+      if (p) p.status = "Rejected";
+      showToast("Payout marked as Rejected.");
+      render();
+      return;
+    }
+
+    if (action === "delete-payout") {
+      if (!confirm("Delete this payout record from the database?")) return;
+      if (sb) {
+        await sb.from("payouts").delete().eq("id", id);
+      }
+      state.payouts = state.payouts.filter(p => p.id !== id);
+      showToast("Payout deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "delete-message") {
+      if (!confirm("Delete this inquiry from the contact table?")) return;
+      if (sb) {
+        await sb.from("contact").delete().eq("id", id);
+      }
+      state.messages = state.messages.filter(m => m.id !== id);
+      state.selectedMessage = state.messages[0]?.id || null;
+      showToast("Inquiry deleted from database.");
+      render();
+      return;
+    }
+
+    if (action === "select-message") {
+      state.selectedMessage = id;
+      render();
+    }
+  }
+
+  // --- FORM SUBMIT HANDLERS ---
+  editorForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!editing) return;
+    const sb = await getClient();
+    const formData = new FormData(editorForm);
+
+    if (editing.type === "post") {
+      const title = String(formData.get("title") || "").trim();
+      const author = String(formData.get("author") || "").trim();
+      const topic = String(formData.get("topic") || "").trim();
+      const language = String(formData.get("language") || "English").trim();
+      const status = String(formData.get("status") || "published").trim();
+      const body = String(formData.get("body") || "").trim();
+
+      if (sb) {
+        await sb.from("posts").update({
+          title,
+          author_name: author,
+          category: topic,
+          language,
+          status,
+          content: body
+        }).eq("id", editing.id);
+      }
+
+      const post = state.posts.find(p => p.id === editing.id);
+      if (post) {
+        post.title = title;
+        post.author = author;
+        post.topic = topic;
+        post.language = language;
+        post.status = status;
+        post.body = body;
+        post.excerpt = body.slice(0, 160) + (body.length > 160 ? "..." : "");
+      }
+      dialog.close();
+      showToast("Post updated in database!");
+      render();
+      return;
+    }
+
+    if (editing.type === "new-post") {
+      const title = String(formData.get("title") || "").trim();
+      const author = String(formData.get("author") || "").trim();
+      const category = String(formData.get("category") || "Life").trim();
+      const language = String(formData.get("language") || "English").trim();
+      const status = String(formData.get("status") || "published").trim();
+      const content = String(formData.get("content") || "").trim();
+
+      if (sb) {
+        const { data } = await sb.from("posts").insert({
+          title,
+          author_name: author,
+          category,
+          language,
+          status,
+          content
+        }).select().single();
+
+        if (data) {
+          state.posts.unshift({
+            id: data.id,
+            title,
+            author,
+            handle: `@${author.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+            topic: category,
+            language,
+            status,
+            body: content,
+            excerpt: content.slice(0, 160),
+            date: new Date().toISOString().slice(0, 10),
+            likes: 0,
+            comments: 0
+          });
+        }
+      }
+      dialog.close();
+      showToast("New post added directly to database!");
+      render();
+      return;
+    }
+
+    if (editing.type === "user") {
+      const name = String(formData.get("name") || "").trim();
+      const handle = String(formData.get("handle") || "").trim().replace(/^@/, "");
+      const peoticName = String(formData.get("peoticName") || "").trim();
+      const email = String(formData.get("email") || "").trim();
+      const role = String(formData.get("role") || "both").trim();
+      const bio = String(formData.get("bio") || "").trim();
+
+      if (sb) {
+        await sb.from("profiles").update({
+          full_name: name,
+          username: handle,
+          peotic_name: peoticName,
+          email,
+          role,
+          bio
+        }).eq("id", editing.id);
+      }
+
+      const u = state.users.find(item => item.id === editing.id);
+      if (u) {
+        u.name = name;
+        u.handle = `@${handle}`;
+        u.peoticName = peoticName;
+        u.email = email;
+        u.role = role;
+        u.bio = bio;
+      }
+      dialog.close();
+      showToast("Profile updated in database!");
+      render();
+      return;
+    }
+
+    if (editing.type === "comment") {
+      const author = String(formData.get("author") || "").trim();
+      const text = String(formData.get("text") || "").trim();
+
+      if (sb) {
+        await sb.from("comments").update({ author_name: author, content: text }).eq("id", Number(editing.id));
+      }
+
+      const c = state.comments.find(item => item.id === editing.id);
+      if (c) {
+        c.author = author;
+        c.text = text;
+      }
+      dialog.close();
+      showToast("Comment updated in database!");
+      render();
+      return;
+    }
+
+    if (editing.type === "new-payout") {
+      const creator = String(formData.get("creator") || "").trim();
+      let handle = String(formData.get("handle") || "").trim();
+      if (!handle.startsWith("@")) handle = `@${handle}`;
+      const email = String(formData.get("email") || "").trim();
+      const period = String(formData.get("period") || "Oct 2026").trim();
+      const amount = Number(formData.get("amount") || 0);
+      const status = String(formData.get("status") || "Pending").trim();
+
+      if (sb) {
+        const { data } = await sb.from("payouts").insert({
+          creator,
+          handle,
+          email,
+          period,
+          amount,
+          status,
+          paid_at: status === "Paid" ? new Date().toISOString() : null
+        }).select().single();
+
+        if (data) {
+          state.payouts.unshift({
+            id: data.id,
+            creator,
+            handle,
+            email,
+            period,
+            amount,
+            status,
+            createdAt: new Date().toISOString()
+          });
+        }
+      }
+      dialog.close();
+      showToast("Payout record saved to database!");
+      render();
+    }
+  });
+
+  // --- GLOBAL LISTENERS ---
+  document.addEventListener("click", event => {
+    const viewButton = event.target.closest("[data-view]");
+    if (viewButton) {
+      state.view = viewButton.dataset.view;
+      state.search = "";
+      if (searchInput) searchInput.value = "";
+      document.getElementById("sidebar")?.classList.remove("open");
+      render();
+      return;
+    }
+
+    const actionButton = event.target.closest("[data-action]");
+    if (actionButton) {
+      const { action, id } = actionButton.dataset;
+      if (action === "lock-admin") {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        showAdminAuthGate();
+        showToast("Admin session locked.");
+        return;
+      }
+      performAction(action, id);
+    }
+  });
+
+  content?.addEventListener("change", event => {
+    const filters = {
+      postFilter: "postFilter",
+      commentFilter: "commentFilter",
+      userFilter: "userFilter",
+      payoutFilter: "payoutFilter",
+      applicationFilter: "applicationFilter"
+    };
+    const prop = filters[event.target.id];
+    if (prop) {
+      state[prop] = event.target.value;
+      render();
+    }
+  });
+
+  searchInput?.addEventListener("input", () => {
+    state.search = searchInput.value.trim();
+    render();
+  });
+
+  document.addEventListener("click", event => {
+    if (event.target.closest("[data-close-dialog]")) dialog?.close();
+  });
+  dialog?.addEventListener("click", event => {
+    if (event.target === dialog) dialog.close();
+  });
+
+  document.getElementById("menuToggle")?.addEventListener("click", () => {
+    document.getElementById("sidebar")?.classList.toggle("open");
+  });
+
+  // --- INITIALIZATION ---
+  function initAdmin() {
+    if (!checkAdminAuth()) {
+      showAdminAuthGate();
+      return;
+    }
+    render();
+    fetchAllFromDatabase();
+  }
+
+  document.addEventListener("DOMContentLoaded", initAdmin);
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    initAdmin();
+  }
+})();

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc">
+  <meta name="description" content="Apply for the Qalamly Creator Monetization Program and turn your stories into earnings.">
+  <title>Apply for Monetization — Qalamly</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/apply.css">
+  <link rel="icon" type="image/png" href="logo/icon.png">
+  <script src="js/supabase.js" defer></script>
+  <script src="js/app.js" defer></script>
+  <script src="js/apply.js" defer></script>
+</head>
+<body data-page="apply">
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Qalamly home">
+      <span class="brand-mark" aria-hidden="true">q</span>
+      <span>Qalamly<span class="brand-dot">.</span></span>
+    </a>
+    <nav class="top-nav" aria-label="Main navigation">
+      <a href="index.html">Home</a>
+      <a href="contact.html">Contact</a>
+      <a href="about.html">About</a>
+      <a href="competitions.html">Competitions</a>
+      <a class="active" href="apply.html">Creator Program</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <label class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 4 4"></path></svg>
+      <input id="searchInput" type="search" placeholder="Search stories..." aria-label="Search stories">
+    </label>
+    <a class="write-button" id="writeLink" href="write.html">Write</a>
+    <a class="auth-link" id="authLink" href="login.html">Log in</a>
+    <div class="header-profile" id="headerProfile" hidden>
+      <span class="avatar purple" id="headerAvatar">?</span>
+      <span class="header-profile-copy">
+        <a class="header-profile-name" id="headerName" href="dashboard.html">Writer</a>
+        <span class="header-profile-stats" id="headerStats" aria-label="Profile statistics">
+          <a href="dashboard.html#userStories"><strong data-header-stories>0</strong> stories</a>
+          <a href="dashboard.html#userFollowers"><strong data-header-followers>—</strong> followers</a>
+          <a href="dashboard.html#userFollowing"><strong data-header-following>—</strong> following</a>
+        </span>
+      </span>
+    </div>
+  </header>
+
+  <div class="layout content-only">
+    <main class="feed apply-page-container">
+      <!-- Hero Intro -->
+      <section class="welcome-banner apply-hero">
+        <div class="welcome-copy">
+          <div class="eyebrow">QALAMLY CREATOR PROGRAM</div>
+          <h1>Turn your stories into something more.</h1>
+          <p>We believe great writing deserves recognition and support. Meet our monetization criteria, apply below, and start earning from your stories.</p>
+          <div class="apply-steps-row">
+            <span class="step-badge"><span class="step-num">1</span> Apply</span>
+            <span class="step-arrow">→</span>
+            <span class="step-badge"><span class="step-num">2</span> Profile Review</span>
+            <span class="step-arrow">→</span>
+            <span class="step-badge"><span class="step-num">3</span> Monetization &amp; Payouts</span>
+          </div>
+        </div>
+        <div class="banner-decoration" aria-hidden="true">✦</div>
+      </section>
+
+      <!-- Live Criteria Tracker Card -->
+      <section class="page-card criteria-tracker-card" id="criteriaCard">
+        <div class="criteria-header">
+          <div>
+            <span class="criteria-kicker">ELIGIBILITY CHECK</span>
+            <h2>Monetization Requirements</h2>
+            <p>Our creator criteria ensure readers enjoy thoughtful, authentic content.</p>
+          </div>
+          <div id="criteriaOverallBadge" class="criteria-overall-badge">Checking criteria...</div>
+        </div>
+
+        <div class="criteria-grid">
+          <div class="criteria-item" id="critStories">
+            <div class="crit-icon-box">📖</div>
+            <div class="crit-info">
+              <strong>Published Stories</strong>
+              <span>Minimum 3 published stories</span>
+              <div class="crit-progress-bar"><div class="crit-progress-fill" id="progStories" style="width:0%"></div></div>
+            </div>
+            <div class="crit-status" id="statStories"><span class="crit-pill">0 / 3</span></div>
+          </div>
+
+          <div class="criteria-item" id="critFollowers">
+            <div class="crit-icon-box">👥</div>
+            <div class="crit-info">
+              <strong>Community Followers</strong>
+              <span>Minimum 5 readers following you</span>
+              <div class="crit-progress-bar"><div class="crit-progress-fill" id="progFollowers" style="width:0%"></div></div>
+            </div>
+            <div class="crit-status" id="statFollowers"><span class="crit-pill">0 / 5</span></div>
+          </div>
+
+          <div class="criteria-item" id="critLikes">
+            <div class="crit-icon-box">♡</div>
+            <div class="crit-info">
+              <strong>Story Likes</strong>
+              <span>Minimum 5 total likes across your stories</span>
+              <div class="crit-progress-bar"><div class="crit-progress-fill" id="progLikes" style="width:0%"></div></div>
+            </div>
+            <div class="crit-status" id="statLikes"><span class="crit-pill">0 / 5</span></div>
+          </div>
+        </div>
+
+        <div class="criteria-footer" id="criteriaFooterMsg">
+          <span class="info-icon">ℹ</span>
+          <span id="criteriaFooterText">Log in to view your live eligibility stats automatically.</span>
+        </div>
+      </section>
+
+      <!-- Application Card (Form or Status) -->
+      <section class="page-card apply-form-card">
+        <!-- Form View -->
+        <div id="applyFormView">
+          <div class="apply-form-header">
+            <div>
+              <span class="page-kicker">APPLICATION FORM</span>
+              <h2>Submit Creator Application</h2>
+            </div>
+            <span class="sparkle-icon">✦</span>
+          </div>
+
+          <div class="notice-box">
+            <span class="notice-icon">ⓘ</span>
+            <span>Your application will be saved directly into our system and reviewed by the Qalamly admin. Once reviewed, you will receive an in-app decision notification.</span>
+          </div>
+
+          <form id="creatorApplyForm" class="creator-apply-form" novalidate>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="applicantName">Your full name <span class="required">*</span></label>
+                <input id="applicantName" name="name" maxlength="80" placeholder="e.g. Maya Chen" required>
+              </div>
+
+              <div class="form-field">
+                <label for="applicantHandle">Qalamly username <span class="required">*</span></label>
+                <input id="applicantHandle" name="handle" maxlength="40" placeholder="@yourname" required>
+              </div>
+
+              <div class="form-field full">
+                <label for="applicantEmail">Email address <span class="required">*</span></label>
+                <input id="applicantEmail" name="email" type="email" maxlength="120" placeholder="you@example.com" required>
+              </div>
+
+              <div class="form-field full">
+                <label for="applicantProfile">Profile link <span class="optional">(optional)</span></label>
+                <input id="applicantProfile" name="profileUrl" type="url" maxlength="240" placeholder="e.g. profile.html?id=...">
+              </div>
+
+              <div class="form-field full">
+                <label for="applicationNote">Why would you like to join the Creator Program? <span class="required">*</span></label>
+                <textarea id="applicationNote" name="note" rows="4" maxlength="1000" placeholder="Tell us about the stories you write and what you hope to do as a monetized creator..." required></textarea>
+                <span class="field-hint">Up to 1,000 characters</span>
+              </div>
+            </div>
+
+            <label class="consent-label">
+              <input id="consentCheck" name="consent" type="checkbox" required>
+              <span>I confirm that the information provided is accurate and understand that my writing profile will be evaluated by the Qalamly administration team.</span>
+            </label>
+
+            <button id="submitApplyBtn" class="primary-button apply-btn" type="submit">
+              <span>Submit application for review</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Status View (shown if already applied) -->
+        <div id="applicationStatusView" class="application-status-view" hidden>
+          <div id="statusIconWrap" class="status-icon-wrap pending">◷</div>
+          <div class="status-kicker" id="statusKicker">APPLICATION UNDER REVIEW</div>
+          <h2 id="statusTitle">Your application is being reviewed</h2>
+          <p id="statusMsg">Our admin team is reviewing your profile and storytelling activity. Check back here for updates or look out for your notifications.</p>
+
+          <div class="status-details-card" id="statusDetails">
+            <!-- Populated via JS -->
+          </div>
+
+          <div class="status-actions">
+            <button id="refreshStatusBtn" class="secondary-button" type="button">↻ Check status again</button>
+            <button id="reapplyBtn" class="primary-button" type="button" hidden>Submit a new application</button>
+            <a class="secondary-button" href="dashboard.html">Back to writer dashboard</a>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-decoration" aria-hidden="true">&#10047;</div>
+    <div class="footer-grid">
+      <section>
+        <a class="footer-brand" href="index.html">Qalamly<span>.</span></a>
+        <p class="footer-blurb">A small, bright corner for the stories we tell, the things we make, and the people we meet along the way.</p>
+        <div aria-label="A little encouragement for writers" class="footer-motifs">&#9997; &#10024; &#127807;</div>
+      </section>
+      <section>
+        <h2 class="footer-heading">Explore</h2>
+        <div class="footer-links">
+          <a href="index.html">Latest stories</a>
+          <a href="about.html">About Qalamly</a>
+          <a href="competitions.html">Writing prompt</a>
+          <a href="apply.html">Creator Program</a>
+        </div>
+      </section>
+      <section>
+        <h2 class="footer-heading">Your writing</h2>
+        <div class="footer-links">
+          <a href="write.html">Write a story</a>
+          <a href="dashboard.html">Writer dashboard</a>
+          <a href="apply.html">Apply for monetization</a>
+          <a href="signup.html">Create an account</a>
+        </div>
+      </section>
+      <section>
+        <h2 class="footer-heading">Say hello</h2>
+        <div class="footer-links">
+          <a href="contact.html">Contact the team</a>
+          <span>Be kind. Stay curious. Keep writing.</span>
+        </div>
+      </section>
+    </div>
+    <div class="footer-signoff">
+      <span>Made for the love of a good story. &copy; 2026 Qalamly</span>
+      <span>Keep a little <span class="sparkle">&#10022;</span> for the page.</span>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

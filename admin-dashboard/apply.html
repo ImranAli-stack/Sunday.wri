@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fb">
+  <meta name="description" content="Apply to the Qalamly creator monetization program.">
+  <title>Apply for Monetization · Qalamly</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="apply.css">
+  <script src="apply.js" defer></script>
+</head>
+<body class="apply-page">
+  <header class="apply-topbar">
+    <a class="brand" href="admindashboard.html" aria-label="Qalamly admin home">
+      <span class="brand-mark">q</span><span>qalamly<span class="brand-period">.</span><small>CREATOR PROGRAM</small></span>
+    </a>
+    <a class="button secondary" href="admindashboard.html">← Admin dashboard</a>
+  </header>
+  <main class="apply-main">
+    <section class="apply-intro">
+      <div class="eyebrow">QALAMLY CREATOR PROGRAM</div>
+      <h1>Turn your stories into something more.</h1>
+      <p>Creators can apply to join the monetization program. Our team will review your profile and application before making a decision.</p>
+      <div class="apply-steps"><span><i>1</i> Apply</span><b>→</b><span><i>2</i> Profile review</span><b>→</b><span><i>3</i> Decision</span></div>
+    </section>
+    <section class="apply-card">
+      <div id="applyFormView">
+        <div class="apply-card-heading"><div><div class="eyebrow">CREATOR APPLICATION</div><h2>Apply for monetization</h2></div><span class="apply-card-icon">✦</span></div>
+        <div class="notice"><span aria-hidden="true">ⓘ</span><span>Submitting an application does not guarantee acceptance. An admin will review your profile before approving or declining your request.</span></div>
+        <form id="applicationForm" class="application-form">
+          <div class="application-fields">
+            <div class="field"><label for="applicantName">Your name</label><input id="applicantName" name="name" autocomplete="name" maxlength="80" placeholder="e.g. Maya Chen" required></div>
+            <div class="field"><label for="applicantHandle">Qalamly username</label><input id="applicantHandle" name="handle" maxlength="40" placeholder="@yourname" required></div>
+            <div class="field full"><label for="applicantEmail">Email address</label><input id="applicantEmail" name="email" type="email" autocomplete="email" maxlength="120" placeholder="you@example.com" required></div>
+            <div class="field full"><label for="applicantProfile">Profile link <span>(optional)</span></label><input id="applicantProfile" name="profileUrl" type="url" maxlength="240" placeholder="https://qalamly.example/@yourname"></div>
+            <div class="field full"><label for="applicationNote">Why would you like to join?</label><textarea id="applicationNote" name="note" maxlength="1000" placeholder="Tell us about the stories you write and what you hope to do as a creator..." required></textarea><span class="field-hint">Up to 1,000 characters</span></div>
+          </div>
+          <label class="consent-check"><input name="consent" type="checkbox" required><span>I confirm that this information is accurate and understand that my profile will be reviewed by the Qalamly admin team.</span></label>
+          <button class="button primary apply-submit" type="submit">Apply for monetization <span aria-hidden="true">→</span></button>
+        </form>
+        <p class="apply-local-note">Standalone demo: this application is saved only in this browser and is not sent to a live service.</p>
+      </div>
+      <div id="applicationStatus" class="application-status" hidden></div>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

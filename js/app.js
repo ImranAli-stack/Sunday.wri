@@ -639,6 +639,29 @@
     updateHeader();
   }
 
+  function checkAndNotifyMonetization(user, storiesCount, followersCount, likesCount) {
+    if (!user || storiesCount < 3 || followersCount < 5 || likesCount < 5) return;
+    const key = `qalamly.notified.monetization.${user.id}`;
+    if (localStorage.getItem(key)) return;
+
+    localStorage.setItem(key, "true");
+    const msg = "🎉 Congratulations! You have met all Creator Monetization criteria. Apply now to start earning from your stories!";
+    addNotification(user.id, msg, "");
+    notify("🎉 Milestone Reached: You are eligible to apply for Creator Monetization!");
+
+    if (isUUID(user.id) && typeof window.getSupabaseClient === "function") {
+      window.getSupabaseClient().then((sb) => {
+        sb.from("notifications").insert({
+          recipient_id: user.id,
+          actor_id: null,
+          type: "monetization_eligible",
+          message: msg,
+          is_read: false
+        }).then(() => {}).catch(() => {});
+      }).catch(() => {});
+    }
+  }
+
   // --- FORMATTING HELPERS ---
   function escapeHTML(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -1138,6 +1161,39 @@
     const shown = tab === "published" ? published : tab === "draft" ? drafts : ownAll;
     const followers = followersCountFor(user.id);
     const following = followingList(user.id).length;
+    const totalLikes = published.reduce((sum, p) => sum + (Number(p.likes) || 0), 0);
+    const isMonetizationEligible = published.length >= 3 && followers >= 5 && totalLikes >= 5;
+
+    // Check criteria and trigger in-app notification if milestone reached
+    checkAndNotifyMonetization(user, published.length, followers, totalLikes);
+
+    const monetizationCardHTML = isMonetizationEligible
+      ? `
+        <div class="monetization-banner eligible">
+          <div class="monetization-badge">✦ Milestone Reached</div>
+          <h3>You meet all Creator Monetization criteria! 🎉</h3>
+          <p>You've published ${published.length} stories, earned ${followers} community followers, and received ${totalLikes} story likes. You are qualified to join the Qalamly Creator Program and earn from your writing.</p>
+          <div class="monetization-criteria-mini">
+            <span class="criterion-chip met">✓ ${published.length}/3 Stories</span>
+            <span class="criterion-chip met">✓ ${followers}/5 Followers</span>
+            <span class="criterion-chip met">✓ ${totalLikes}/5 Likes</span>
+          </div>
+          <a class="primary-button" href="apply.html">Apply for Monetization Now →</a>
+        </div>
+      `
+      : `
+        <div class="monetization-banner progress">
+          <div class="monetization-badge">Creator Monetization Progress</div>
+          <h3>Unlock earnings from your stories</h3>
+          <p>Reach 3 published stories, 5 followers, and 5 likes to unlock monetization. You will be automatically notified as soon as you meet all criteria!</p>
+          <div class="monetization-criteria-mini">
+            <span class="criterion-chip ${published.length >= 3 ? "met" : ""}">${published.length >= 3 ? "✓" : "○"} ${published.length}/3 Stories</span>
+            <span class="criterion-chip ${followers >= 5 ? "met" : ""}">${followers >= 5 ? "✓" : "○"} ${followers}/5 Followers</span>
+            <span class="criterion-chip ${totalLikes >= 5 ? "met" : ""}">${totalLikes >= 5 ? "✓" : "○"} ${totalLikes}/5 Likes</span>
+          </div>
+          <a class="secondary-button" href="apply.html" style="font-size:11px;padding:6px 12px;">View Guidelines &amp; Apply</a>
+        </div>
+      `;
 
     const listHTML = shown.length
       ? shown.map((post) => `
@@ -1174,6 +1230,7 @@
           <div class="dashboard-stat" id="userFollowers"><strong>${followers}</strong><span>Followers</span></div>
           <div class="dashboard-stat" id="userFollowing"><strong>${following}</strong><span>Following</span></div>
         </div>
+        ${monetizationCardHTML}
         <section class="page-card">
           <h2>Manage your writing</h2>
           <div class="dashboard-tabs">
@@ -1417,7 +1474,7 @@
               <strong>${escapeHTML(n.message)}</strong>
               <span>${escapeHTML(formatDate(n.createdAt))}</span>
             </div>
-            ${n.postId ? `<a class="dashboard-open" href="post.html?id=${encodeURIComponent(n.postId)}">View story</a>` : ""}
+            ${n.postId ? `<a class="dashboard-open" href="post.html?id=${encodeURIComponent(n.postId)}">View story</a>` : (n.message && n.message.includes("Monetization")) ? `<a class="dashboard-open" href="apply.html" style="font-weight:700;color:var(--purple);">Apply now →</a>` : ""}
           </div>
         `).join("")
       : `<div class="empty-dashboard">You're all caught up! New likes, comments, and followers will appear here.</div>`;
