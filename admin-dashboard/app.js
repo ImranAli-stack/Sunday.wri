@@ -17,8 +17,18 @@
     users: [],
     payouts: [],
     messages: [],
-    applications: []
+    applications: [],
+    competitions: [],
+    submissions: []
   };
+
+  function syncCompetitionsToStorage(competitions) {
+    try {
+      localStorage.setItem("qalamly.competitions.v3", JSON.stringify(competitions));
+    } catch (e) {
+      console.warn("Could not sync competitions to storage:", e);
+    }
+  }
 
   const headings = {
     overview: ["Overview", "Here’s what’s happening across your database and community."],
@@ -28,6 +38,8 @@
     users: ["User directory", "Manage user profiles and roles in the database."],
     monetization: ["Monetization & Payouts", "Review creator earnings and manage payout records."],
     applications: ["Creator applications", "Review creator monetization applications submitted on the apply page."],
+    competitions: ["Competition Topics", "Create, edit, and publish writing challenges displayed on the competitions page."],
+    submissions: ["Competition Submissions", "Review, evaluate, and download participant files submitted for competitions."],
     messages: ["Community messages", "Read and manage incoming inquiries from the contact table."],
     database: ["Database console", "Live table explorer and raw record interface for Supabase."]
   };
@@ -40,6 +52,8 @@
     payouts: [],
     messages: [],
     applications: [],
+    competitions: [],
+    submissions: [],
     notifications: [],
     view: "overview",
     postFilter: "All",
@@ -47,6 +61,8 @@
     userFilter: "All",
     payoutFilter: "All",
     applicationFilter: "All",
+    competitionFilter: "All",
+    submissionFilter: "All",
     dbTable: "posts",
     search: "",
     selectedMessage: null,
@@ -162,7 +178,9 @@
         { data: likeRows, error: likeErr },
         { data: appRows, error: appErr },
         { data: payoutRows, error: payErr },
-        { data: contactRows, error: contactErr }
+        { data: contactRows, error: contactErr },
+        { data: compRows, error: compErr },
+        { data: subRows, error: subErr }
       ] = await Promise.all([
         sb.from("posts").select("*").order("created_at", { ascending: false }),
         sb.from("profiles").select("*").order("created_at", { ascending: false }),
@@ -170,7 +188,9 @@
         sb.from("likes_table").select("*").order("created_at", { ascending: false }),
         sb.from("monetization_applications").select("*").order("submitted_at", { ascending: false }),
         sb.from("payouts").select("*").order("created_at", { ascending: false }),
-        sb.from("contact").select("*").order("created_at", { ascending: false })
+        sb.from("contact").select("*").order("created_at", { ascending: false }),
+        sb.from("competitions").select("*").order("created_at", { ascending: false }),
+        sb.from("competition_submissions").select("*").order("submitted_at", { ascending: false })
       ]);
 
       if (postErr) console.warn("Posts fetch error:", postErr);
@@ -289,6 +309,42 @@
         messages: [{ from: "user", text: m.message, time: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Today" }]
       })) : [];
 
+      // Map Competitions
+      state.competitions = Array.isArray(compRows) ? compRows.map(c => ({
+        id: c.id,
+        title: c.title || "Writing Challenge",
+        kicker: c.kicker || "Writing Prompt",
+        category: c.category || "Short Story",
+        description: c.description || "",
+        guidelines: c.guidelines || "",
+        prize: c.prize || "Editorial Spotlight",
+        deadline: c.deadline ? c.deadline.slice(0, 10) : "Open",
+        deadlineRaw: c.deadline,
+        status: c.status || "Active",
+        createdAt: c.created_at
+      })) : [];
+
+      syncCompetitionsToStorage(state.competitions);
+
+      // Map Submissions
+      state.submissions = Array.isArray(subRows) ? subRows.map(s => ({
+        id: s.id,
+        competitionId: s.competition_id,
+        competitionTitle: s.competition_title || "General Competition",
+        userId: s.user_id,
+        authorName: s.author_name || "Writer",
+        authorEmail: s.author_email || "",
+        authorHandle: s.author_handle || "@writer",
+        storyTitle: s.story_title || "Untitled Entry",
+        storyExcerpt: s.story_excerpt || "",
+        fileUrl: s.file_url || "",
+        fileName: s.file_name || "",
+        fileSize: s.file_size || "",
+        status: s.status || "Submitted",
+        reviewNotes: s.review_notes || "",
+        submittedAt: s.submitted_at || new Date().toISOString()
+      })) : [];
+
       state.isLiveDb = true;
       state.dbLoading = false;
       updateStatusBadge("Connected to Database: Supabase (Live)");
@@ -317,14 +373,20 @@
     const pendingPosts = state.posts.filter(p => p.status === "Pending" || p.status === "draft").length;
     const pendingApps = state.applications.filter(a => a.status === "Pending").length;
     const unreadMsgs = state.messages.filter(m => m.status === "Unread").length;
+    const activeComps = state.competitions.filter(c => c.status === "Active").length;
+    const pendingSubs = state.submissions.filter(s => s.status === "Submitted").length;
 
     const elP = document.getElementById("pendingNavCount");
     const elA = document.getElementById("applicationsNavCount");
     const elM = document.getElementById("unreadNavCount");
+    const elC = document.getElementById("competitionsNavCount");
+    const elS = document.getElementById("submissionsNavCount");
 
     if (elP) elP.textContent = String(pendingPosts);
     if (elA) elA.textContent = String(pendingApps);
     if (elM) elM.textContent = String(unreadMsgs);
+    if (elC) elC.textContent = String(activeComps);
+    if (elS) elS.textContent = String(pendingSubs);
   }
 
   function showToast(message, error = false) {
@@ -384,7 +446,7 @@
 
     return `
       ${pageHeader("SYSTEM DASHBOARD", "Database & Community Overview", "Real-time records from your Supabase Postgres database.", `<button class="button primary" data-action="sync-db">↻ Sync from Database</button>`)}
-      <div class="stat-grid">
+      <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));">
         <article class="stat-card">
           <div class="stat-top">Posts in Database<span class="stat-icon">▤</span></div>
           <div class="stat-value">${totalPosts}</div>
@@ -401,9 +463,9 @@
           <div class="stat-foot"><strong>${pendingApps}</strong> awaiting your review</div>
         </article>
         <article class="stat-card">
-          <div class="stat-top">Total Creator Payouts<span class="stat-icon rose">◈</span></div>
-          <div class="stat-value">${formatMoney(totalPayouts)}</div>
-          <div class="stat-foot">${state.payouts.length} payout records</div>
+          <div class="stat-top">Competition Submissions<span class="stat-icon purple" style="background:#f2f0fc;color:var(--purple);">🏆</span></div>
+          <div class="stat-value">${state.submissions.length}</div>
+          <div class="stat-foot"><strong>${state.submissions.filter(s => s.status === "Submitted").length}</strong> pending files to review</div>
         </article>
       </div>
 
@@ -412,7 +474,7 @@
           <div class="panel-head">
             <div>
               <h2>Recent Database Activity</h2>
-              <p>Latest stories and creator requests in the database.</p>
+              <p>Latest stories published to Qalamly.</p>
             </div>
             <button class="text-button" data-view="posts">View all posts →</button>
           </div>
@@ -432,21 +494,22 @@
         <section class="panel">
           <div class="panel-head">
             <div>
-              <h2>Creator Applications</h2>
-              <p>Applicants waiting for monetization review.</p>
+              <h2>Recent Competition Entries &amp; Files</h2>
+              <p>Files received for active challenges.</p>
             </div>
-            <button class="text-button" data-view="applications">Manage →</button>
+            <button class="text-button" data-view="submissions">View all submissions →</button>
           </div>
           <div style="padding:14px 16px;">
-            ${state.applications.slice(0, 4).map(a => `
+            ${state.submissions.slice(0, 4).map(s => `
               <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f2f2f7;">
-                <div>
-                  <strong>${esc(a.name)}</strong> <span style="font-size:10px;color:var(--muted);">${esc(a.handle)}</span>
-                  <div style="font-size:10px;color:var(--muted);">${esc(a.email)}</div>
+                <div style="min-width:0;flex:1;padding-right:10px;">
+                  <strong style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.storyTitle)}</strong>
+                  <div style="font-size:10px;color:var(--muted);">${esc(s.authorName)} · ${esc(s.competitionTitle)}</div>
+                  ${s.fileName ? `<span class="file-attachment-badge" style="margin-top:4px;padding:2px 7px;font-size:9.5px;">📄 ${esc(s.fileName)}</span>` : ""}
                 </div>
-                <div>${badge(a.status)}</div>
+                <div>${badge(s.status)}</div>
               </div>
-            `).join("") || `<p class="table-note">No creator applications yet.</p>`}
+            `).join("") || `<p class="table-note">No competition entries yet. Publish a prompt to receive files!</p>`}
           </div>
         </section>
       </div>
@@ -720,6 +783,126 @@
     `;
   }
 
+  function renderCompetitions() {
+    const competitions = state.competitions.filter(c =>
+      (state.competitionFilter === "All" || c.status.toLowerCase() === state.competitionFilter.toLowerCase()) &&
+      matchSearch(c.title, c.category, c.description, c.kicker, c.prize)
+    );
+
+    const rows = competitions.map(c => {
+      const subsCount = state.submissions.filter(s => s.competitionId === c.id || s.competitionTitle === c.title).length;
+      const statusAction = c.status === "Active"
+        ? `<button class="row-action danger" data-action="toggle-competition-status" data-id="${esc(c.id)}" data-next="Closed">Close Topic</button>`
+        : `<button class="row-action good" data-action="toggle-competition-status" data-id="${esc(c.id)}" data-next="Active">Activate</button>`;
+
+      return `
+        <tr>
+          <td>
+            <span class="record-title">${esc(c.title)}</span>
+            <span class="record-sub">${esc(c.kicker)}</span>
+            <p style="margin:4px 0 0;font-size:11px;color:#555770;max-width:320px;line-height:1.4;">${esc(c.description.slice(0, 110))}${c.description.length > 110 ? "..." : ""}</p>
+          </td>
+          <td><span class="badge" style="background:#f2f0fc;color:var(--purple);">${esc(c.category)}</span></td>
+          <td><strong>${esc(c.deadline)}</strong></td>
+          <td>
+            <span class="record-title" style="color:#bd8424;">🏆 ${esc(c.prize)}</span>
+            <span class="record-sub">${esc(c.guidelines ? c.guidelines.slice(0, 60) + "..." : "Standard guidelines")}</span>
+          </td>
+          <td><strong>${subsCount}</strong> entries</td>
+          <td>${badge(c.status)}</td>
+          <td>
+            <div class="table-actions">
+              <button class="row-action" data-action="edit-competition" data-id="${esc(c.id)}">Edit</button>
+              ${statusAction}
+              <button class="row-action danger" data-action="delete-competition" data-id="${esc(c.id)}">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    const actions = `
+      <button class="button primary" data-action="add-competition">+ Create Competition Topic</button>
+      <a class="button secondary" href="../competitions.html" target="_blank">View Live Competition Page ↗</a>
+    `;
+
+    return `
+      ${pageHeader("CREATIVE WRITING", "Competition Topics", "Create, edit, and publish monthly prompts and challenges displayed directly on the website competition page.", actions)}
+      <div class="filters">
+        <select class="filter-select" id="competitionFilter" aria-label="Filter competitions by status">
+          ${["All", "Active", "Upcoming", "Closed"].map(item => `<option${state.competitionFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${competitions.length} topics shown · ${state.competitions.filter(c => c.status === "Active").length} active</span>
+      </div>
+      ${table(["TOPIC / PROMPT", "CATEGORY", "DEADLINE", "PRIZE & RULES", "SUBMISSIONS", "STATUS", "ACTIONS"], rows, "No competition topics yet. Click '+ Create Competition Topic' to publish one!")}
+    `;
+  }
+
+  function renderSubmissions() {
+    const submissions = state.submissions.filter(s =>
+      (state.submissionFilter === "All" || s.status.toLowerCase() === state.submissionFilter.toLowerCase()) &&
+      matchSearch(s.authorName, s.authorEmail, s.storyTitle, s.competitionTitle, s.authorHandle, s.storyExcerpt)
+    );
+
+    const rows = submissions.map(s => {
+      const submittedDate = s.submittedAt ? new Date(s.submittedAt).toLocaleDateString() : "Recently";
+
+      const fileCell = s.fileUrl ? `
+        <div>
+          <div class="file-attachment-badge" title="${esc(s.fileName)}">
+            <span>📄</span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;">${esc(s.fileName || "Entry Document")}</span>
+            <span class="file-size">${esc(s.fileSize || "")}</span>
+          </div>
+          <div style="margin-top:5px;">
+            <a class="download-file-btn" href="${esc(s.fileUrl)}" download="${esc(s.fileName || 'entry_document')}" target="_blank">⬇ Download File</a>
+          </div>
+        </div>
+      ` : `<span style="color:var(--muted);font-size:11px;">Inline text only</span>`;
+
+      return `
+        <tr>
+          <td>
+            <span class="record-title">${esc(s.storyTitle)}</span>
+            <span class="record-sub">Submitted: ${esc(submittedDate)} · ID: ${esc(s.id.slice(0, 8))}</span>
+            ${s.storyExcerpt ? `<p style="margin:4px 0 0;font-size:11px;color:#555770;max-width:280px;line-height:1.4;">"${esc(s.storyExcerpt.slice(0, 100))}${s.storyExcerpt.length > 100 ? "..." : ""}"</p>` : ""}
+          </td>
+          <td>
+            ${person(s.authorName, s.authorHandle || s.authorEmail)}
+            <span class="record-sub">${esc(s.authorEmail)}</span>
+          </td>
+          <td><span class="badge" style="background:#eef1fb;color:#35447a;">${esc(s.competitionTitle)}</span></td>
+          <td>${fileCell}</td>
+          <td>${badge(s.status)}</td>
+          <td>
+            <div class="table-actions">
+              <button class="row-action" data-action="review-submission" data-id="${esc(s.id)}">Details</button>
+              <button class="row-action good" data-action="shortlist-submission" data-id="${esc(s.id)}">Shortlist</button>
+              <button class="row-action danger" data-action="delete-submission" data-id="${esc(s.id)}">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    const actions = `
+      <a class="button secondary" href="../competitions.html" target="_blank">Open Submission Portal ↗</a>
+    `;
+
+    return `
+      ${pageHeader("SUBMISSIONS INBOX", "Competition Submissions & Files", "Review stories and download documents submitted by writers from the competitions page in public.competition_submissions.", actions)}
+      <div class="filters">
+        <select class="filter-select" id="submissionFilter" aria-label="Filter submissions by status">
+          ${["All", "Submitted", "Shortlisted", "Winner", "Reviewed"].map(item => `<option${state.submissionFilter.toLowerCase() === item.toLowerCase() ? " selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <span class="filter-spacer"></span>
+        <span class="result-count">${submissions.length} submissions · ${state.submissions.filter(s => s.status === "Submitted").length} pending review</span>
+      </div>
+      ${table(["STORY ENTRY", "PARTICIPANT", "COMPETITION", "ATTACHED FILE", "STATUS", "ACTIONS"], rows, "No submissions received yet.")}
+    `;
+  }
+
   function renderDatabaseConsole() {
     const tableCounts = {
       posts: state.posts.length,
@@ -727,6 +910,8 @@
       comments: state.comments.length,
       likes_table: state.likes.length,
       monetization_applications: state.applications.length,
+      competitions: state.competitions.length,
+      competition_submissions: state.submissions.length,
       payouts: state.payouts.length,
       contact: state.messages.length
     };
@@ -737,6 +922,8 @@
       comments: state.comments,
       likes_table: state.likes,
       monetization_applications: state.applications,
+      competitions: state.competitions,
+      competition_submissions: state.submissions,
       payouts: state.payouts,
       contact: state.messages
     }[state.dbTable] || [];
@@ -780,6 +967,8 @@
       case "comments": content.innerHTML = renderComments(); break;
       case "likes": content.innerHTML = renderLikes(); break;
       case "applications": content.innerHTML = renderApplications(); break;
+      case "competitions": content.innerHTML = renderCompetitions(); break;
+      case "submissions": content.innerHTML = renderSubmissions(); break;
       case "monetization": content.innerHTML = renderMonetization(); break;
       case "messages": content.innerHTML = renderMessages(); break;
       case "database": content.innerHTML = renderDatabaseConsole(); break;
@@ -893,7 +1082,7 @@
 
     const storiesCount = matchingUser ? matchingUser.posts : 0;
     const followersCount = matchingUser ? matchingUser.followers : 0;
-    const isMet = storiesCount >= 3 && followersCount >= 5;
+    const isMet = storiesCount >= 36 && followersCount >= 500;
 
     dialogFields.innerHTML = `
       <div class="review-profile">
@@ -902,9 +1091,10 @@
         <div class="review-detail"><span>Submitted:</span><strong>${esc(new Date(app.submittedAt).toLocaleString())}</strong></div>
         <div class="review-note"><span>Application Note:</span><p>${esc(app.note)}</p></div>
         
-        <div class="review-section-title" style="margin-top:14px;font-weight:750;font-size:12px;color:var(--purple);">Live Profile Metrics Check</div>
-        <div class="review-detail"><span>Published Stories:</span><strong>${storiesCount} / 3 required ${storiesCount >= 3 ? "✓" : "○"}</strong></div>
-        <div class="review-detail"><span>Community Followers:</span><strong>${followersCount} / 5 required ${followersCount >= 5 ? "✓" : "○"}</strong></div>
+        <div class="review-section-title" style="margin-top:14px;font-weight:750;font-size:12px;color:var(--purple);">Creator Program Criteria Check (500 Followers · 1,000 Reactions · 3 posts/wk in 3 mos)</div>
+        <div class="review-detail"><span>Posting Consistency (3 Months):</span><strong>${storiesCount} / 36 stories ${storiesCount >= 36 ? "✓" : "○"}</strong></div>
+        <div class="review-detail"><span>Community Followers:</span><strong>${followersCount} / 500 followers ${followersCount >= 500 ? "✓" : "○"}</strong></div>
+        <div class="review-detail"><span>Target Reactions:</span><strong>1,000 reader reactions required</strong></div>
         <div class="review-detail"><span>Criteria Status:</span><strong style="color:${isMet ? "#27966a" : "#bd8424"}">${isMet ? "✓ All monetization criteria satisfied" : "○ Criteria in progress"}</strong></div>
         ${app.profileUrl ? `<div style="margin-top:12px;"><a class="button secondary" href="${esc(app.profileUrl)}" target="_blank">Open Profile Link ↗</a></div>` : ""}
       </div>
@@ -916,6 +1106,136 @@
         <button class="button danger" type="button" data-action="reject-application" data-id="${esc(app.id)}">Reject Application</button>
         <button class="button primary" type="button" data-action="approve-application" data-id="${esc(app.id)}">Approve &amp; Notify</button>
       ` : ""}
+    `;
+    dialog.showModal();
+  }
+
+  function openAddCompetitionModal() {
+    editing = { type: "new-competition" };
+    document.getElementById("dialogTitle").textContent = "Create Competition Topic (Supabase)";
+    dialogActions.innerHTML = `<button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Publish to Website</button>`;
+    dialogFields.innerHTML = `
+      <div class="field"><label for="cp-title">Competition Title</label><input id="cp-title" name="title" required placeholder="e.g. Autumn Short Story Challenge"></div>
+      <div class="field"><label for="cp-kicker">Kicker / Edition</label><input id="cp-kicker" name="kicker" value="Writing Prompt · Nov 2026" required></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="field">
+          <label for="cp-category">Category</label>
+          <select id="cp-category" name="category">
+            <option value="Short Story">Short Story</option>
+            <option value="Personal Essay">Personal Essay</option>
+            <option value="Poetry">Poetry</option>
+            <option value="Fiction">Fiction</option>
+            <option value="Article">Article</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cp-status">Status</label>
+          <select id="cp-status" name="status">
+            <option value="Active" selected>Active (Accepting Submissions)</option>
+            <option value="Upcoming">Upcoming</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label for="cp-deadline">Deadline Date</label><input id="cp-deadline" name="deadline" type="date" required value="${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}"></div>
+      <div class="field"><label for="cp-prize">Prize / Recognition</label><input id="cp-prize" name="prize" value="$250 + Featured Homepage Story" required></div>
+      <div class="field"><label for="cp-desc">Theme Description &amp; Prompt</label><textarea id="cp-desc" name="description" rows="3" required placeholder="Write prompt description..."></textarea></div>
+      <div class="field"><label for="cp-guide">Submission Guidelines &amp; Rules</label><textarea id="cp-guide" name="guidelines" rows="3" placeholder="Max 3,000 words. PDF, DOCX, TXT. Original unpublished work."></textarea></div>
+    `;
+    dialog.showModal();
+  }
+
+  function openEditCompetitionModal(comp) {
+    editing = { type: "edit-competition", id: comp.id };
+    document.getElementById("dialogTitle").textContent = "Edit Competition Topic";
+    dialogActions.innerHTML = `<button class="button secondary" type="button" data-close-dialog>Cancel</button><button class="button primary" type="submit">Update Competition</button>`;
+    dialogFields.innerHTML = `
+      <div class="field"><label for="cp-title">Competition Title</label><input id="cp-title" name="title" required value="${esc(comp.title)}"></div>
+      <div class="field"><label for="cp-kicker">Kicker / Edition</label><input id="cp-kicker" name="kicker" value="${esc(comp.kicker)}" required></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="field">
+          <label for="cp-category">Category</label>
+          <select id="cp-category" name="category">
+            <option value="Short Story" ${comp.category === "Short Story" ? "selected" : ""}>Short Story</option>
+            <option value="Personal Essay" ${comp.category === "Personal Essay" ? "selected" : ""}>Personal Essay</option>
+            <option value="Poetry" ${comp.category === "Poetry" ? "selected" : ""}>Poetry</option>
+            <option value="Fiction" ${comp.category === "Fiction" ? "selected" : ""}>Fiction</option>
+            <option value="Article" ${comp.category === "Article" ? "selected" : ""}>Article</option>
+            <option value="Other" ${comp.category === "Other" ? "selected" : ""}>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cp-status">Status</label>
+          <select id="cp-status" name="status">
+            <option value="Active" ${comp.status === "Active" ? "selected" : ""}>Active (Accepting Submissions)</option>
+            <option value="Upcoming" ${comp.status === "Upcoming" ? "selected" : ""}>Upcoming</option>
+            <option value="Closed" ${comp.status === "Closed" ? "selected" : ""}>Closed</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label for="cp-deadline">Deadline Date</label><input id="cp-deadline" name="deadline" type="date" required value="${esc(comp.deadlineRaw ? comp.deadlineRaw.slice(0, 10) : comp.deadline)}"></div>
+      <div class="field"><label for="cp-prize">Prize / Recognition</label><input id="cp-prize" name="prize" value="${esc(comp.prize)}" required></div>
+      <div class="field"><label for="cp-desc">Theme Description &amp; Prompt</label><textarea id="cp-desc" name="description" rows="3" required>${esc(comp.description)}</textarea></div>
+      <div class="field"><label for="cp-guide">Submission Guidelines &amp; Rules</label><textarea id="cp-guide" name="guidelines" rows="3">${esc(comp.guidelines)}</textarea></div>
+    `;
+    dialog.showModal();
+  }
+
+  function openSubmissionReview(sub) {
+    editing = { type: "review-submission", id: sub.id };
+    document.getElementById("dialogTitle").textContent = "Evaluate Competition Submission";
+    const submittedDate = sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : "Recently";
+
+    dialogFields.innerHTML = `
+      <div class="review-profile">
+        <div class="review-person">
+          ${person(sub.authorName, sub.authorHandle || sub.authorEmail)}
+          ${badge(sub.status)}
+        </div>
+        <div class="review-detail"><span>Target Competition:</span><strong>${esc(sub.competitionTitle)}</strong></div>
+        <div class="review-detail"><span>Author Email:</span><strong>${esc(sub.authorEmail)}</strong></div>
+        <div class="review-detail"><span>Story Title:</span><strong>${esc(sub.storyTitle)}</strong></div>
+        <div class="review-detail"><span>Submitted:</span><strong>${esc(submittedDate)}</strong></div>
+
+        <div style="margin-top:14px;padding:12px;background:#f8f7fc;border-radius:10px;border:1px solid #e7e6f2;">
+          <span style="display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">Attached Document / File:</span>
+          ${sub.fileUrl ? `
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <span class="file-attachment-badge">📄 ${esc(sub.fileName || "Competition File")} <span class="file-size">(${esc(sub.fileSize || "Attachment")})</span></span>
+              <a class="download-file-btn" href="${esc(sub.fileUrl)}" download="${esc(sub.fileName || 'entry_document')}" target="_blank">⬇ Download Full Document</a>
+            </div>
+          ` : `<span style="font-size:12px;color:var(--muted);">No external file uploaded. Entry submitted as inline text below.</span>`}
+        </div>
+
+        ${sub.storyExcerpt ? `
+          <div class="review-note" style="margin-top:12px;">
+            <span>Story Text / Excerpt:</span>
+            <p style="white-space:pre-wrap;max-height:220px;overflow-y:auto;background:white;padding:10px;border:1px solid #ebe9f5;border-radius:8px;">${esc(sub.storyExcerpt)}</p>
+          </div>
+        ` : ""}
+
+        <div class="field" style="margin-top:14px;">
+          <label for="sub-status">Evaluation Status</label>
+          <select id="sub-status" name="status">
+            <option value="Submitted" ${sub.status === "Submitted" ? "selected" : ""}>Submitted (Under Review)</option>
+            <option value="Shortlisted" ${sub.status === "Shortlisted" ? "selected" : ""}>Shortlisted ⭐</option>
+            <option value="Winner" ${sub.status === "Winner" ? "selected" : ""}>Winner 🏆</option>
+            <option value="Reviewed" ${sub.status === "Reviewed" ? "selected" : ""}>Reviewed ✓</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="sub-notes">Internal Evaluation Notes / Feedback</label>
+          <textarea id="sub-notes" name="notes" rows="3" placeholder="Notes on prose, voice, scoring, or feedback...">${esc(sub.reviewNotes || "")}</textarea>
+        </div>
+      </div>
+    `;
+
+    dialogActions.innerHTML = `
+      <button class="button secondary" type="button" data-close-dialog>Close</button>
+      <button class="button danger" type="button" data-action="delete-submission" data-id="${esc(sub.id)}">Delete Submission</button>
+      <button class="button primary" type="submit">Save Evaluation</button>
     `;
     dialog.showModal();
   }
@@ -939,6 +1259,75 @@
 
     if (action === "add-post") return openAddPostModal();
     if (action === "add-payout") return openAddPayoutModal();
+    if (action === "add-competition") return openAddCompetitionModal();
+
+    if (action === "edit-competition") {
+      const comp = state.competitions.find(c => c.id === id);
+      if (comp) openEditCompetitionModal(comp);
+      return;
+    }
+
+    if (action === "toggle-competition-status") {
+      const comp = state.competitions.find(c => c.id === id);
+      if (!comp) return;
+      const nextStatus = comp.status === "Active" ? "Closed" : "Active";
+      if (sb) {
+        await sb.from("competitions").update({ status: nextStatus }).eq("id", id);
+      }
+      comp.status = nextStatus;
+      syncCompetitionsToStorage(state.competitions);
+      showToast(`Competition status changed to ${nextStatus}.`);
+      updateNavCounters();
+      render();
+      return;
+    }
+
+    if (action === "delete-competition") {
+      const comp = state.competitions.find(c => c.id === id);
+      if (!confirm(`Permanently delete competition "${comp?.title}" and its topics from the database?`)) return;
+      if (sb) {
+        await sb.from("competition_submissions").delete().eq("competition_id", id);
+        await sb.from("competitions").delete().eq("id", id);
+      }
+      state.competitions = state.competitions.filter(c => c.id !== id);
+      syncCompetitionsToStorage(state.competitions);
+      showToast("Competition topic deleted from database.");
+      updateNavCounters();
+      render();
+      return;
+    }
+
+    if (action === "review-submission") {
+      const sub = state.submissions.find(s => s.id === id);
+      if (sub) openSubmissionReview(sub);
+      return;
+    }
+
+    if (action === "shortlist-submission") {
+      const sub = state.submissions.find(s => s.id === id);
+      if (!sub) return;
+      if (sb) {
+        await sb.from("competition_submissions").update({ status: "Shortlisted" }).eq("id", id);
+      }
+      sub.status = "Shortlisted";
+      showToast("Submission marked as Shortlisted ⭐");
+      updateNavCounters();
+      render();
+      return;
+    }
+
+    if (action === "delete-submission") {
+      if (!confirm("Permanently delete this submission and file record from the database?")) return;
+      if (sb) {
+        await sb.from("competition_submissions").delete().eq("id", id);
+      }
+      state.submissions = state.submissions.filter(s => s.id !== id);
+      dialog.close();
+      showToast("Submission deleted from database.");
+      updateNavCounters();
+      render();
+      return;
+    }
 
     if (action === "edit-post") {
       const p = state.posts.find(item => item.id === id);
@@ -1321,6 +1710,118 @@
       dialog.close();
       showToast("Payout record saved to database!");
       render();
+      return;
+    }
+
+    if (editing.type === "new-competition") {
+      const title = String(formData.get("title") || "").trim();
+      const kicker = String(formData.get("kicker") || "Writing Prompt").trim();
+      const category = String(formData.get("category") || "Short Story").trim();
+      const status = String(formData.get("status") || "Active").trim();
+      const deadline = String(formData.get("deadline") || "").trim();
+      const prize = String(formData.get("prize") || "").trim();
+      const description = String(formData.get("description") || "").trim();
+      const guidelines = String(formData.get("guidelines") || "").trim();
+
+      if (sb) {
+        const { data } = await sb.from("competitions").insert({
+          title,
+          kicker,
+          category,
+          status,
+          deadline: deadline ? `${deadline} 23:59:59+00` : null,
+          prize,
+          description,
+          guidelines
+        }).select().single();
+
+        if (data) {
+          state.competitions.unshift({
+            id: data.id,
+            title,
+            kicker,
+            category,
+            status,
+            deadline: deadline || "Open",
+            deadlineRaw: data.deadline,
+            prize,
+            description,
+            guidelines,
+            createdAt: data.created_at
+          });
+          syncCompetitionsToStorage(state.competitions);
+        }
+      }
+      dialog.close();
+      showToast("New competition topic published to website!");
+      updateNavCounters();
+      render();
+      return;
+    }
+
+    if (editing.type === "edit-competition") {
+      const title = String(formData.get("title") || "").trim();
+      const kicker = String(formData.get("kicker") || "Writing Prompt").trim();
+      const category = String(formData.get("category") || "Short Story").trim();
+      const status = String(formData.get("status") || "Active").trim();
+      const deadline = String(formData.get("deadline") || "").trim();
+      const prize = String(formData.get("prize") || "").trim();
+      const description = String(formData.get("description") || "").trim();
+      const guidelines = String(formData.get("guidelines") || "").trim();
+
+      if (sb) {
+        await sb.from("competitions").update({
+          title,
+          kicker,
+          category,
+          status,
+          deadline: deadline ? `${deadline} 23:59:59+00` : null,
+          prize,
+          description,
+          guidelines
+        }).eq("id", editing.id);
+      }
+
+      const comp = state.competitions.find(c => c.id === editing.id);
+      if (comp) {
+        comp.title = title;
+        comp.kicker = kicker;
+        comp.category = category;
+        comp.status = status;
+        comp.deadline = deadline || "Open";
+        comp.deadlineRaw = deadline ? `${deadline} 23:59:59+00` : null;
+        comp.prize = prize;
+        comp.description = description;
+        comp.guidelines = guidelines;
+        syncCompetitionsToStorage(state.competitions);
+      }
+      dialog.close();
+      showToast("Competition topic updated successfully!");
+      render();
+      return;
+    }
+
+    if (editing.type === "review-submission") {
+      const status = String(formData.get("status") || "Submitted").trim();
+      const notes = String(formData.get("notes") || "").trim();
+
+      if (sb) {
+        await sb.from("competition_submissions").update({
+          status,
+          review_notes: notes
+        }).eq("id", editing.id);
+      }
+
+      const sub = state.submissions.find(s => s.id === editing.id);
+      if (sub) {
+        sub.status = status;
+        sub.reviewNotes = notes;
+      }
+      dialog.close();
+      showToast("Submission evaluation saved to database!");
+      updateNavCounters();
+      render();
+      return;
     }
   });
 
@@ -1355,7 +1856,9 @@
       commentFilter: "commentFilter",
       userFilter: "userFilter",
       payoutFilter: "payoutFilter",
-      applicationFilter: "applicationFilter"
+      applicationFilter: "applicationFilter",
+      competitionFilter: "competitionFilter",
+      submissionFilter: "submissionFilter"
     };
     const prop = filters[event.target.id];
     if (prop) {

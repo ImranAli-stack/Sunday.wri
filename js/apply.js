@@ -64,11 +64,22 @@
   }
 
   function getMetrics(user) {
-    if (!user) return { stories: 0, followers: 0, likes: 0, isEligible: false, metCount: 0 };
+    if (!user) return { stories: 0, recentStories: 0, weeklyRate: 0, followers: 0, likes: 0, isEligible: false, metCount: 0 };
     try {
       const posts = JSON.parse(localStorage.getItem("qalamly.posts.v3")) || [];
       const ownPublished = posts.filter(p => p.authorId === user.id && p.status === "published");
       const stories = ownPublished.length;
+
+      // Calculate stories published in the last 3 months (90 days)
+      const threeMonthsAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+      const recentPublished = ownPublished.filter(p => {
+        const time = new Date(p.createdAt || p.created_at || Date.now()).getTime();
+        return time >= threeMonthsAgo;
+      });
+      const recentStories = recentPublished.length;
+      // Target: 3 posts weekly * 12 weeks = 36 posts in 3 months
+      const targetStories = 36;
+      const weeklyRate = Number((recentStories / 12).toFixed(1));
 
       const follows = JSON.parse(localStorage.getItem("qalamly.follows.v3")) || {};
       let followers = Number(user.followers || 0);
@@ -78,15 +89,23 @@
 
       const likes = ownPublished.reduce((sum, p) => sum + (Number(p.likes) || 0), 0);
 
-      const storiesMet = stories >= 3;
-      const followersMet = followers >= 5;
-      const likesMet = likes >= 5;
+      const targetFollowers = 500;
+      const targetLikes = 1000;
+
+      const storiesMet = recentStories >= targetStories || (stories >= targetStories && weeklyRate >= 3.0);
+      const followersMet = followers >= targetFollowers;
+      const likesMet = likes >= targetLikes;
       const metCount = (storiesMet ? 1 : 0) + (followersMet ? 1 : 0) + (likesMet ? 1 : 0);
 
       return {
         stories,
+        recentStories,
+        weeklyRate,
         followers,
         likes,
+        targetStories,
+        targetFollowers,
+        targetLikes,
         storiesMet,
         followersMet,
         likesMet,
@@ -94,7 +113,7 @@
         isEligible: storiesMet && followersMet && likesMet
       };
     } catch {
-      return { stories: 0, followers: 0, likes: 0, isEligible: false, metCount: 0 };
+      return { stories: 0, recentStories: 0, weeklyRate: 0, followers: 0, likes: 0, isEligible: false, metCount: 0 };
     }
   }
 
@@ -103,17 +122,21 @@
     const metrics = getMetrics(user);
 
     // Update Progress Bars & Numbers
-    const storyPct = Math.min(100, Math.round((metrics.stories / 3) * 100));
-    const folPct = Math.min(100, Math.round((metrics.followers / 5) * 100));
-    const likePct = Math.min(100, Math.round((metrics.likes / 5) * 100));
+    const targetStories = metrics.targetStories || 36;
+    const targetFollowers = metrics.targetFollowers || 500;
+    const targetLikes = metrics.targetLikes || 1000;
+
+    const storyPct = Math.min(100, Math.round(((metrics.recentStories || 0) / targetStories) * 100));
+    const folPct = Math.min(100, Math.round(((metrics.followers || 0) / targetFollowers) * 100));
+    const likePct = Math.min(100, Math.round(((metrics.likes || 0) / targetLikes) * 100));
 
     progStories.style.width = `${storyPct}%`;
     progFollowers.style.width = `${folPct}%`;
     progLikes.style.width = `${likePct}%`;
 
-    statStories.innerHTML = `<span class="crit-pill">${metrics.stories} / 3</span>`;
-    statFollowers.innerHTML = `<span class="crit-pill">${metrics.followers} / 5</span>`;
-    statLikes.innerHTML = `<span class="crit-pill">${metrics.likes} / 5</span>`;
+    statStories.innerHTML = `<span class="crit-pill">${metrics.recentStories || 0} / ${targetStories} stories <small style="display:block;font-size:9px;color:var(--muted);font-weight:normal;">(${metrics.weeklyRate || 0}/3 weekly)</small></span>`;
+    statFollowers.innerHTML = `<span class="crit-pill">${metrics.followers || 0} / ${targetFollowers}</span>`;
+    statLikes.innerHTML = `<span class="crit-pill">${metrics.likes || 0} / 1,000</span>`;
 
     critStories.classList.toggle("met", Boolean(metrics.storiesMet));
     critFollowers.classList.toggle("met", Boolean(metrics.followersMet));
@@ -122,15 +145,15 @@
     if (metrics.isEligible) {
       overallBadge.className = "criteria-overall-badge eligible";
       overallBadge.textContent = "✓ Criteria Met (3 of 3)";
-      footerText.innerHTML = `<strong>Congratulations, ${escapeHTML(user.poeticName || user.name)}!</strong> You meet all criteria. Complete your application below for priority approval.`;
+      footerText.innerHTML = `<strong>Congratulations, ${escapeHTML(user.poeticName || user.name)}!</strong> You meet all criteria (500+ followers, 1,000+ reactions, and 3 posts weekly in 3 months). Complete your application below for priority approval.`;
     } else if (user) {
       overallBadge.className = "criteria-overall-badge";
       overallBadge.textContent = `${metrics.metCount} of 3 goals met`;
-      footerText.textContent = `You're making great progress (${metrics.metCount}/3 requirements completed). Keep sharing your writing to reach all milestones.`;
+      footerText.textContent = `You're making great progress (${metrics.metCount}/3 requirements completed). Criteria: 500 followers, 1,000 reactions, and 3 posts weekly in 3 months (36 stories). Keep writing!`;
     } else {
       overallBadge.className = "criteria-overall-badge";
       overallBadge.textContent = "Guest view";
-      footerText.innerHTML = `Log in to automatically calculate your published stories, followers, and reader likes. <a href="login.html" style="color:var(--purple);font-weight:700;text-decoration:underline;">Log in now</a>`;
+      footerText.innerHTML = `Log in to automatically calculate your 3-month consistency, 500 followers, and 1,000 reactions. <a href="login.html" style="color:var(--purple);font-weight:700;text-decoration:underline;">Log in now</a>`;
     }
 
     // Auto-fill form fields if user is logged in

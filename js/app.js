@@ -10,7 +10,8 @@
     comments: "qalamly.comments.v3",
     follows: "qalamly.follows.v3",
     notifications: "qalamly.notifications.v3",
-    messages: "qalamly.messages.v3"
+    messages: "qalamly.messages.v3",
+    competitions: "qalamly.competitions.v3"
   };
 
   // Purge any old demo localStorage keys from earlier versions
@@ -272,6 +273,16 @@
         }
       }
 
+      // 6. Fetch live competitions (`competitions`)
+      const { data: compRows } = await sb
+        .from("competitions")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (Array.isArray(compRows) && compRows.length > 0) {
+        writeStore(STORAGE.competitions, compRows);
+      }
+
       updateHeader();
       const { path, params } = routeParts();
       if (path === "home") showHome(params);
@@ -452,6 +463,163 @@
   function allPosts() {
     const custom = readStore(STORAGE.posts, []);
     return Array.isArray(custom) ? custom : [];
+  }
+
+  function competitionsList() {
+    const stored = readStore(STORAGE.competitions, []);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function formatCompetitionDate(deadlineStr) {
+    if (!deadlineStr || deadlineStr === "Open") return "Open";
+    try {
+      const d = new Date(deadlineStr);
+      if (isNaN(d.getTime())) return deadlineStr;
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return deadlineStr;
+    }
+  }
+
+  async function fetchCompetitionsFromSupabase() {
+    if (typeof window.getSupabaseClient !== "function") return competitionsList();
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data, error } = await sb
+        .from("competitions")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        writeStore(STORAGE.competitions, data);
+        return data;
+      }
+    } catch (err) {
+      console.warn("Could not fetch competitions from Supabase:", err);
+    }
+    return competitionsList();
+  }
+
+  function renderFrontpageFeaturedCompetition(competitions) {
+    const container = document.getElementById("frontpageFeaturedCompetition");
+    if (!container) return;
+
+    const all = competitions || competitionsList();
+    const activeComps = all.filter((c) => c.status === "Active" || !c.status);
+    if (!activeComps.length) {
+      container.innerHTML = "";
+      container.style.display = "none";
+      return;
+    }
+
+    const featured = activeComps[0];
+    const otherActive = activeComps.slice(1);
+    const deadlineFmt = formatCompetitionDate(featured.deadline);
+
+    container.style.display = "block";
+    container.innerHTML = `
+      <section class="featured-competition-card" aria-label="Featured Writing Competition">
+        <div class="featured-comp-header">
+          <div class="featured-comp-badges">
+            <span class="featured-pill-live">
+              <span class="pulse-dot" aria-hidden="true"></span> Active Challenge
+            </span>
+            <span class="featured-cat-tag">${escapeHTML(featured.category || "Creative Challenge")}</span>
+            ${featured.deadline ? `<span class="featured-deadline-tag">⏳ Closes ${escapeHTML(deadlineFmt)}</span>` : ""}
+          </div>
+          <a href="competitions.html" class="featured-view-all">
+            All Challenges (${activeComps.length}) →
+          </a>
+        </div>
+
+        <div class="featured-comp-body">
+          <div class="featured-comp-main">
+            ${featured.kicker ? `<div class="featured-comp-kicker">${escapeHTML(featured.kicker)}</div>` : ""}
+            <h2 class="featured-comp-title">
+              <a href="competitions.html?submit=${encodeURIComponent(featured.id)}">${escapeHTML(featured.title)}</a>
+            </h2>
+            <p class="featured-comp-desc">${escapeHTML(featured.description || "Submit your original story to this month's featured writing challenge.")}</p>
+
+            <div class="featured-comp-award-box">
+              <div class="featured-award-icon" aria-hidden="true">🏆</div>
+              <div class="featured-award-text">
+                <span class="featured-award-label">Competition Award / Prize</span>
+                <strong class="featured-award-val">${escapeHTML(featured.prize || "Official Editorial Spotlight & Featured Homepage Placement")}</strong>
+              </div>
+            </div>
+          </div>
+
+          ${otherActive.length > 0 ? `
+            <div class="featured-comp-sublist">
+              <span class="sublist-label">More active challenges:</span>
+              <div class="sublist-pills">
+                ${otherActive.map((c) => `
+                  <a class="sublist-pill" href="competitions.html?submit=${encodeURIComponent(c.id)}" title="${escapeHTML(c.title)}">
+                    <span class="sublist-bullet">✦</span> ${escapeHTML(c.title)} (${escapeHTML(c.category || "Story")})
+                  </a>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
+
+          <div class="featured-comp-actions">
+            <a class="primary-button featured-enter-btn" href="competitions.html?submit=${encodeURIComponent(featured.id)}">
+              Submit Your Entry &amp; Upload File →
+            </a>
+            <a class="secondary-button" href="competitions.html#comp-${encodeURIComponent(featured.id)}">
+              Read Guidelines &amp; Details
+            </a>
+            <a class="secondary-button" href="write.html" style="font-size:11px;">
+              ✍️ Open Editor
+            </a>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function updateSidebarChallengePanel(competitions) {
+    const panel = document.getElementById("competitions");
+    if (!panel) return;
+
+    const all = competitions || competitionsList();
+    const activeComps = all.filter((c) => c.status === "Active" || !c.status);
+    if (!activeComps.length) {
+      panel.innerHTML = `
+        <div class="challenge-icon" aria-hidden="true">🏆</div>
+        <h3>Creative Writing Challenges</h3>
+        <p>Check back soon for our next monthly prompts and creative writing competitions.</p>
+        <a href="competitions.html" class="panel-link" style="display:inline-block;margin-top:8px;">View past challenges →</a>
+      `;
+      return;
+    }
+
+    const comp = activeComps[0];
+    const deadlineFmt = formatCompetitionDate(comp.deadline);
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="challenge-icon" aria-hidden="true" style="margin:0;font-size:22px;">🏆</div>
+        <span class="status-pill" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;">● Active</span>
+      </div>
+      <div style="font-size:9px;font-weight:800;color:var(--purple);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">
+        ${escapeHTML(comp.kicker || comp.category || "Writing Challenge")}
+      </div>
+      <h3 style="margin:0 0 6px;font-size:13px;font-weight:800;line-height:1.35;color:#1e1b2e;">
+        <a href="competitions.html?submit=${encodeURIComponent(comp.id)}" style="color:inherit;text-decoration:none;">${escapeHTML(comp.title)}</a>
+      </h3>
+      <p style="margin:0 0 10px;color:#786542;font-size:10px;line-height:1.5;">
+        ${escapeHTML(comp.description.length > 120 ? comp.description.slice(0, 117) + "…" : comp.description)}
+      </p>
+      <div style="background:rgba(255,255,255,0.75);border:1px solid #ebdcb2;border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:10px;font-weight:750;color:#92400e;">
+        🏆 ${escapeHTML(comp.prize || "Editorial Spotlight")}
+      </div>
+      <div class="challenge-date" style="margin-top:0;font-size:9px;color:#8d7b4f;margin-bottom:10px;">
+        Entries close: <strong>${escapeHTML(deadlineFmt)}</strong>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <a href="competitions.html?submit=${encodeURIComponent(comp.id)}" class="primary-button" style="flex:1;text-align:center;font-size:10px;padding:6px 8px;text-decoration:none;">Enter Challenge →</a>
+        <a href="competitions.html" class="secondary-button" style="font-size:10px;padding:6px 8px;text-decoration:none;">All (${activeComps.length})</a>
+      </div>
+    `;
   }
 
   function savePostUpdate(updatedPost) {
@@ -639,13 +807,13 @@
     updateHeader();
   }
 
-  function checkAndNotifyMonetization(user, storiesCount, followersCount, likesCount) {
-    if (!user || storiesCount < 3 || followersCount < 5 || likesCount < 5) return;
-    const key = `qalamly.notified.monetization.${user.id}`;
+  function checkAndNotifyMonetization(user, recentStoriesCount, followersCount, likesCount, weeklyRate = 0) {
+    if (!user || recentStoriesCount < 36 || followersCount < 500 || likesCount < 1000) return;
+    const key = `qalamly.notified.monetization.${user.id}.v2`;
     if (localStorage.getItem(key)) return;
 
     localStorage.setItem(key, "true");
-    const msg = "🎉 Congratulations! You have met all Creator Monetization criteria. Apply now to start earning from your stories!";
+    const msg = "🎉 Congratulations! You have met the Creator Monetization criteria: 500 followers, 1,000 reactions, and 3 posts weekly in 3 months! Apply now to start earning.";
     addNotification(user.id, msg, "");
     notify("🎉 Milestone Reached: You are eligible to apply for Creator Monetization!");
 
@@ -945,6 +1113,8 @@
         trendingContainer.innerHTML = `<p class="sidebar-promo-copy">No trending stories yet. Publish the first story!</p>`;
       }
     }
+
+    updateSidebarChallengePanel();
   }
 
   // --- PAGE RENDERERS ---
@@ -973,6 +1143,10 @@
         </div>
         <div class="banner-decoration" aria-hidden="true">✒️</div>
       </section>
+
+      <!-- Featured Competition Frontpage Spotlight -->
+      <div id="frontpageFeaturedCompetition" class="featured-competition-wrapper" aria-label="Featured Writing Competition"></div>
+
       <div class="section-heading">
         <div>
           <h2 id="feedHeading">${initialTopic === "All" ? "Public dashboard" : `${escapeHTML(initialTopic)} stories`}</h2>
@@ -1015,6 +1189,15 @@
       const lang = langSelect?.value || "All";
       const sortBy = sortSelect?.value || "latest";
 
+      const featuredContainer = document.getElementById("frontpageFeaturedCompetition");
+      if (featuredContainer) {
+        if (query || activeTopic !== "All") {
+          featuredContainer.style.display = "none";
+        } else {
+          featuredContainer.style.display = "";
+        }
+      }
+
       const published = allPosts().filter((p) => p.status === "published");
       const filtered = published.filter((p) => {
         const topicMatch = activeTopic === "All" || p.category.toLowerCase() === activeTopic.toLowerCase();
@@ -1049,7 +1232,13 @@
     }
 
     renderFeedCards();
+    renderFrontpageFeaturedCompetition();
     hydrateRightSidebar();
+
+    fetchCompetitionsFromSupabase().then((comps) => {
+      renderFrontpageFeaturedCompetition(comps);
+      updateSidebarChallengePanel(comps);
+    });
 
     if (searchInput) searchInput.oninput = renderFeedCards;
     if (sortSelect) sortSelect.onchange = renderFeedCards;
@@ -1162,21 +1351,31 @@
     const followers = followersCountFor(user.id);
     const following = followingList(user.id).length;
     const totalLikes = published.reduce((sum, p) => sum + (Number(p.likes) || 0), 0);
-    const isMonetizationEligible = published.length >= 3 && followers >= 5 && totalLikes >= 5;
+
+    // Monetization criteria: 500 followers, 1000 reactions, 3 posts weekly in 3 months (36 in 90 days)
+    const threeMonthsAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+    const recentPublished = published.filter(p => new Date(p.createdAt || p.created_at || Date.now()).getTime() >= threeMonthsAgo);
+    const recentStoriesCount = recentPublished.length;
+    const weeklyRate = Number((recentStoriesCount / 12).toFixed(1));
+
+    const isStoriesMet = recentStoriesCount >= 36 || (published.length >= 36 && weeklyRate >= 3.0);
+    const isFollowersMet = followers >= 500;
+    const isLikesMet = totalLikes >= 1000;
+    const isMonetizationEligible = isStoriesMet && isFollowersMet && isLikesMet;
 
     // Check criteria and trigger in-app notification if milestone reached
-    checkAndNotifyMonetization(user, published.length, followers, totalLikes);
+    checkAndNotifyMonetization(user, recentStoriesCount, followers, totalLikes, weeklyRate);
 
     const monetizationCardHTML = isMonetizationEligible
       ? `
         <div class="monetization-banner eligible">
           <div class="monetization-badge">✦ Milestone Reached</div>
           <h3>You meet all Creator Monetization criteria! 🎉</h3>
-          <p>You've published ${published.length} stories, earned ${followers} community followers, and received ${totalLikes} story likes. You are qualified to join the Qalamly Creator Program and earn from your writing.</p>
+          <p>You've achieved 500+ followers, 1,000+ reader reactions, and maintained 3 posts weekly over 3 months (${recentStoriesCount} stories). You are qualified to join the Qalamly Creator Program and earn from your writing.</p>
           <div class="monetization-criteria-mini">
-            <span class="criterion-chip met">✓ ${published.length}/3 Stories</span>
-            <span class="criterion-chip met">✓ ${followers}/5 Followers</span>
-            <span class="criterion-chip met">✓ ${totalLikes}/5 Likes</span>
+            <span class="criterion-chip met">✓ ${recentStoriesCount}/36 Stories (3/wk in 3 mos)</span>
+            <span class="criterion-chip met">✓ ${followers}/500 Followers</span>
+            <span class="criterion-chip met">✓ ${totalLikes}/1,000 Reactions</span>
           </div>
           <a class="primary-button" href="apply.html">Apply for Monetization Now →</a>
         </div>
@@ -1185,11 +1384,11 @@
         <div class="monetization-banner progress">
           <div class="monetization-badge">Creator Monetization Progress</div>
           <h3>Unlock earnings from your stories</h3>
-          <p>Reach 3 published stories, 5 followers, and 5 likes to unlock monetization. You will be automatically notified as soon as you meet all criteria!</p>
+          <p>Criteria to qualify: <strong>500 followers</strong>, <strong>1,000 reactions</strong>, and <strong>3 posts weekly over 3 months</strong> (36 stories). You will be automatically notified as soon as you meet all criteria!</p>
           <div class="monetization-criteria-mini">
-            <span class="criterion-chip ${published.length >= 3 ? "met" : ""}">${published.length >= 3 ? "✓" : "○"} ${published.length}/3 Stories</span>
-            <span class="criterion-chip ${followers >= 5 ? "met" : ""}">${followers >= 5 ? "✓" : "○"} ${followers}/5 Followers</span>
-            <span class="criterion-chip ${totalLikes >= 5 ? "met" : ""}">${totalLikes >= 5 ? "✓" : "○"} ${totalLikes}/5 Likes</span>
+            <span class="criterion-chip ${isStoriesMet ? "met" : ""}">${isStoriesMet ? "✓" : "○"} ${recentStoriesCount}/36 Stories (${weeklyRate}/3 weekly)</span>
+            <span class="criterion-chip ${isFollowersMet ? "met" : ""}">${isFollowersMet ? "✓" : "○"} ${followers}/500 Followers</span>
+            <span class="criterion-chip ${isLikesMet ? "met" : ""}">${isLikesMet ? "✓" : "○"} ${totalLikes}/1,000 Reactions</span>
           </div>
           <a class="secondary-button" href="apply.html" style="font-size:11px;padding:6px 12px;">View Guidelines &amp; Apply</a>
         </div>
@@ -1539,19 +1738,254 @@
     );
   }
 
-  function renderCompetitions() {
+  async function renderCompetitions(params) {
+    const user = currentUser();
+    let competitions = [
+      {
+        id: "default-oct",
+        title: "A Place That Feels Like Home",
+        kicker: "Writing Prompt · October 2026",
+        category: "Personal Essay / Story",
+        description: "Write about a place that feels like home. A kitchen, a bus route, a language, or a person can all be home. Begin with a sensory detail you can see, hear, or smell.",
+        guidelines: "Maximum 3,000 words. Accepted formats: PDF, DOCX, TXT, EPUB. Any supported language (English, Urdu, Balochi). Original unpublished work only.",
+        prize: "$250 Prize + Featured on Qalamly Homepage & Newsletter",
+        deadline: "2026-10-31",
+        status: "Active"
+      }
+    ];
+
+    // Fetch live competitions from Supabase
+    if (typeof window.getSupabaseClient === "function") {
+      try {
+        const sb = await window.getSupabaseClient();
+        const { data, error } = await sb.from("competitions").select("*").order("created_at", { ascending: false });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          competitions = data;
+        }
+      } catch (err) {
+        console.warn("Could not fetch live competitions:", err);
+      }
+    }
+
+    const cardsHTML = competitions.map(c => {
+      const isClosed = c.status === "Closed";
+      const deadlineDate = c.deadline ? new Date(c.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Open";
+
+      return `
+        <article class="page-card competition-topic-card" id="comp-${escapeHTML(c.id)}" style="margin-bottom:20px;border:1px solid #dcd7f8;position:relative;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
+            <div>
+              <span class="criteria-kicker" style="color:var(--purple);font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;">${escapeHTML(c.kicker || "Writing Prompt")}</span>
+              <h2 style="margin:4px 0 6px;font-size:20px;">${escapeHTML(c.title)}</h2>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="status-pill" style="background:#f2f0fc;color:var(--purple);font-size:11px;font-weight:700;">${escapeHTML(c.category || "Story")}</span>
+              <span class="status-pill ${isClosed ? "draft" : ""}" style="font-size:11px;font-weight:700;">${isClosed ? "Closed" : "● Active"}</span>
+            </div>
+          </div>
+
+          <p style="font-size:13px;line-height:1.6;color:#353648;margin:0 0 14px;">${escapeHTML(c.description)}</p>
+
+          <div style="background:#f9f8fe;border:1px solid #ece8f9;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:14px;">🏆</span>
+              <strong style="font-size:12px;color:#7a5200;">Award: ${escapeHTML(c.prize || "Editorial Spotlight")}</strong>
+            </div>
+            <div style="font-size:11px;color:#6b6c82;line-height:1.5;">
+              <strong>Guidelines:</strong> ${escapeHTML(c.guidelines || "Max 3,000 words. PDF, DOCX, TXT. Original unpublished work.")}
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px;">
+              <strong>Deadline:</strong> ${escapeHTML(deadlineDate)}
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            ${!isClosed ? `
+              <button class="primary-button" type="button" data-submit-comp-id="${escapeHTML(c.id)}" data-submit-comp-title="${escapeHTML(c.title)}">
+                Submit Entry &amp; Upload File →
+              </button>
+            ` : `<button class="secondary-button" disabled style="opacity:0.6;">Submissions Closed</button>`}
+            <a class="secondary-button" href="write.html">Write Story in Editor</a>
+          </div>
+        </article>
+      `;
+    }).join("");
+
     setPage(
       `<div class="page-view">
-        ${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. A kitchen, a bus route, a language, or a person can all be home.")}
-        <section class="page-card">
-          <h2>How to enter</h2>
-          <p>Begin with a sensory detail you can see, hear, or smell. Publish your story in any supported language and include <strong>October prompt</strong> in your title or opening paragraph.</p>
-          <p><strong>Entries close October 31, 2026.</strong> Community favorites will be featured on the home banner.</p>
-          <a class="primary-button" href="write.html">Write your entry</a>
-        </section>
+        ${pageHero("Put your words forward", "Qalamly Writing Competitions", "Join writing challenges, respond to monthly creative prompts, and submit your stories and documents directly for review.")}
+        ${cardsHTML}
+
+        <!-- Submission Modal Dialog -->
+        <dialog id="compSubmissionDialog" class="editor-dialog" style="max-width:560px;border-radius:18px;padding:0;border:1px solid #dcd7f8;box-shadow:var(--shadow);">
+          <form id="compSubmissionForm" method="dialog" style="padding:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+              <div>
+                <span class="criteria-kicker" style="color:var(--purple);font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;">COMPETITION ENTRY</span>
+                <h2 id="compModalHeading" style="margin:4px 0 0;font-size:18px;">Submit Competition Entry</h2>
+              </div>
+              <button type="button" id="closeCompModalBtn" class="icon-button" style="font-size:18px;border:0;background:none;cursor:pointer;">×</button>
+            </div>
+
+            <input type="hidden" id="entryCompId" name="competitionId">
+            <input type="hidden" id="entryCompTitle" name="competitionTitle">
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryAuthorName" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Your Name / Pen Name <span style="color:red;">*</span></label>
+              <input id="entryAuthorName" name="name" required style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;" value="${user ? escapeHTML(user.poeticName || user.name) : ""}">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryAuthorEmail" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Your Email Address <span style="color:red;">*</span></label>
+              <input id="entryAuthorEmail" name="email" type="email" required style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;" value="${user ? escapeHTML(user.email || "") : ""}">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryStoryTitle" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Story / Entry Title <span style="color:red;">*</span></label>
+              <input id="entryStoryTitle" name="title" required placeholder="e.g. Memory of a Distant Courtyard" style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryStoryExcerpt" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Story Excerpt or Opening Text <span style="color:red;">*</span></label>
+              <textarea id="entryStoryExcerpt" name="excerpt" rows="4" required placeholder="Paste your story text or opening lines..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #dcdde8;font-size:12px;line-height:1.5;"></textarea>
+            </div>
+
+            <div class="form-field" style="margin-bottom:16px;">
+              <label for="entryFile" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Attach Story Document (PDF, Word DOCX, TXT, EPUB, Images) <span style="font-weight:normal;color:var(--muted);">(Optional, max 10MB)</span></label>
+              <input id="entryFile" name="entryFile" type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.epub,image/*" style="width:100%;font-size:12px;">
+              <span id="fileUploadNote" style="display:block;font-size:10px;color:var(--muted);margin-top:4px;">Your file will be received directly in the admin dashboard for evaluation.</span>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+              <button type="button" id="cancelCompModalBtn" class="secondary-button" style="padding:8px 14px;font-size:12px;">Cancel</button>
+              <button type="submit" id="submitEntryBtn" class="primary-button" style="padding:8px 18px;font-size:12px;">Submit Entry to Admin →</button>
+            </div>
+          </form>
+        </dialog>
       </div>`,
       { contentOnly: true }
     );
+
+    attachCompetitionHandlers();
+
+    // Auto-open submit modal if navigated with ?submit=<id> or ?id=<id>
+    const targetCompId = params?.get("submit") || params?.get("id");
+    if (targetCompId) {
+      setTimeout(() => {
+        const btn = document.querySelector(`[data-submit-comp-id="${targetCompId}"]`);
+        if (btn) {
+          btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          btn.click();
+        }
+      }, 150);
+    }
+  }
+
+  function attachCompetitionHandlers() {
+    const dialog = document.getElementById("compSubmissionDialog");
+    const form = document.getElementById("compSubmissionForm");
+    const heading = document.getElementById("compModalHeading");
+    const idInput = document.getElementById("entryCompId");
+    const titleInput = document.getElementById("entryCompTitle");
+    const closeBtn = document.getElementById("closeCompModalBtn");
+    const cancelBtn = document.getElementById("cancelCompModalBtn");
+    const submitBtn = document.getElementById("submitEntryBtn");
+
+    closeBtn?.addEventListener("click", () => dialog?.close());
+    cancelBtn?.addEventListener("click", () => dialog?.close());
+
+    document.querySelectorAll("[data-submit-comp-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const compId = btn.dataset.submitCompId;
+        const compTitle = btn.dataset.submitCompTitle;
+        if (idInput) idInput.value = compId;
+        if (titleInput) titleInput.value = compTitle;
+        if (heading) heading.textContent = `Submit Entry: ${compTitle}`;
+        dialog?.showModal();
+      });
+    });
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const user = currentUser();
+      const compId = idInput?.value || "";
+      const compTitle = titleInput?.value || "Competition";
+      const name = document.getElementById("entryAuthorName")?.value.trim() || "";
+      const email = document.getElementById("entryAuthorEmail")?.value.trim() || "";
+      const storyTitle = document.getElementById("entryStoryTitle")?.value.trim() || "";
+      const excerpt = document.getElementById("entryStoryExcerpt")?.value.trim() || "";
+      const fileInput = document.getElementById("entryFile");
+      const file = fileInput?.files?.[0];
+
+      if (!name || !email || !storyTitle || !excerpt) {
+        notify("Please fill in all required fields.");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Uploading & Submitting...";
+
+      let fileUrl = "";
+      let fileName = "";
+      let fileSize = "";
+
+      if (file) {
+        fileName = file.name;
+        const sizeKb = Math.round(file.size / 1024);
+        fileSize = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+
+        try {
+          fileUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch (err) {
+          console.warn("File encoding error:", err);
+        }
+      }
+
+      const submissionRecord = {
+        competition_id: compId,
+        competition_title: compTitle,
+        user_id: user?.id && isUUID(user.id) ? user.id : null,
+        author_name: name,
+        author_email: email,
+        author_handle: user?.handle || `@${name.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+        story_title: storyTitle,
+        story_excerpt: excerpt,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_size: fileSize,
+        status: "Submitted",
+        submitted_at: new Date().toISOString()
+      };
+
+      let saved = false;
+      if (typeof window.getSupabaseClient === "function") {
+        try {
+          const sb = await window.getSupabaseClient();
+          const { error } = await sb.from("competition_submissions").insert(submissionRecord);
+          if (!error) saved = true;
+        } catch (err) {
+          console.warn("Supabase submission error:", err);
+        }
+      }
+
+      // Also cache in local storage for dual compatibility
+      try {
+        const existing = JSON.parse(localStorage.getItem("qalamly.competition_submissions.v1") || "[]");
+        existing.unshift(submissionRecord);
+        localStorage.setItem("qalamly.competition_submissions.v1", JSON.stringify(existing));
+      } catch {}
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Entry to Admin →";
+      dialog?.close();
+
+      notify(saved ? "Entry & file submitted successfully! Received in Admin Studio." : "Entry saved and submitted for admin review!");
+    });
   }
 
   function renderSettings(message = "") {
@@ -1668,7 +2102,7 @@
       case "home": showHome(params); break;
       case "about": renderAbout(); break;
       case "contact": renderContact(); break;
-      case "competitions": renderCompetitions(); break;
+      case "competitions": renderCompetitions(params); break;
       case "bookmarks": renderBookmarks(); break;
       case "dashboard": renderDashboard(params.get("tab") || "all"); break;
       case "write": renderWriter("", params.get("edit") || ""); break;
@@ -2070,6 +2504,24 @@
       updateHeader();
       notify("Profile settings saved.");
       navigate("dashboard.html");
+    }
+  });
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE.competitions) {
+      const comps = competitionsList();
+      renderFrontpageFeaturedCompetition(comps);
+      updateSidebarChallengePanel(comps);
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    const { path } = routeParts();
+    if (path === "home") {
+      fetchCompetitionsFromSupabase().then((comps) => {
+        renderFrontpageFeaturedCompetition(comps);
+        updateSidebarChallengePanel(comps);
+      });
     }
   });
 
