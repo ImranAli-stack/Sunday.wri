@@ -218,6 +218,25 @@
   }
 
   async function showAdminAuthGate(errorMessage = "", activeTab = "signin") {
+    // Check if user arrived via email confirmation redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    if (
+      urlParams.get("type") === "signup" ||
+      hashParams.get("type") === "signup" ||
+      urlParams.get("type") === "email_confirmation" ||
+      hashParams.get("type") === "email_confirmation" ||
+      window.location.hash.includes("type=signup")
+    ) {
+      errorMessage = "";
+      showToast("Administrator email confirmed! You can now log in.");
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (urlParams.get("error_description") || hashParams.get("error_description")) {
+      const errDesc = decodeURIComponent(urlParams.get("error_description") || hashParams.get("error_description") || "");
+      errorMessage = errDesc || "Email verification link has expired or is invalid.";
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     // Show placeholder while checking registration status
     content.innerHTML = `
       <div class="auth-gate-container">
@@ -232,6 +251,60 @@
     const isLocked = Boolean(regStatus.locked || regStatus.registrationAvailable === false);
     // If registration is available and no error was passed, we can default to signin or allow toggle
     let currentTab = activeTab;
+
+    function renderAdminEmailConfirmation(email, fullName, redirectUrl) {
+      content.innerHTML = `
+        <div class="auth-gate-container">
+          <div class="auth-icon-badge">📬</div>
+          <div class="eyebrow" style="margin-bottom:6px;">VERIFICATION REQUIRED</div>
+          <h1 style="font-size:22px;margin:0 0 10px;">Check your email</h1>
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">
+            We've sent an activation link to <strong style="color:var(--ink);">${esc(email)}</strong>.<br>
+            Please click the confirmation link in that email to activate your administrator account.
+          </p>
+          <div class="auth-banner info" style="text-align:left;">
+            <span style="font-size:18px;">💡</span>
+            <div>
+              <strong>Almost there!</strong>
+              <p style="margin:4px 0 0;font-size:11px;">
+                Check your spam or junk folder if the email doesn't appear within 1-2 minutes. Once confirmed, you can sign in directly.
+              </p>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="button secondary" type="button" id="resendAdminConfirmBtn" style="width:100%;height:42px;font-size:12px;">
+              Resend verification email
+            </button>
+            <button class="button primary" type="button" id="adminBackToSignIn" style="width:100%;height:42px;font-size:12px;">
+              Go to Administrator Sign In →
+            </button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("adminBackToSignIn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("resendAdminConfirmBtn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "Resending...";
+        try {
+          const sbClient = await getClient();
+          const { error: resendErr } = await sbClient.auth.resend({
+            type: "signup",
+            email,
+            options: { emailRedirectTo: redirectUrl }
+          });
+          if (resendErr) throw resendErr;
+          showToast("Confirmation email resent! Please check your inbox.");
+          btn.textContent = "✓ Email sent! Check your inbox.";
+          setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = "Resend verification email"; } }, 20000);
+        } catch (resendEx) {
+          showToast(resendEx instanceof Error ? resendEx.message : "Could not resend email.", true);
+          btn.disabled = false;
+          btn.textContent = "Resend verification email";
+        }
+      });
+    }
 
     function renderGate(tab = currentTab, err = errorMessage, succ = "") {
       currentTab = tab;
@@ -367,6 +440,44 @@
           }
           await initAdmin();
         } catch (err) {
+          if (err instanceof Error && err.message.toLowerCase().includes("email not confirmed")) {
+            if (errorEl) {
+              errorEl.innerHTML = `
+                <span>Your administrator email address has not been confirmed yet.</span>
+                <div style="margin-top:8px;">
+                  <button type="button" class="text-button" id="resendAdminLoginLink" data-email="${esc(email)}" style="font-weight:700;">
+                    Resend verification email to ${esc(email)} →
+                  </button>
+                </div>
+              `;
+              document.getElementById("resendAdminLoginLink")?.addEventListener("click", async () => {
+                const btn = document.getElementById("resendAdminLoginLink");
+                if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+                try {
+                  const sbClient = await getClient();
+                  const basePath = window.location.pathname.includes("/admin-dashboard/")
+                    ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
+                    : window.location.pathname.replace(/[^/]*$/, "");
+                  const { error: resendErr } = await sbClient.auth.resend({
+                    type: "signup",
+                    email,
+                    options: { emailRedirectTo: `${window.location.origin}${basePath}admin.html` }
+                  });
+                  if (resendErr) throw resendErr;
+                  showToast("Confirmation email resent! Please check your inbox.");
+                  if (btn) btn.textContent = "✓ Email sent! Check your inbox.";
+                } catch (resendEx) {
+                  showToast(resendEx instanceof Error ? resendEx.message : "Could not resend email.", true);
+                  if (btn) { btn.disabled = false; btn.textContent = `Resend verification email to ${email} →`; }
+                }
+              });
+            }
+            if (submitBtn) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = "Unlock Admin Dashboard →";
+            }
+            return;
+          }
           if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not sign in.";
           if (submitBtn) {
             submitBtn.disabled = false;
@@ -424,11 +535,17 @@
           const sb = await getClient();
           if (!sb) throw new Error("Supabase is unavailable.");
 
+          const basePath = window.location.pathname.includes("/admin-dashboard/")
+            ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
+            : window.location.pathname.replace(/[^/]*$/, "");
+          const redirectUrl = `${window.location.origin}${basePath}admin.html`;
+
           let authUser = null;
           let { data: authData, error: authError } = await sb.auth.signUp({
             email,
             password,
             options: {
+              emailRedirectTo: redirectUrl,
               data: {
                 full_name: fullName,
                 role: "admin"
@@ -448,6 +565,13 @@
 
           if (!authUser) {
             throw new Error("Admin user could not be initialized. Please check confirmation settings.");
+          }
+
+          // Check if email confirmation is required
+          const requiresConfirmation = !authData?.session || (!authUser.confirmed_at && !authUser.email_confirmed_at);
+          if (requiresConfirmation && !authError) {
+            renderAdminEmailConfirmation(email, fullName, redirectUrl);
+            return;
           }
 
           // 3. Register in public.admins table (via RPC or direct insert)
@@ -2282,20 +2406,43 @@
       return;
     }
 
+    // Top Admin profile dropdown toggle
+    const trigger = event.target.closest("#topAdminTrigger");
+    if (trigger) {
+      const menu = document.getElementById("topAdminMenu");
+      if (menu) {
+        const isHidden = menu.style.display === "none" || !menu.style.display;
+        menu.style.display = isHidden ? "block" : "none";
+        trigger.setAttribute("aria-expanded", isHidden ? "true" : "false");
+      }
+      return;
+    }
+    if (!event.target.closest(".top-admin-wrapper")) {
+      const menu = document.getElementById("topAdminMenu");
+      if (menu && menu.style.display === "block") {
+        menu.style.display = "none";
+        document.getElementById("topAdminTrigger")?.setAttribute("aria-expanded", "false");
+      }
+    }
+
     const actionButton = event.target.closest("[data-action]");
     if (actionButton) {
       const { action, id } = actionButton.dataset;
-      if (action === "lock-admin") {
+      if (action === "logout-admin" || action === "lock-admin") {
         (async () => {
           const sb = await getClient();
           if (sb) {
-            const { error } = await sb.auth.signOut();
-            if (error) throw error;
+            try {
+              const { error } = await sb.auth.signOut();
+              if (error) console.warn("Supabase sign out notice:", error);
+            } catch (signOutErr) {
+              console.warn("Sign out error:", signOutErr);
+            }
           }
           adminUser = null;
           adminInitialized = false;
-          showAdminAuthGate();
-          showToast("Administrator signed out.");
+          showToast(action === "logout-admin" ? "Logged out successfully." : "Admin Studio locked.");
+          await showAdminAuthGate();
         })().catch((err) => showToast(err instanceof Error ? err.message : "Could not sign out.", true));
         return;
       }
@@ -2422,11 +2569,15 @@
     const sidebarAvatar = document.querySelector(".admin-card .admin-avatar");
     const topAdminName = document.querySelector(".top-admin span:nth-child(2)");
     const topAdminAvatar = document.querySelector(".top-admin .admin-avatar");
+    const topAdminMenuName = document.getElementById("topAdminMenuName");
+    const topAdminMenuEmail = document.getElementById("topAdminMenuEmail");
 
     if (sidebarCardStrong) sidebarCardStrong.textContent = name;
     if (sidebarAvatar) sidebarAvatar.textContent = initials;
     if (topAdminName) topAdminName.textContent = name;
     if (topAdminAvatar) topAdminAvatar.textContent = initials;
+    if (topAdminMenuName) topAdminMenuName.textContent = name;
+    if (topAdminMenuEmail) topAdminMenuEmail.textContent = email;
   }
 
   async function initAdmin() {

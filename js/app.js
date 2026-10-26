@@ -2032,9 +2032,61 @@
     loadUserSecurityStatus();
   }
 
+  function renderEmailConfirmation(email, role = "writer") {
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Almost there!", "Confirm your email address", "We’ve sent an activation link to your inbox.")}
+        <section class="page-card page-form" style="text-align:center;">
+          <div style="width:68px;height:68px;border-radius:20px;background:var(--purple-pale,#f0edff);color:var(--purple,#7458e8);display:grid;place-items:center;margin:0 auto 18px;font-size:30px;box-shadow:0 4px 14px rgba(116,88,232,0.12);">
+            📬
+          </div>
+          <h2 style="font-size:22px;font-weight:750;margin:0 0 10px;color:var(--ink,#202139);">Check your inbox</h2>
+          <p style="font-size:13px;color:var(--muted,#666);line-height:1.6;margin:0 0 22px;">
+            We have sent a verification email to <strong style="color:var(--ink,#202139);">${escapeHTML(email)}</strong>.<br>
+            Please click the confirmation link in the email to activate your account.
+          </p>
+          <div style="padding:14px 16px;background:#fafafd;border-radius:12px;border:1px solid #ededf3;font-size:12px;color:#717388;line-height:1.6;margin-bottom:24px;text-align:left;">
+            <strong style="color:var(--ink,#202139);">Didn't receive the email?</strong>
+            <ul style="margin:6px 0 0;padding-left:18px;">
+              <li>Check your spam, junk, or promotions folder.</li>
+              <li>Wait 1-2 minutes for the message to arrive.</li>
+              <li>Or click below to request a new confirmation link.</li>
+            </ul>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="primary-button" type="button" id="resendConfirmationBtn" data-email="${escapeHTML(email)}" style="width:100%;">
+              Resend confirmation email
+            </button>
+            <a class="secondary-button" href="login.html" style="text-align:center;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:100%;">
+              Already confirmed? Go to Log in →
+            </a>
+          </div>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
   function renderAuth(mode, message = "") {
     const recoveryParams = new URLSearchParams(window.location.search);
     const recoveryHash = new URLSearchParams(window.location.hash.slice(1));
+
+    if (
+      recoveryParams.get("type") === "signup" ||
+      recoveryHash.get("type") === "signup" ||
+      recoveryParams.get("type") === "email_confirmation" ||
+      recoveryHash.get("type") === "email_confirmation" ||
+      window.location.hash.includes("type=signup") ||
+      window.location.hash.includes("type=email_confirmation")
+    ) {
+      message = "Email confirmed successfully! You can now log in to your account.";
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (recoveryParams.get("error_description") || recoveryHash.get("error_description")) {
+      const errDesc = decodeURIComponent(recoveryParams.get("error_description") || recoveryHash.get("error_description") || "");
+      message = errDesc || "Email verification link has expired or is invalid.";
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     if (mode === "login" && (
       recoveryParams.get("type") === "recovery" ||
       recoveryHash.get("type") === "recovery" ||
@@ -2243,6 +2295,41 @@
         if (error) throw error;
         notify("If an account exists for that email, a password reset link has been sent.");
       }).catch((err) => showFormError(err instanceof Error ? err.message : "Could not send a password reset email."));
+      return;
+    }
+
+    const resendBtn = event.target.closest("#resendConfirmationBtn, #resendFromLogin");
+    if (resendBtn) {
+      const email = resendBtn.dataset.email;
+      if (!email) return;
+      resendBtn.disabled = true;
+      const originalText = resendBtn.textContent;
+      resendBtn.textContent = "Sending confirmation email...";
+
+      (async () => {
+        const sb = await window.getSupabaseClient();
+        const basePath = window.location.pathname.replace(/[^/]*$/, "");
+        const { error } = await sb.auth.resend({
+          type: "signup",
+          email,
+          options: {
+            emailRedirectTo: `${window.location.origin}${basePath}login.html`
+          }
+        });
+        if (error) throw error;
+        notify("Confirmation email sent! Please check your inbox.");
+        resendBtn.textContent = "✓ Confirmation link sent!";
+        setTimeout(() => {
+          if (resendBtn) {
+            resendBtn.disabled = false;
+            resendBtn.textContent = originalText;
+          }
+        }, 20000);
+      })().catch((err) => {
+        notify(err instanceof Error ? err.message : "Could not resend confirmation email.", true);
+        resendBtn.disabled = false;
+        resendBtn.textContent = originalText;
+      });
       return;
     }
 
@@ -2571,10 +2658,14 @@
           if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
           if (password !== confirm) { showFormError("Passwords do not match."); return; }
 
+          const basePath = window.location.pathname.replace(/[^/]*$/, "");
+          const redirectUrl = `${window.location.origin}${basePath}login.html`;
+
           const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
             email,
             password,
             options: {
+              emailRedirectTo: redirectUrl,
               data: {
                 full_name: name,
                 poetic_name: poeticName,
@@ -2584,13 +2675,31 @@
             }
           });
 
-          if (signUpErr || !signUpData?.user?.id) {
-            showFormError(signUpErr?.message || "Could not create account. Please try again.");
+          if (signUpErr) {
+            showFormError(signUpErr.message || "Could not create account. Please try again.");
+            return;
+          }
+
+          if (Array.isArray(signUpData?.user?.identities) && signUpData.user.identities.length === 0) {
+            showFormError("An account with this email address already exists. Please log in instead.");
+            return;
+          }
+
+          if (!signUpData?.user?.id) {
+            showFormError("Could not create account. Please try again.");
             return;
           }
 
           const sbUserId = signUpData.user.id;
           const cleanHandle = `${poeticName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${sbUserId.slice(0, 6)}`;
+
+          // Check if email confirmation is required (session is null or email_confirmed_at is empty)
+          const requiresConfirmation = !signUpData.session || (!signUpData.user.confirmed_at && !signUpData.user.email_confirmed_at);
+
+          if (requiresConfirmation) {
+            renderEmailConfirmation(email, role);
+            return;
+          }
 
           await sb.from("profiles").upsert({
             id: sbUserId,
@@ -2619,6 +2728,21 @@
         } else {
           const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
           if (signInErr || !signInData?.user) {
+            if (signInErr?.message?.toLowerCase().includes("email not confirmed")) {
+              const errEl = document.getElementById("authError");
+              if (errEl) {
+                errEl.innerHTML = `
+                  <span>Your email address has not been confirmed yet. Please verify your email before logging in.</span>
+                  <div style="margin-top:8px;">
+                    <button type="button" class="panel-link" id="resendFromLogin" data-email="${escapeHTML(email)}" style="font-weight:700;cursor:pointer;">
+                      Resend verification email to ${escapeHTML(email)} →
+                    </button>
+                  </div>
+                `;
+                errEl.classList.add("visible");
+                return;
+              }
+            }
             showFormError(signInErr?.message || "Invalid email or password.");
             return;
           }

@@ -34,7 +34,10 @@
       <div class="sidebar-bottom">
         <div class="admin-card"><div class="admin-avatar">AD</div><div class="admin-copy"><strong>Admin Owner</strong><span>Supabase Studio</span></div><span class="online-dot"></span></div>
         <p class="local-note connected" id="dbStatusIndicator"><span aria-hidden="true">●</span> Connected to Database: Supabase</p>
-        <button class="button secondary compact" data-action="lock-admin" style="width:100%;margin-top:8px;">🔒 Lock Studio</button>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="button secondary compact" data-action="lock-admin" style="flex:1;" title="Lock Studio and require login">🔒 Lock</button>
+          <button class="button secondary compact logout-button" data-action="logout-admin" id="sidebarLogoutBtn" style="flex:1;color:var(--red);border-color:#f9d3d7;" title="Sign out of Admin Studio">🚪 Log Out</button>
+        </div>
       </div>
     </aside>
 
@@ -45,7 +48,18 @@
         <div class="topbar-spacer"></div>
         <label class="global-search"><span aria-hidden="true">⌕</span><input id="globalSearch" type="search" placeholder="Search this section..." aria-label="Search current section"></label>
         <button class="icon-button notification-button" type="button" data-view="messages" aria-label="Open messages">♧<i></i></button>
-        <div class="top-admin"><span class="admin-avatar small">AD</span><span>Admin Owner</span><span class="chevron">⌄</span></div>
+        <div class="top-admin-wrapper" style="position:relative;">
+          <div class="top-admin" id="topAdminTrigger" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" style="cursor:pointer;" title="Click for profile & logout"><span class="admin-avatar small">AD</span><span>Admin Owner</span><span class="chevron">⌄</span></div>
+          <div class="top-admin-menu" id="topAdminMenu" style="display:none;position:absolute;right:0;top:calc(100% + 8px);width:220px;background:#ffffff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(38,35,73,0.12);padding:8px;z-index:20;">
+            <div style="padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:6px;">
+              <strong id="topAdminMenuName" style="display:block;font-size:12px;">Admin Owner</strong>
+              <small id="topAdminMenuEmail" style="display:block;color:var(--muted);font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">admin@example.com</small>
+            </div>
+            <button class="nav-item" type="button" data-view="security" style="width:100%;height:34px;font-size:11px;"><span class="nav-icon">🔒</span>Security Settings</button>
+            <button class="nav-item logout-menu-item" type="button" data-action="logout-admin" style="width:100%;height:34px;font-size:11px;color:var(--red);"><span class="nav-icon" style="color:var(--red);">🚪</span>Log Out</button>
+          </div>
+        </div>
+        <button class="button secondary compact logout-button" data-action="logout-admin" id="topbarLogoutBtn" style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;color:var(--red);border-color:#f9d3d7;" title="Sign out of Admin Studio"><span aria-hidden="true">🚪</span> Log Out</button>
       </header>
       <main class="content" id="content" tabindex="-1"></main>
       <footer class="page-footer">Qalamly Admin Studio <span>·</span> Direct Supabase Database Interface</footer>

@@ -441,3 +441,34 @@ a { color: inherit; text-decoration: none; }
   color: var(--muted);
   margin-top: 4px;
 }
+
+/* Logout & Admin Top Menu Styles */
+.logout-button {
+  transition: all 0.16s ease;
+}
+.logout-button:hover {
+  background: var(--red-pale) !important;
+  color: var(--red) !important;
+  border-color: #f9d3d7 !important;
+}
+.top-admin-menu {
+  animation: fadeInDown 0.16s ease forwards;
+}
+.top-admin-menu .nav-item {
+  color: var(--ink);
+  min-height: 34px;
+  font-size: 11px;
+}
+.top-admin-menu .nav-item:hover {
+  background: #f8f7fc;
+  color: var(--purple-dark);
+}
+.top-admin-menu .logout-menu-item:hover {
+  background: var(--red-pale) !important;
+  color: var(--red) !important;
+}
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
