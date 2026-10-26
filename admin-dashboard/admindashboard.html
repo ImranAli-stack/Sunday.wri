@@ -11,7 +11,11 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
+  <!-- Full-Screen Administrator Authentication & Registration Portal (Protected) -->
+  <div id="adminAuthPortal" class="admin-auth-page"></div>
+
+  <!-- Protected Admin Workspace (Hidden without verified administrator login) -->
+  <div class="app-shell" id="adminDashboardShell" style="display:none;">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="#overview" aria-label="Qalamly admin home">
         <span class="brand-mark">q</span><span>qalamly<span class="brand-period">.</span><small>ADMIN STUDIO</small></span>

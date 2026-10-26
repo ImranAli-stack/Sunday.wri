@@ -198,8 +198,32 @@
     return { registrationAvailable: true, locked: false };
   }
 
+  function renderAuthScreen(html) {
+    const portal = document.getElementById("adminAuthPortal");
+    const shell = document.getElementById("adminDashboardShell");
+    if (shell) shell.style.display = "none";
+    if (portal) {
+      portal.style.display = "grid";
+      portal.innerHTML = html;
+    } else if (content) {
+      content.innerHTML = html;
+    }
+  }
+
+  function showDashboardScreen() {
+    const portal = document.getElementById("adminAuthPortal");
+    const shell = document.getElementById("adminDashboardShell");
+    if (portal) {
+      portal.style.display = "none";
+      portal.innerHTML = "";
+    }
+    if (shell) {
+      shell.style.display = "";
+    }
+  }
+
   function showAdminMfaGate() {
-    content.innerHTML = `
+    renderAuthScreen(`
       <div class="auth-gate-container">
         <div class="auth-icon-badge">🔐</div>
         <div class="eyebrow" style="margin-bottom:6px;">TWO-FACTOR VERIFICATION</div>
@@ -214,7 +238,7 @@
           <p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>
         </form>
       </div>
-    `;
+    `);
   }
 
   async function showAdminAuthGate(errorMessage = "", activeTab = "signin") {
@@ -238,14 +262,14 @@
     }
 
     // Show placeholder while checking registration status
-    content.innerHTML = `
+    renderAuthScreen(`
       <div class="auth-gate-container">
         <div class="auth-icon-badge">🔒</div>
         <div class="eyebrow" style="margin-bottom:6px;">RESTRICTED ACCESS</div>
         <h1 style="font-size:22px;margin:0 0 10px;">Admin Studio Authentication</h1>
         <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 24px;">Connecting to security services...</p>
       </div>
-    `;
+    `);
 
     const regStatus = await fetchAdminRegistrationStatus();
     const isLocked = Boolean(regStatus.locked || regStatus.registrationAvailable === false);
@@ -253,7 +277,7 @@
     let currentTab = activeTab;
 
     function renderAdminEmailConfirmation(email, fullName, redirectUrl) {
-      content.innerHTML = `
+      renderAuthScreen(`
         <div class="auth-gate-container">
           <div class="auth-icon-badge">📬</div>
           <div class="eyebrow" style="margin-bottom:6px;">VERIFICATION REQUIRED</div>
@@ -280,7 +304,7 @@
             </button>
           </div>
         </div>
-      `;
+      `);
 
       document.getElementById("adminBackToSignIn")?.addEventListener("click", () => renderGate("signin"));
       document.getElementById("resendAdminConfirmBtn")?.addEventListener("click", async (e) => {
@@ -308,7 +332,7 @@
 
     function renderGate(tab = currentTab, err = errorMessage, succ = "") {
       currentTab = tab;
-      content.innerHTML = `
+      renderAuthScreen(`
         <div class="auth-gate-container">
           <div class="auth-icon-badge">${tab === "register" ? "⚡" : "🔒"}</div>
           <div class="eyebrow" style="margin-bottom:6px;">${tab === "register" ? "INITIAL SYSTEM SETUP" : "RESTRICTED ACCESS"}</div>
@@ -406,7 +430,7 @@
             `}
           `}
         </div>
-      `;
+      `);
 
       // Event bindings
       document.getElementById("tabSignIn")?.addEventListener("click", () => renderGate("signin"));
@@ -2398,6 +2422,7 @@
 
     const viewButton = event.target.closest("[data-view]");
     if (viewButton) {
+      if (!adminUser) return;
       state.view = viewButton.dataset.view;
       state.search = "";
       if (searchInput) searchInput.value = "";
@@ -2409,6 +2434,7 @@
     // Top Admin profile dropdown toggle
     const trigger = event.target.closest("#topAdminTrigger");
     if (trigger) {
+      if (!adminUser) return;
       const menu = document.getElementById("topAdminMenu");
       if (menu) {
         const isHidden = menu.style.display === "none" || !menu.style.display;
@@ -2446,6 +2472,7 @@
         })().catch((err) => showToast(err instanceof Error ? err.message : "Could not sign out.", true));
         return;
       }
+      if (!adminUser) return;
       performAction(action, id);
     }
   });
@@ -2552,6 +2579,7 @@
   });
 
   document.getElementById("menuToggle")?.addEventListener("click", () => {
+    if (!adminUser) return;
     document.getElementById("sidebar")?.classList.toggle("open");
   });
 
@@ -2586,10 +2614,13 @@
     try {
       const auth = await checkAdminAuth();
       if (!auth.authenticated) {
+        const shell = document.getElementById("adminDashboardShell");
+        if (shell) shell.style.display = "none";
         if (auth.mfaRequired) showAdminMfaGate();
         else showAdminAuthGate(auth.unauthorized ? "This account is not authorized to access the admin dashboard." : "");
         return;
       }
+      showDashboardScreen();
       if (!adminInitialized) {
         adminInitialized = true;
         updateAdminHeaderDisplay();
@@ -2597,6 +2628,8 @@
         fetchAllFromDatabase();
       }
     } catch (err) {
+      const shell = document.getElementById("adminDashboardShell");
+      if (shell) shell.style.display = "none";
       showAdminAuthGate(err instanceof Error ? err.message : "Could not verify administrator access.");
     } finally {
       initializing = false;

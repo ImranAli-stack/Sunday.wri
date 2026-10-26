@@ -315,14 +315,26 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* --- Admin Auth Gate & One-Time Registration Styles --- */
+.admin-auth-page {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 12%, #eeeafb 0%, #f6f7fb 60%);
+  padding: 40px 16px;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow-y: auto;
+}
 .auth-gate-container {
-  max-width: 480px;
-  margin: 50px auto;
-  padding: 32px;
+  width: min(480px, 100%);
+  margin: auto;
+  padding: 34px 30px;
   background: #ffffff;
   border-radius: 20px;
   border: 1px solid var(--line);
-  box-shadow: 0 16px 45px rgba(38, 35, 73, 0.08);
+  box-shadow: 0 20px 50px rgba(38, 35, 73, 0.09);
   text-align: center;
 }
 .auth-icon-badge {
