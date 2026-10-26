@@ -1,2532 +1,2524 @@
-    (() => {
-      "use strict";
+(() => {
+  "use strict";
 
-      const SUPABASE_URL = window.SUPABASE_URL;
-      const getSupabaseClient = window.getSupabaseClient;
+  const STORAGE = {
+    users: "qalamly.users.v3",
+    posts: "qalamly.posts.v3",
+    session: "qalamly.session.v3",
+    bookmarks: "qalamly.bookmarks.v3",
+    likes: "qalamly.likes.v3",
+    comments: "qalamly.comments.v3",
+    follows: "qalamly.follows.v3",
+    notifications: "qalamly.notifications.v3",
+    messages: "qalamly.messages.v3",
+    competitions: "qalamly.competitions.v3"
+  };
 
-      const STORAGE = {
-        users: "sunday.users.v1",
-        posts: "sunday.posts.v1",
-        session: "sunday.session.v1"
+  // Purge any old demo localStorage keys from earlier versions
+  [
+    "sunday.users.v1", "sunday.posts.v1", "sunday.session.v1", "sunday.bookmarks.v1",
+    "qalamly.users.v2", "qalamly.posts.v2", "qalamly.session.v2", "qalamly.bookmarks.v2",
+    "qalamly.likes.v2", "qalamly.comments.v2", "qalamly.follows.v2", "qalamly.notifications.v2",
+    "qalamly.messages.v2"
+  ].forEach((legacyKey) => {
+    try { localStorage.removeItem(legacyKey); } catch {}
+  });
+
+  const STORY_CATEGORIES = [
+    "Life", "Lifestyle", "Love", "Skill", "Creativity",
+    "Poetry", "Story", "Short story", "Book review",
+    "Story review", "Fiction", "Article", "Other"
+  ];
+
+  const STORY_LANGUAGES = [
+    "English", "Urdu", "Roman Urdu", "Balochi", "Roman Balochi"
+  ];
+
+  const RTL_LANGUAGES = new Set(["Urdu", "Balochi"]);
+
+  const feed = document.querySelector(".feed");
+  const layout = document.querySelector(".layout");
+  const toast = document.getElementById("toast");
+  const authLink = document.getElementById("authLink");
+  const headerProfile = document.getElementById("headerProfile");
+  let toastTimer;
+
+  // --- STORAGE & STATE HELPERS ---
+  function notify(message) {
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2800);
+  }
+
+  function readStore(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) {
+      console.error("Storage read error:", e);
+      return fallback;
+    }
+  }
+
+  function writeStore(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+      console.error("Storage write error:", e);
+      notify("Browser storage is full or restricted.");
+    }
+  }
+
+  function isUUID(val) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val || ""));
+  }
+
+  function publicImageUrl(imagePath) {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("data:") || imagePath.startsWith("http")) return imagePath;
+    const base = window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
+    return `${base}/storage/v1/object/public/post-images/${imagePath}`;
+  }
+
+  // --- IMAGE COMPRESSION HELPER ---
+  function compressImageFile(file, maxWidth = 1000, quality = 0.78) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read image file."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("Invalid image format."));
+        img.onload = () => {
+          const scale = Math.min(1, maxWidth / (img.width || maxWidth));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(String(reader.result || ""));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.src = String(reader.result || "");
       };
-      const STORY_CATEGORIES = ["Life", "Lifestyle", "Love", "Skill", "Creativity", "Poetry", "Other"];
-      const LEGACY_CATEGORY_GROUPS = {
-        Life: ["travel", "wellness"],
-        Skill: ["design"]
-      };
-      const feed = document.querySelector(".feed");
-      const layout = document.querySelector(".layout");
-      const originalHome = feed.innerHTML;
-      const toast = document.getElementById("toast");
-      const authLink = document.getElementById("authLink");
-      const headerProfile = document.getElementById("headerProfile");
-      let toastTimer;
-      let activeDashboardTab = "all";
-      let likedPostIds = new Set();
-      let followedUserIds = new Set();
-      let friendUserIds = new Set();
-      let notificationUserId = "";
-      let notificationChannel;
-      let notificationItems = [];
-      let notificationHistory = [];
-      let notificationReadIds = new Set();
-      let notificationActors = new Map();
+      reader.readAsDataURL(file);
+    });
+  }
 
-      function notify(message) {
-        toast.classList.remove("notification-toast");
-        toast.replaceChildren(document.createTextNode(message));
-        toast.setAttribute("role", "status");
-        toast.setAttribute("aria-live", "polite");
-        clearTimeout(toastTimer);
-        toast.classList.add("show");
-        toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
-      }
+  // =========================================================================
+  // SUPABASE CLOUD SYNCHRONIZATION (ALL 8 TABLES + STORAGE + AUTH)
+  // =========================================================================
+  async function hydrateFromSupabase() {
+    if (typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data: sessionRes } = await sb.auth.getSession();
+      const sbUser = sessionRes?.session?.user || null;
 
-      function notifyNotification(notification) {
-        const user = currentUser();
-        if (!user || !notification.id) return;
-        const key = `sunday.notification-toasts.${user.id}`;
-        const storedIds = readStore(key, []);
-        const shownIds = Array.isArray(storedIds) ? storedIds : [];
-        if (shownIds.includes(notification.id)) return;
-        try {
-          writeStore(key, [...shownIds, notification.id]);
-        } catch (error) {
-          console.error("Unable to save notification toast state.", error);
-        }
-        toast.classList.add("notification-toast");
-        toast.setAttribute("role", "alert");
-        toast.setAttribute("aria-live", "assertive");
-        toast.replaceChildren(document.createTextNode(notificationMessage(notification)));
-        const link = document.createElement("a");
-        link.href = "notifications.html";
-        link.className = "notification-toast-link";
-        link.textContent = "View notifications";
-        toast.appendChild(link);
-        clearTimeout(toastTimer);
-        toast.classList.add("show");
-        toastTimer = setTimeout(() => {
-          toast.classList.remove("show", "notification-toast");
-          toast.replaceChildren();
-        }, 6000);
-      }
+      // 1. Fetch public profiles (`profiles`)
+      const { data: profRows } = await sb
+        .from("profiles")
+        .select("id, full_name, peotic_name, username, bio, avatar_url, role, stories_count, followers_count, following_count");
 
-      function readStore(key, fallback) {
-        try {
-          const value = localStorage.getItem(key);
-          return value === null ? fallback : JSON.parse(value);
-        } catch (error) {
-          console.error(`Unable to read ${key} from browser storage.`, error);
-          notify("Saved browser data could not be read. Try clearing this site's local data.");
-          return fallback;
-        }
-      }
-
-      function writeStore(key, value) {
-        try {
-          localStorage.setItem(key, JSON.stringify(value));
-        } catch (error) {
-          console.error(`Unable to save ${key} to browser storage.`, error);
-          throw new Error("Your browser could not save this change. Check available storage and try again.");
-        }
-      }
-
-      function users() {
-        const value = readStore(STORAGE.users, []);
-        return Array.isArray(value) ? value : [];
-      }
-
-      function posts() {
-        const value = readStore(STORAGE.posts, []);
-        return Array.isArray(value) ? value : [];
-      }
-
-      function updatePostCommentCount(postId, count) {
-        const savedPosts = posts();
-        const post = savedPosts.find((item) => item.id === postId);
-        if (post) {
-          post.commentCount = count;
-          try {
-            writeStore(STORAGE.posts, savedPosts);
-          } catch (error) {
-            console.error("Unable to save the updated comment count locally.", error);
-            notify("Your comment was posted, but the story count may not refresh until the next page load.");
-          }
-        }
-
-        document.querySelectorAll(".post-card[data-post-id]").forEach((card) => {
-          if (card.dataset.postId !== postId) return;
-          card.dataset.comments = String(count);
-          const commentCount = card.querySelector(".comment-count");
-          if (commentCount) commentCount.textContent = String(count);
+      if (Array.isArray(profRows)) {
+        const mappedUsers = profRows.map((r) => {
+          const handleRaw = r.username || "writer";
+          return {
+            id: r.id,
+            name: r.full_name || "Writer",
+            poeticName: r.peotic_name || r.full_name || "Writer",
+            handle: handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`,
+            bio: r.bio || "Writer and reader on Qalamly.",
+            role: (r.role || "both").toLowerCase(),
+            followers: Number(r.followers_count ?? 0),
+            following: Number(r.following_count ?? 0)
+          };
         });
-        refreshProfileEngagementForPost(postId);
+        writeStore(STORAGE.users, mappedUsers);
       }
 
-      function updatePostLikeCount(postId, count, liked) {
-        const savedPosts = posts();
-        const post = savedPosts.find((item) => item.id === postId);
-        if (post) {
-          post.likes = count;
-          try {
-            writeStore(STORAGE.posts, savedPosts);
-          } catch (error) {
-            console.error("Unable to save the updated like count locally.", error);
-          }
+      // Sync active Supabase Auth session
+      if (sbUser) {
+        const allU = users();
+        if (!allU.some((u) => u.id === sbUser.id)) {
+          const meta = sbUser.user_metadata || {};
+          const fallbackUser = {
+            id: sbUser.id,
+            name: meta.full_name || sbUser.email?.split("@")[0] || "Writer",
+            poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+            email: sbUser.email || "",
+            role: (meta.role || "both").toLowerCase(),
+            handle: `@${(sbUser.email || "writer").split("@")[0]}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+          writeStore(STORAGE.users, [...allU, fallbackUser]);
         }
-
-        document.querySelectorAll(".post-card[data-post-id]").forEach((card) => {
-          if (card.dataset.postId !== postId) return;
-          card.dataset.likes = String(count);
-          const countSpan = card.querySelector(".like-count");
-          if (countSpan) countSpan.textContent = String(count);
-          const button = card.querySelector(".like-button");
-          if (button) updateLikeButton(button, liked);
-        });
-
-        document.querySelectorAll("[data-like-detail]").forEach((button) => {
-          if (button.dataset.likeDetail !== postId) return;
-          button.dataset.likeCount = String(count);
-          updateLikeButton(button, liked);
-        });
-        if (liked) likedPostIds.add(postId);
-        else likedPostIds.delete(postId);
-        renderTrendingPosts();
-        refreshProfileEngagementForPost(postId);
+        writeStore(STORAGE.session, sbUser.id);
+      } else {
+        writeStore(STORAGE.session, null);
       }
 
-      function refreshProfileEngagementForPost(postId) {
-        const user = currentUser();
-        const post = posts().find((item) => item.id === postId);
-        if (user && post?.authorId === user.id) loadProfileEngagementCounts(user);
-      }
+      // 2. Fetch posts (`posts`) & likes count (`likes_table`)
+      const [{ data: postRows }, { data: likeRows }] = await Promise.all([
+        sb.from("posts").select("id, created_at, user_id, category, content, author_name, status, title, image_path, language").order("created_at", { ascending: false }),
+        sb.from("likes_table").select("post_id, user_id")
+      ]);
 
-      function updateLikeButton(button, liked) {
-        button.setAttribute("aria-pressed", String(liked));
-        button.setAttribute("aria-label", liked ? "Unlike this story" : "Like this story");
-        button.classList.toggle("liked", liked);
-        button.textContent = button.hasAttribute("data-like-detail")
-          ? `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"} · ${button.dataset.likeCount || "0"}`
-          : `${liked ? "♥" : "♡"} ${liked ? "Unlike" : "Like"}`;
-      }
-
-      async function refreshLikedPosts() {
-        const user = currentUser();
-        if (!user) {
-          likedPostIds = new Set();
-          renderLikeStates();
-          return;
-        }
-
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session is no longer active. Log in again to view your likes.");
-          }
-          const { data, error } = await client
-            .from("likes_table")
-            .select("post_id")
-            .eq("user_id", authData.user.id);
-          if (error) throw error;
-          if (currentUser()?.id !== user.id) return;
-          likedPostIds = new Set(data.map((like) => String(like.post_id)));
-          renderLikeStates();
-        } catch (error) {
-          console.error("Unable to load your liked stories.", error);
-          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
-            ? error.message
-            : "Your liked stories could not be loaded. Please refresh and try again.");
-        }
-      }
-
-      function renderLikeStates() {
-        document.querySelectorAll(".like-button[data-post-id], [data-like-detail]").forEach((button) => {
-          const postId = button.dataset.postId || button.dataset.likeDetail;
-          const card = button.closest(".post-card");
-          if (button.hasAttribute("data-like-detail")) {
-            button.dataset.likeCount = String(posts().find((post) => post.id === postId)?.likes || 0);
-          }
-          if (card) {
-            button.dataset.likeCount = card.dataset.likes || "0";
-          }
-          updateLikeButton(button, likedPostIds.has(postId));
-        });
-      }
-
-      async function handleLike(postId, button) {
-        const user = currentUser();
-        if (!user) {
-          notify("Please log in to like stories.");
-          return;
-        }
-
-        button.disabled = true;
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session is no longer active. Log in again before liking stories.");
-          }
-
-          const { data: existingLike, error: fetchError } = await client
-            .from("likes_table")
-            .select("id")
-            .eq("post_id", postId)
-            .eq("user_id", authData.user.id)
-            .maybeSingle();
-          if (fetchError) throw fetchError;
-
-          const wasLiked = Boolean(existingLike);
-          if (wasLiked) {
-            const { error } = await client
-              .from("likes_table")
-              .delete()
-              .eq("id", existingLike.id)
-              .eq("user_id", authData.user.id);
-            if (error) throw error;
-          } else {
-            const { error } = await client
-              .from("likes_table")
-              .insert({ post_id: postId, user_id: authData.user.id });
-            if (error) throw error;
-          }
-
-          const savedPost = posts().find((post) => post.id === postId);
-          let likeCount = Math.max(0, Number(savedPost?.likes) || 0) + (wasLiked ? -1 : 1);
-          try {
-            const { count, error: countError } = await client
-              .from("likes_table")
-              .select("id", { count: "exact", head: true })
-              .eq("post_id", postId);
-            if (countError) throw countError;
-            if (count !== null) likeCount = count;
-          } catch (error) {
-            console.error("Unable to refresh the like count after updating a like.", error);
-          }
-          updatePostLikeCount(postId, likeCount, !wasLiked);
-        } catch (error) {
-          console.error("Failed to update like in Supabase:", error);
-          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
-            ? error.message
-            : "Could not update like. Please try again.");
-        } finally {
-          button.disabled = false;
-        }
-      }
-
-      function normalizeRemotePost(post) {
-        const likesCount = Array.isArray(post.likes_table) && post.likes_table[0]
-          ? Number(post.likes_table[0].count)
-          : Number(post.likes) || 0;
-        const commentsCount = Array.isArray(post.comments) && post.comments[0]
-          ? Number(post.comments[0].count)
-          : Number(post.commentCount) || 0;
-        return {
-          id: String(post.id),
-          title: post.title || "Untitled story",
-          category: post.category || "Lifestyle",
-          body: post.content || post.body || "",
-          authorId: post.user_id || post.author_id || "",
-          authorName: post.author_name || post.full_name || "Writer",
-          status: post.status || "published",
-          likes: likesCount,
-          commentCount: commentsCount,
-          imagePath: post.image_path || "",
-          createdAt: post.created_at || post.createdAt || new Date().toISOString()
-        };
-      }
-
-      function postImageUrl(imagePath) {
-        if (!imagePath) return "";
-        const encodedPath = imagePath.split("/").map(encodeURIComponent).join("/");
-        return `${SUPABASE_URL}/storage/v1/object/public/post-images/${encodedPath}`;
-      }
-
-      function safePostImageUrl(imagePath) {
-        const imageUrl = postImageUrl(imagePath);
-        return imageUrl.startsWith(`${SUPABASE_URL}/storage/v1/object/public/post-images/`) ? imageUrl : "";
-      }
-
-      async function syncRemotePosts() {
-        writeStore(STORAGE.posts, posts().filter((post) => post.status === "draft"));
-        const { data, error } = await (await getSupabaseClient())
-          .from("posts")
-          .select("*, likes_table(count), comments(count)")
-          .eq("status", "published")
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-
-        const remotePosts = data.map(normalizeRemotePost);
-        const localDrafts = posts().filter((post) => post.status === "draft");
-        writeStore(STORAGE.posts, [...localDrafts, ...remotePosts]);
-      }
-
-      async function deleteUserPost(postId) {
-        const user = currentUser();
-        const post = posts().find((item) => item.id === postId);
-        if (!user || !post || post.authorId !== user.id) {
-          throw new Error("You can only delete stories from your own account.");
-        }
-
-        if (post.status === "published") {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session is no longer active. Log in again before deleting.");
-          }
-          const { data, error } = await client.from("posts")
-            .delete()
-            .eq("id", post.id)
-            .eq("user_id", authData.user.id)
-            .select("id")
-            .maybeSingle();
-          if (error) throw error;
-          if (!data) throw new Error("The story could not be deleted. It may no longer exist or you may not own it.");
-        }
-
-        writeStore(STORAGE.posts, posts().filter((item) => item.id !== post.id));
-        const savedBookmarks = readStore("sunday.bookmarks.v1", {});
-        const bookmarks = savedBookmarks && typeof savedBookmarks === "object" && !Array.isArray(savedBookmarks)
-          ? savedBookmarks
-          : {};
-        Object.keys(bookmarks).forEach((key) => {
-          if (Array.isArray(bookmarks[key])) bookmarks[key] = bookmarks[key].filter((id) => id !== post.id);
-        });
-        writeStore("sunday.bookmarks.v1", bookmarks);
-
-        if (routeParts().path === "post") {
-          navigate("dashboard.html");
-        } else if (routeParts().path === "dashboard") {
-          renderDashboard(activeDashboardTab);
-        } else if (routeParts().path === "home") {
-          showHome();
-        }
-        notify("Your story has been deleted");
-      }
-
-      function currentUser() {
-        const id = readStore(STORAGE.session, null);
-        return id ? users().find((user) => user.id === id) || null : null;
-      }
-
-      function displayName(user) {
-        return user?.poeticName || user?.name || "Writer";
-      }
-
-      function publicProfileLink(userId, name, className = "") {
-        const safeName = escapeHTML(name);
-        const profileUrl = userId
-          ? `profile.html?id=${encodeURIComponent(userId)}`
-          : `profile.html?name=${encodeURIComponent(name)}`;
-        const classes = ["profile-name-link", className].filter(Boolean).join(" ");
-        return `<a class="${classes}" href="${profileUrl}">${safeName}</a>`;
-      }
-
-      function canWrite(user) {
-        return user && (user.role === "writer" || user.role === "both" || !user.role);
-      }
-
-      function bookmarkList() {
-        const all = readStore("sunday.bookmarks.v1", {});
-        const user = currentUser();
-        return Array.isArray(all[user?.id || "guest"]) ? all[user?.id || "guest"] : [];
-      }
-
-      function saveBookmark(id, saved) {
-        const all = readStore("sunday.bookmarks.v1", {});
-        const user = currentUser();
-        const key = user?.id || "guest";
-        const values = Array.isArray(all[key]) ? all[key] : [];
-        all[key] = saved ? [...new Set([...values, id])] : values.filter((item) => item !== id);
-        writeStore("sunday.bookmarks.v1", all);
-      }
-
-      function followButtonMarkup(authorId, user = currentUser()) {
-        if (!authorId || user?.id === authorId) return "";
-        return `<button class="follow-button author-follow-button" type="button" data-follow-user="${escapeHTML(authorId)}" aria-pressed="false">Follow</button>`;
-      }
-
-      function shareControlMarkup(postId, title) {
-        return `<div class="share-control">
-          <button class="icon-button share-button" type="button" data-share-post="${escapeHTML(postId)}" data-share-title="${escapeHTML(title)}" aria-label="Share this story" aria-expanded="false" aria-controls="shareMenu-${escapeHTML(postId)}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="m8.7 10.7 6.6-4.4m-6.6 7 6.6 4.4"></path></svg>
-          </button>
-          <div class="share-menu" id="shareMenu-${escapeHTML(postId)}" hidden role="group" aria-label="Share this story"></div>
-        </div>`;
-      }
-
-      function populateShareMenu(button) {
-        const menu = button.closest(".share-control")?.querySelector(".share-menu");
-        if (!menu) return;
-        const postUrl = new URL("post.html", window.location.href);
-        postUrl.searchParams.set("id", button.dataset.sharePost);
-        const url = postUrl.href;
-        const title = button.dataset.shareTitle || "A story from Sunday";
-        const shareOptions = [
-          ["WhatsApp", `https://api.whatsapp.com/send?${new URLSearchParams({ text: `${title} ${url}` })}`],
-          ["Facebook", `https://www.facebook.com/sharer/sharer.php?${new URLSearchParams({ u: url })}`],
-          ["Twitter / X", `https://twitter.com/intent/tweet?${new URLSearchParams({ url, text: title })}`]
-        ];
-        menu.replaceChildren(...shareOptions.map(([label, href]) => {
-          const link = document.createElement("a");
-          link.href = href;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.textContent = label;
-          return link;
-        }));
-      }
-
-      function updateFollowButtons(followingIds) {
-        followedUserIds = new Set(followingIds);
-        document.querySelectorAll("[data-follow-user]").forEach((button) => {
-          const targetId = button.dataset.followUser;
-          const following = followedUserIds.has(targetId);
-          const friends = following && friendUserIds.has(targetId);
-          button.setAttribute("aria-pressed", String(following));
-          button.setAttribute("aria-label", friends ? "Friends" : following ? "Unfollow" : "Follow");
-          button.classList.toggle("following", following);
-          button.classList.toggle("friends", friends);
-          button.textContent = friends ? "Friends" : following ? "Following" : "Follow";
-        });
-      }
-
-      async function refreshFollowState() {
-        const user = currentUser();
-        if (!user) {
-          friendUserIds = new Set();
-          updateFollowButtons(new Set());
-          return;
-        }
-        const client = await getSupabaseClient();
-        const { data: authData, error: authError } = await client.auth.getUser();
-        if (authError) throw authError;
-        if (!authData.user || authData.user.id !== user.id) {
-          throw new Error("Your Supabase session has expired. Log in again to view followed writers.");
-        }
-        const { data, error } = await client.from("follows").select("follower_id, following_id");
-        if (error) throw error;
-        if (currentUser()?.id !== user.id) return;
-        const followingIds = new Set(data
-          .filter((follow) => follow.follower_id === user.id)
-          .map((follow) => follow.following_id));
-        friendUserIds = new Set(data
-          .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
-          .map((follow) => follow.follower_id));
-        updateFollowButtons(followingIds);
-      }
-
-      async function renderFollowSuggestions() {
-        const container = document.getElementById("writerSuggestions");
-        if (!container) return;
-        const user = currentUser();
-        const writers = [...new Map(posts()
-          .filter((post) => post.status === "published" && post.authorId && post.authorName)
-          .filter((post) => !user || post.authorId !== user.id)
-          .map((post) => [post.authorId, post])).values()].slice(0, 3);
-
-        let followingIds = new Set();
-        if (user) {
-          try {
-            const client = await getSupabaseClient();
-            const { data: authData, error: authError } = await client.auth.getUser();
-            if (authError) throw authError;
-            if (!authData.user || authData.user.id !== user.id) {
-              throw new Error("Your Supabase session has expired. Log in again to follow writers.");
+      const likeCountsByPost = new Map();
+      const userLikesMap = {};
+      if (Array.isArray(likeRows)) {
+        likeRows.forEach((lr) => {
+          if (!lr.post_id) return;
+          likeCountsByPost.set(lr.post_id, (likeCountsByPost.get(lr.post_id) || 0) + 1);
+          if (lr.user_id) {
+            const list = Array.isArray(userLikesMap[lr.user_id]) ? userLikesMap[lr.user_id] : [];
+            if (!list.includes(lr.post_id)) {
+              userLikesMap[lr.user_id] = [...list, lr.post_id];
             }
-            const { data, error } = await client.from("follows")
-              .select("follower_id, following_id");
-            if (error) throw error;
-            followingIds = new Set(data.filter((follow) => follow.follower_id === user.id)
-              .map((follow) => follow.following_id));
-            friendUserIds = new Set(data
-              .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
-              .map((follow) => follow.follower_id));
-          } catch (error) {
-            console.error("Unable to load followed writers.", error);
-            if (!container.isConnected) return;
-            container.innerHTML = '<p class="sidebar-promo-copy">Following could not be loaded. Please refresh and try again.</p>';
-            return;
           }
-        }
-
-        if (!writers.length) {
-          container.innerHTML = '<p class="sidebar-promo-copy">No other writers to follow yet. Check back after more stories are published.</p>';
-          updateFollowButtons(followingIds);
-          return;
-        }
-
-        container.innerHTML = writers.map((writer) => {
-          const following = followingIds.has(writer.authorId);
-          const button = user
-            ? `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`
-            : `<button class="follow-button" type="button" data-follow-user="${escapeHTML(writer.authorId)}" aria-pressed="false">Follow</button>`;
-          return `<div class="person"><div class="avatar purple">${escapeHTML(initials(writer.authorName))}</div><div class="person-info"><strong>${publicProfileLink(writer.authorId, writer.authorName)}</strong><span>${escapeHTML(writer.category)} writer</span></div>${button}</div>`;
-        }).join("");
-        updateFollowButtons(followingIds);
-      }
-
-      async function toggleFollow(followButton) {
-        const user = currentUser();
-        if (!user) {
-          sessionStorage.setItem("sunday.next", "home");
-          navigate("#login");
-          return;
-        }
-        const targetId = followButton.dataset.followUser;
-        if (!targetId || targetId === user.id) return;
-
-        const isFollowing = followedUserIds.has(targetId) || followButton.getAttribute("aria-pressed") === "true";
-        const targetButtons = () => [...document.querySelectorAll("[data-follow-user]")]
-          .filter((button) => button.dataset.followUser === targetId);
-        const previousFollowingIds = new Set(followedUserIds);
-        const previousFriendUserIds = new Set(friendUserIds);
-        const updateButtons = (following) => {
-          if (following) followedUserIds.add(targetId);
-          else followedUserIds.delete(targetId);
-          if (!following) friendUserIds.delete(targetId);
-          else if (previousFriendUserIds.has(targetId)) friendUserIds.add(targetId);
-          targetButtons().forEach((button) => {
-            const friends = following && friendUserIds.has(targetId);
-            button.setAttribute("aria-pressed", String(following));
-            button.setAttribute("aria-label", friends ? "Friends" : following ? "Unfollow" : "Follow");
-            button.classList.toggle("following", following);
-            button.classList.toggle("friends", friends);
-            button.textContent = friends ? "Friends" : following ? "Following" : "Follow";
-          });
-        };
-        targetButtons().forEach((button) => { button.disabled = true; });
-        updateButtons(!isFollowing);
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to follow writers.");
-          }
-
-          let becameFriends = false;
-          if (isFollowing) {
-            const { error } = await client.from("follows")
-              .delete()
-              .eq("follower_id", user.id)
-              .eq("following_id", targetId);
-            if (error) throw error;
-          } else {
-            const { data: reciprocal, error: reciprocalError } = await client.from("follows")
-              .select("follower_id")
-              .eq("follower_id", targetId)
-              .eq("following_id", user.id)
-              .maybeSingle();
-            if (reciprocalError) throw reciprocalError;
-            const { error } = await client.from("follows")
-              .insert({ follower_id: user.id, following_id: targetId });
-            if (error) throw error;
-            if (reciprocal) friendUserIds.add(targetId);
-            becameFriends = Boolean(reciprocal);
-            updateButtons(true);
-          }
-
-          notify(isFollowing ? "You unfollowed this writer" : becameFriends ? "You’re now friends" : "You’re now following this writer");
-          loadHeaderFollowCounts(user);
-          if (routeParts().path === "dashboard") renderDashboard(activeDashboardTab);
-        } catch (error) {
-          followedUserIds = previousFollowingIds;
-          friendUserIds = previousFriendUserIds;
-          updateButtons(isFollowing);
-          console.error("Unable to update followed writers.", error);
-          notify(error instanceof Error ? error.message : "Following could not be updated.");
-        } finally {
-          targetButtons().forEach((button) => { button.disabled = false; });
-        }
-      }
-
-      function setupSearch() {
-        const input = document.getElementById("searchInput");
-        if (!input) return;
-
-        const searchBox = input.closest(".search-box");
-        const wrapper = document.createElement("div");
-        wrapper.className = "search-container";
-        searchBox.parentNode.insertBefore(wrapper, searchBox);
-        wrapper.appendChild(searchBox);
-
-        const results = document.createElement("div");
-        results.className = "search-results";
-        results.id = "searchResults";
-        results.hidden = true;
-        results.setAttribute("role", "region");
-        results.setAttribute("aria-label", "Search results");
-        wrapper.appendChild(results);
-        input.setAttribute("aria-controls", results.id);
-        input.placeholder = "Search writers and stories...";
-        input.setAttribute("aria-label", "Search writers and stories");
-        input.setAttribute("aria-expanded", "false");
-
-        let debounceTimer;
-        let requestId = 0;
-        const close = () => {
-          results.hidden = true;
-          input.setAttribute("aria-expanded", "false");
-        };
-        const showMessage = (message, isError = false) => {
-          results.innerHTML = `<p class="search-message${isError ? " search-error" : ""}" role="${isError ? "alert" : "status"}">${escapeHTML(message)}</p>`;
-          results.hidden = false;
-          input.setAttribute("aria-expanded", "true");
-        };
-        const renderResults = (writers, matchingPosts) => {
-          const writerSection = writers.length
-            ? `<section class="search-result-section"><h2>Writers</h2>${writers.map((writer) => {
-              const isSelf = writer.id === currentUser()?.id;
-              const following = writer.following;
-              const followControl = isSelf
-                ? ""
-                : `<button class="follow-button${following ? " following" : ""}" type="button" data-follow-user="${escapeHTML(writer.id)}" aria-pressed="${following}">${following ? "Following" : "Follow"}</button>`;
-              return `<div class="search-person"><span class="avatar purple">${escapeHTML(initials(writer.name))}</span>${publicProfileLink(writer.id, writer.name, "search-person-name")}${followControl}</div>`;
-            }).join("")}</section>`
-            : "";
-          const postSection = matchingPosts.length
-            ? `<section class="search-result-section"><h2>Stories</h2>${matchingPosts.map((post) => `<div class="search-post"><a href="post.html?id=${encodeURIComponent(post.id)}"><strong>${escapeHTML(post.title)}</strong></a><span>By ${publicProfileLink(post.authorId, post.authorName)} · ${escapeHTML(post.category)}</span></div>`).join("")}</section>`
-            : "";
-          if (!writerSection && !postSection) {
-            showMessage("No matching writers or stories found.");
-            return;
-          }
-          results.innerHTML = `${writerSection}${postSection}`;
-          updateFollowButtons(followedUserIds);
-          results.hidden = false;
-          input.setAttribute("aria-expanded", "true");
-        };
-
-        const runSearch = async (query, currentRequest) => {
-          const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-          const pattern = `%${escapedQuery}%`;
-          try {
-            const client = await getSupabaseClient();
-            const columns = ["title", "content", "author_name"];
-            const responses = await Promise.all(columns.map((column) => client.from("posts")
-              .select("*")
-              .eq("status", "published")
-              .ilike(column, pattern)
-              .limit(8)));
-            const failedResponse = responses.find((response) => response.error);
-            if (failedResponse) throw failedResponse.error;
-            if (currentRequest !== requestId) return;
-
-            const remotePosts = [...new Map(responses.flatMap((response) => response.data || [])
-              .map((post) => [String(post.id), post])).values()].map(normalizeRemotePost);
-            const matchingPosts = remotePosts
-              .filter((post) => post.title.toLowerCase().includes(query) || post.body.toLowerCase().includes(query))
-              .slice(0, 6);
-            const writersById = new Map();
-            [...posts().filter((post) => post.status === "published"), ...remotePosts].forEach((post) => {
-              if (!post.authorId || post.authorId === currentUser()?.id) return;
-              if (!post.authorName.toLowerCase().includes(query)) return;
-              writersById.set(post.authorId, { id: post.authorId, name: post.authorName });
-            });
-            users().forEach((user) => {
-              const name = displayName(user);
-              if (user.id !== currentUser()?.id && (name.toLowerCase().includes(query) || user.name.toLowerCase().includes(query))) {
-                writersById.set(user.id, { id: user.id, name });
-              }
-            });
-
-            const writers = [...writersById.values()].slice(0, 6);
-            const user = currentUser();
-            if (user && writers.length) {
-              const { data: authData, error: authError } = await client.auth.getUser();
-              if (authError) throw authError;
-              if (!authData.user || authData.user.id !== user.id) {
-                throw new Error("Your Supabase session has expired. Log in again to search followed writers.");
-              }
-              const { data: follows, error: followsError } = await client.from("follows")
-                .select("follower_id, following_id");
-              if (followsError) throw followsError;
-              const followingIds = new Set((follows || [])
-                .filter((follow) => follow.follower_id === user.id)
-                .map((follow) => follow.following_id));
-              followedUserIds = followingIds;
-              friendUserIds = new Set((follows || [])
-                .filter((follow) => follow.following_id === user.id && followingIds.has(follow.follower_id))
-                .map((follow) => follow.follower_id));
-              writers.forEach((writer) => {
-                writer.following = followingIds.has(writer.id);
-                writer.friends = friendUserIds.has(writer.id);
-              });
-            }
-            if (currentRequest === requestId) renderResults(writers, matchingPosts);
-          } catch (error) {
-            if (currentRequest !== requestId) return;
-            console.error("Search request failed.", error);
-            showMessage("Search is unavailable right now. Please try again.", true);
-          }
-        };
-
-        input.addEventListener("input", () => {
-          clearTimeout(debounceTimer);
-          const query = input.value.trim().toLowerCase();
-          const currentRequest = ++requestId;
-          if (query.length < 2) {
-            close();
-            return;
-          }
-          showMessage("Searching…");
-          debounceTimer = setTimeout(() => runSearch(query, currentRequest), 400);
         });
-        input.addEventListener("keydown", (event) => {
-          if (event.key === "Escape") close();
-        });
-        document.addEventListener("click", (event) => {
-          if (!wrapper.contains(event.target)) close();
-        });
+        writeStore(STORAGE.likes, userLikesMap);
       }
 
-      function escapeHTML(value) {
-        return String(value).replace(/[&<>"']/g, (char) => ({
-          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-        })[char]);
-      }
-
-      function initials(name) {
-        return name.trim().split(/\s+/).map((part) => part[0] || "").join("").slice(0, 2).toUpperCase();
-      }
-
-      function updateHeader() {
-        const user = currentUser();
-        if (!user) {
-          stopNotifications();
-          followedUserIds = new Set();
-          friendUserIds = new Set();
-          authLink.hidden = false;
-          authLink.href = "login.html";
-          authLink.textContent = "Log in";
-          headerProfile.hidden = true;
-          document.getElementById("writeLink").href = "write.html";
-          return;
-        }
-        const publishedCount = posts().filter((post) => post.authorId === user.id && post.status === "published").length;
-        authLink.hidden = false;
-        authLink.href = "index.html?logout=1";
-        authLink.textContent = "Log out";
-        headerProfile.hidden = false;
-        document.getElementById("headerName").textContent = displayName(user);
-        document.querySelector("[data-header-stories]").textContent = String(publishedCount);
-        document.querySelector("[data-header-followers]").textContent = "…";
-        document.querySelector("[data-header-following]").textContent = "…";
-        document.getElementById("headerAvatar").textContent = initials(user.name);
-        document.getElementById("writeLink").href = "write.html";
-        ensureHeaderEngagementStats();
-        loadHeaderFollowCounts(user);
-        loadProfileEngagementCounts(user);
-        startNotifications(user);
-      }
-
-      function notificationMessage(notification) {
-        return String(notification.message || notification.content || notification.title || "You have a new notification.");
-      }
-
-      function createNotificationMessage(notification) {
-        const text = notificationMessage(notification);
-        const actorName = notification.actor_id && notificationActors.get(notification.actor_id);
-        const message = document.createElement("span");
-        message.className = "notification-message";
-        if (!actorName || !text.startsWith("Someone")) {
-          message.textContent = text;
-          return message;
-        }
-        const profileLink = document.createElement("a");
-        profileLink.className = "notification-account-link";
-        profileLink.href = `profile.html?id=${encodeURIComponent(notification.actor_id)}`;
-        profileLink.textContent = actorName;
-        message.append(profileLink, document.createTextNode(text.slice("Someone".length)));
-        return message;
-      }
-
-      async function loadNotificationActors(client, notifications) {
-        const actorIds = [...new Set(notifications.map((item) => item.actor_id).filter(Boolean))];
-        if (!actorIds.length) return;
-        try {
-          const { data, error } = await client
-            .from("profiles")
-            .select("id, full_name")
-            .in("id", actorIds);
-          if (error) throw error;
-          const actors = new Map(notificationActors);
-          (data || []).forEach((profile) => actors.set(
-            String(profile.id),
-            profile.full_name || "Sunday member"
-          ));
-          notificationActors = actors;
-        } catch (error) {
-          console.error("Unable to load notification account names.", error);
-          notificationActors = new Map();
-        }
-      }
-
-      function ensureNotificationBell() {
-        let bell = document.querySelector("[data-notification-bell]");
-        if (bell) return bell;
-        bell = document.createElement("div");
-        bell.className = "notification-control";
-        bell.dataset.notificationBell = "";
-        bell.innerHTML = '<button class="notification-bell" type="button" data-notifications-toggle aria-label="Notifications" aria-expanded="false" aria-controls="notificationPreview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg><span class="notification-badge" data-notification-count hidden></span></button><section class="notification-preview" id="notificationPreview" data-notification-preview hidden aria-label="Recent notifications"><h2>Notifications</h2><div class="notification-preview-list" data-notification-preview-list><p class="notification-status">Loading notifications…</p></div><a class="notification-show-all" href="notifications.html">Show all</a></section>';
-        headerProfile.before(bell);
-        return bell;
-      }
-
-      function renderUnreadNotificationCount() {
-        const bell = document.querySelector("[data-notification-bell]");
-        const badge = bell?.querySelector("[data-notification-count]");
-        if (!badge) return;
-        const count = notificationItems.length;
-        badge.textContent = count > 99 ? "99+" : String(count);
-        badge.hidden = count === 0;
-        const toggle = bell.querySelector("[data-notifications-toggle]");
-        toggle?.setAttribute("aria-label", count
-          ? `Notifications, ${count} unread`
-          : "Notifications");
-        renderNotificationPreview();
-      }
-
-      function renderNotificationPreview() {
-        const list = document.querySelector("[data-notification-preview-list]");
-        if (!list) return;
-        if (!notificationItems.length) {
-          list.innerHTML = '<p class="notification-status">You have no unread notifications.</p>';
-          return;
-        }
-        list.replaceChildren(...notificationItems.slice(0, 5).map((notification) => {
-          const item = document.createElement("article");
-          item.className = "notification-preview-item";
-          item.appendChild(createNotificationMessage(notification));
-          if (notification.created_at) {
-            const time = document.createElement("time");
-            time.className = "notification-time";
-            time.dateTime = notification.created_at;
-            const timestamp = new Date(notification.created_at);
-            time.textContent = Number.isNaN(timestamp.getTime()) ? "" : timestamp.toLocaleString();
-            item.appendChild(time);
-          }
-          const actions = document.createElement("div");
-          actions.className = "notification-actions";
-          if (notification.post_id) {
-            const link = document.createElement("a");
-            link.className = "notification-open";
-            link.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
-            link.dataset.notificationOpen = notification.id;
-            link.textContent = "View story";
-            actions.appendChild(link);
-          }
-          const markRead = document.createElement("button");
-          markRead.className = "notification-mark-read";
-          markRead.type = "button";
-          markRead.dataset.markNotificationRead = notification.id;
-          markRead.textContent = "Mark read";
-          actions.appendChild(markRead);
-          item.appendChild(actions);
-          return item;
+      if (Array.isArray(postRows)) {
+        const mappedPosts = postRows.map((r) => ({
+          id: r.id,
+          authorId: r.user_id || "",
+          authorName: r.author_name || "Writer",
+          title: r.title || "Untitled story",
+          category: r.category || "Life",
+          language: r.language || "English",
+          body: r.content || "",
+          status: r.status || "published",
+          imagePath: r.image_path || "",
+          imageData: r.image_path ? publicImageUrl(r.image_path) : "",
+          likes: likeCountsByPost.get(r.id) || 0,
+          createdAt: r.created_at || new Date().toISOString()
         }));
+        writeStore(STORAGE.posts, mappedPosts);
       }
 
-      function renderNotifications() {
-        const list = document.querySelector("[data-notifications-list]");
-        renderUnreadNotificationCount();
-        if (!list) return;
-        if (!notificationHistory.length) {
-          list.innerHTML = '<p class="notification-status">You’re all caught up.</p>';
-          return;
-        }
+      // 3. Fetch comments (`comments`)
+      const { data: commentRows } = await sb
+        .from("comments")
+        .select("id, created_at, post_id, user_id, author_name, content")
+        .order("created_at", { ascending: true });
 
-        list.replaceChildren(...notificationHistory.map((notification) => {
-          const item = document.createElement("article");
-          item.className = `notification-item${notification.is_read ? " is-read" : " is-unread"}`;
-          item.appendChild(createNotificationMessage(notification));
-          if (notification.created_at) {
-            const time = document.createElement("time");
-            time.className = "notification-time";
-            time.dateTime = notification.created_at;
-            const timestamp = new Date(notification.created_at);
-            time.textContent = Number.isNaN(timestamp.getTime()) ? "" : timestamp.toLocaleString();
-            item.appendChild(time);
-          }
-          const actions = document.createElement("div");
-          actions.className = "notification-actions";
-          if (notification.post_id) {
-            const link = document.createElement("a");
-            link.className = "notification-open";
-            link.href = `post.html?id=${encodeURIComponent(notification.post_id)}`;
-            link.textContent = "View story";
-            if (!notification.is_read) link.dataset.notificationOpen = notification.id;
-            actions.appendChild(link);
-          }
-          if (notification.is_read) {
-            const readStatus = document.createElement("span");
-            readStatus.className = "notification-read-status";
-            readStatus.textContent = "Read";
-            actions.appendChild(readStatus);
-          } else {
-            const markRead = document.createElement("button");
-            markRead.className = "notification-mark-read";
-            markRead.type = "button";
-            markRead.dataset.markNotificationRead = notification.id;
-            markRead.textContent = "Mark read";
-            actions.appendChild(markRead);
-          }
-          item.appendChild(actions);
-          return item;
+      if (Array.isArray(commentRows)) {
+        const mappedComments = commentRows.map((c) => ({
+          id: String(c.id),
+          postId: c.post_id,
+          authorId: c.user_id,
+          authorName: c.author_name || "Reader",
+          content: c.content || "",
+          createdAt: c.created_at || new Date().toISOString()
         }));
+        writeStore(STORAGE.comments, mappedComments);
       }
 
-      async function loadNotifications(user, client) {
-        try {
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to view notifications.");
-          }
-          const { data, error } = await client
-            .from("notifications")
-            .select("*")
-            .eq("recipient_id", user.id)
-            .eq("is_read", false)
-            .order("created_at", { ascending: false });
-          if (error) throw error;
-          if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
-          await loadNotificationActors(client, data || []);
-          const merged = new Map();
-          [...notificationItems.filter((item) => !notificationReadIds.has(item.id)),
-            ...(data || []).filter((item) => !item.is_read && !notificationReadIds.has(item.id))]
-            .forEach((item) => merged.set(item.id, item));
-          notificationItems = [...merged.values()].sort((a, b) =>
-            String(b.created_at || "").localeCompare(String(a.created_at || "")));
-          renderUnreadNotificationCount();
-          const latestUnread = notificationItems[0];
-          if (latestUnread && routeParts().path !== "notifications") notifyNotification(latestUnread);
-        } catch (error) {
-          console.error("Unable to load notifications.", error);
-          notificationActors = new Map();
-          const list = document.querySelector("[data-notifications-list]");
-          if (!list || notificationUserId !== user.id) return;
-          const status = document.createElement("p");
-          status.className = "notification-status";
-          status.setAttribute("role", "alert");
-          status.textContent = error instanceof Error && error.message.startsWith("Your Supabase session")
-            ? error.message
-            : "Notifications could not be loaded. Check your connection and notification access policy.";
-          list.replaceChildren(status);
-        }
-      }
-
-      function startNotifications(user) {
-        if (notificationUserId === user.id) return;
-        stopNotifications();
-        notificationUserId = user.id;
-        notificationItems = [];
-        ensureNotificationBell();
-        renderUnreadNotificationCount();
-        getSupabaseClient().then((client) => {
-          if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
-          loadNotifications(user, client);
-          notificationChannel = client
-            .channel(`notifications:${user.id}`)
-            .on("postgres_changes", {
-              event: "INSERT",
-              schema: "public",
-              table: "notifications",
-              filter: `recipient_id=eq.${user.id}`
-            }, async (payload) => {
-              if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
-              if (payload.new.is_read) return;
-              await loadNotificationActors(client, [payload.new]);
-              if (!notificationItems.some((item) => item.id === payload.new.id)) {
-                notificationItems.unshift(payload.new);
-              }
-              renderUnreadNotificationCount();
-              if (routeParts().path === "notifications") {
-                const existingIndex = notificationHistory.findIndex((item) => item.id === payload.new.id);
-                if (existingIndex === -1) notificationHistory.unshift(payload.new);
-                else notificationHistory[existingIndex] = payload.new;
-                renderNotifications();
-              }
-              notifyNotification(payload.new);
-            })
-            .on("postgres_changes", {
-              event: "UPDATE",
-              schema: "public",
-              table: "notifications",
-              filter: `recipient_id=eq.${user.id}`
-            }, (payload) => {
-              if (notificationUserId !== user.id || currentUser()?.id !== user.id) return;
-              if (payload.new.is_read) {
-                notificationItems = notificationItems.filter((item) => item.id !== payload.new.id);
-                notificationReadIds.add(payload.new.id);
-              } else {
-                notificationReadIds.delete(payload.new.id);
-                const existingIndex = notificationItems.findIndex((item) => item.id === payload.new.id);
-                if (existingIndex === -1) notificationItems.unshift(payload.new);
-                else notificationItems[existingIndex] = payload.new;
-              }
-              renderUnreadNotificationCount();
-              const historyIndex = notificationHistory.findIndex((item) => item.id === payload.new.id);
-              if (historyIndex !== -1) notificationHistory[historyIndex] = payload.new;
-              else if (routeParts().path === "notifications") notificationHistory.unshift(payload.new);
-              renderNotifications();
-            })
-            .subscribe((status) => {
-              if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                console.error(`Notifications realtime subscription failed: ${status}`);
-                notify("Live notifications are temporarily unavailable. Refresh to reconnect.");
-              }
-            });
-        }).catch((error) => {
-          console.error("Unable to initialize notifications.", error);
-          const list = document.querySelector("[data-notifications-list]");
-          if (list && notificationUserId === user.id) {
-            list.innerHTML = '<p class="notification-status" role="alert">Notifications are unavailable. Check your connection and try again.</p>';
+      // 4. Fetch follows (`follows`)
+      const { data: followRows } = await sb.from("follows").select("follower_id, following_id");
+      if (Array.isArray(followRows)) {
+        const allFollows = {};
+        followRows.forEach((f) => {
+          if (!f.follower_id || !f.following_id) return;
+          const list = Array.isArray(allFollows[f.follower_id]) ? allFollows[f.follower_id] : [];
+          if (!list.includes(f.following_id)) {
+            allFollows[f.follower_id] = [...list, f.following_id];
           }
         });
+        writeStore(STORAGE.follows, allFollows);
       }
 
-      async function markNotificationRead(notificationId, trigger) {
-        const user = currentUser();
-        const notification = notificationItems.find((item) => item.id === notificationId)
-          || notificationHistory.find((item) => item.id === notificationId);
-        if (!user || !notification) return false;
+      // 5. Fetch authenticated user's bookmarks and notifications
+      const activeUserId = sbUser?.id;
+      if (activeUserId && isUUID(activeUserId)) {
+        const [{ data: bmRows }, { data: notifRows }] = await Promise.all([
+          sb.from("bookmarks").select("post_id, user_id").eq("user_id", activeUserId),
+          sb.from("notifications").select("id, created_at, recipient_id, actor_id, type, post_id, is_read").eq("recipient_id", activeUserId).order("created_at", { ascending: false })
+        ]);
 
-        if (trigger) trigger.disabled = true;
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to update notifications.");
-          }
-          const { error: updateError } = await client
-            .from("notifications")
-            .update({ is_read: true })
-            .eq("id", notificationId)
-            .eq("recipient_id", user.id)
-            .eq("is_read", false)
-            .select("id, is_read")
-            .maybeSingle();
-          if (updateError) throw updateError;
-          const { data: updated, error: verifyError } = await client
-            .from("notifications")
-            .select("id, is_read")
-            .eq("id", notificationId)
-            .eq("recipient_id", user.id)
-            .maybeSingle();
-          if (verifyError) throw verifyError;
-          if (!updated?.is_read) throw new Error("Supabase did not save this notification as read. Check the notifications update policy.");
-          if (notificationUserId === user.id && currentUser()?.id === user.id) {
-            notificationReadIds.add(notificationId);
-            notificationItems = notificationItems.filter((item) => item.id !== notificationId);
-            const historyIndex = notificationHistory.findIndex((item) => item.id === notificationId);
-            if (historyIndex !== -1) notificationHistory[historyIndex] = { ...notificationHistory[historyIndex], is_read: true };
-            renderUnreadNotificationCount();
-            renderNotifications();
-          }
-          return true;
-        } catch (error) {
-          console.error("Unable to mark notification as read.", error);
-          notify(error instanceof Error && error.message.startsWith("Your Supabase session")
-            ? error.message
-            : "This notification could not be marked as read. Please try again.");
-          return false;
-        } finally {
-          if (trigger?.isConnected) trigger.disabled = false;
+        if (Array.isArray(bmRows)) {
+          const allBm = {};
+          allBm[activeUserId] = bmRows.map((b) => b.post_id);
+          writeStore(STORAGE.bookmarks, allBm);
         }
-      }
 
-      function renderNotificationsPage() {
-        const user = currentUser();
-        if (!user) {
-          sessionStorage.setItem("sunday.next", "notifications");
-          navigate("#login");
-          return;
-        }
-        setPage(`<div class="page-view">
-          <section class="page-hero"><div class="page-kicker">Your Sunday inbox</div><h1>Notifications</h1><p>Updates from the Sunday community, with unread items kept here until you mark them read.</p></section>
-          <section class="page-card notification-page-card"><div class="notification-page-heading"><h2>All notifications</h2><a class="secondary-button" href="index.html">Back to Sunday</a></div><div class="notification-list notification-page-list" data-notifications-list aria-live="polite"><p class="notification-status" role="status">Loading notifications…</p></div></section>
-        </div>`, { contentOnly: true });
-        loadNotificationHistory(user);
-      }
-
-      async function loadNotificationHistory(user) {
-        const list = document.querySelector("[data-notifications-list]");
-        if (!list) return;
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to view notifications.");
-          }
-          const { data, error } = await client
-            .from("notifications")
-            .select("*")
-            .eq("recipient_id", user.id)
-            .order("created_at", { ascending: false });
-          if (error) throw error;
-          if (!list.isConnected || currentUser()?.id !== user.id) return;
-          await loadNotificationActors(client, data || []);
-          const historyById = new Map((data || []).map((item) => [item.id, item]));
-          notificationHistory.forEach((item) => historyById.set(item.id, item));
-          notificationHistory = [...historyById.values()].sort((a, b) =>
-            String(b.created_at || "").localeCompare(String(a.created_at || "")));
-          notificationHistory.forEach((item) => {
-            if (item.is_read) notificationReadIds.add(item.id);
-            else notificationReadIds.delete(item.id);
+        if (Array.isArray(notifRows)) {
+          const mappedNotifs = notifRows.map((n) => {
+            const actor = users().find((u) => u.id === n.actor_id);
+            const post = allPosts().find((p) => p.id === n.post_id);
+            const actorLabel = actor ? displayName(actor) : "A community member";
+            const defaultMsg = n.type === "comment"
+              ? `${actorLabel} commented on "${post?.title || "your story"}"`
+              : n.type === "follow"
+                ? `${actorLabel} started following your writing.`
+                : `${actorLabel} liked your story "${post?.title || "your story"}"`;
+            return {
+              id: n.id,
+              recipientId: n.recipient_id,
+              postId: n.post_id || "",
+              message: n.message || defaultMsg,
+              isRead: Boolean(n.is_read),
+              createdAt: n.created_at || new Date().toISOString()
+            };
           });
-          notificationItems = notificationHistory.filter((item) => !item.is_read);
-          renderNotifications();
-        } catch (error) {
-          console.error("Unable to load notification history.", error);
-          if (!list.isConnected || currentUser()?.id !== user.id) return;
-          list.innerHTML = `<p class="notification-status" role="alert">${escapeHTML(
-            error instanceof Error && error.message.startsWith("Your Supabase session")
-              ? error.message
-              : "Notifications could not be loaded. Check your connection and notification access policy."
-          )}</p>`;
+          writeStore(STORAGE.notifications, mappedNotifs);
         }
       }
 
-      function stopNotifications() {
-        if (notificationChannel && supabaseClient) {
-          supabaseClient.removeChannel(notificationChannel).catch((error) => {
-            console.error("Unable to stop the notifications realtime subscription.", error);
-          });
-          notificationChannel = undefined;
-        }
-        notificationUserId = "";
-        notificationItems = [];
-        notificationHistory = [];
-        notificationReadIds = new Set();
-        notificationActors = new Map();
-        const bell = document.querySelector("[data-notification-bell]");
-        if (bell) bell.remove();
+      // 6. Fetch live competitions (`competitions`)
+      const { data: compRows } = await sb
+        .from("competitions")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (Array.isArray(compRows) && compRows.length > 0) {
+        writeStore(STORAGE.competitions, compRows);
       }
 
-      function ensureHeaderEngagementStats() {
-        const stats = document.getElementById("headerStats");
-        if (!stats) return;
-        [
-          ["likes", "likes"],
-          ["comments", "comments"]
-        ].forEach(([key, label]) => {
-          if (stats.querySelector(`[data-header-${key}]`)) return;
-          const link = document.createElement("a");
-          link.href = "dashboard.html#userStories";
-          const count = document.createElement("strong");
-          count.dataset[`header${key[0].toUpperCase()}${key.slice(1)}`] = "";
-          count.textContent = "…";
-          link.append(count, ` ${label}`);
-          stats.appendChild(link);
-        });
+      updateHeader();
+      const { path, params } = routeParts();
+      if (path === "home") showHome(params);
+      else if (path === "writers") renderWritersPage();
+      else if (path === "bookmarks") renderBookmarks();
+      else if (path === "notifications") renderNotificationsPage();
+      else if (path === "dashboard") renderDashboard(params.get("tab") || "all");
+      else if (path === "profile") renderProfilePage(params.get("id") || "");
+      else if (path === "post") renderDetail(params.get("id") || "");
+    } catch (err) {
+      console.warn("Supabase cloud sync skipped or offline:", err);
+    }
+  }
+
+  async function syncPostToSupabase(postObj, imageFile) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    const sb = await window.getSupabaseClient();
+    const { data: sessionData } = await sb.auth.getSession();
+    const authUser = sessionData?.session?.user;
+    const authorUuid = authUser?.id || (isUUID(postObj.authorId) ? postObj.authorId : null);
+    if (!authorUuid) return;
+
+    let imagePath = postObj.imagePath || null;
+    if (imageFile && authUser) {
+      const ext = (imageFile.name.split(".").pop() || "jpg").toLowerCase();
+      const storagePath = `${authUser.id}/${postObj.id}.${ext}`;
+      const { error: uploadErr } = await sb.storage
+        .from("post-images")
+        .upload(storagePath, imageFile, { upsert: true });
+      if (!uploadErr) {
+        imagePath = storagePath;
+        postObj.imagePath = storagePath;
+        postObj.imageData = publicImageUrl(storagePath);
       }
+    }
 
-      async function loadProfileEngagementCounts(user) {
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to view profile counts.");
-          }
-          const { data, error } = await client
-            .from("posts")
-            .select("likes_table(count), comments(count)")
-            .eq("user_id", user.id)
-            .eq("status", "published");
-          if (error) throw error;
-          if (currentUser()?.id !== user.id) return;
+    await sb.from("posts").upsert({
+      id: postObj.id,
+      user_id: authorUuid,
+      author_name: postObj.authorName,
+      title: postObj.title,
+      category: postObj.category,
+      language: postObj.language || "English",
+      content: postObj.body,
+      status: postObj.status,
+      image_path: imagePath,
+      created_at: postObj.createdAt
+    });
+  }
 
-          const totals = data.reduce((result, post) => ({
-            likes: result.likes + (Number(post.likes_table?.[0]?.count) || 0),
-            comments: result.comments + (Number(post.comments?.[0]?.count) || 0)
-          }), { likes: 0, comments: 0 });
-          document.querySelectorAll("[data-profile-likes]").forEach((element) => {
-            element.textContent = String(totals.likes);
-          });
-          document.querySelectorAll("[data-profile-comments]").forEach((element) => {
-            element.textContent = String(totals.comments);
-          });
-          document.querySelectorAll("[data-header-likes]").forEach((element) => {
-            element.textContent = String(totals.likes);
-          });
-          document.querySelectorAll("[data-header-comments]").forEach((element) => {
-            element.textContent = String(totals.comments);
-          });
-        } catch (error) {
-          console.error("Unable to load profile like and comment totals.", error);
-          if (currentUser()?.id !== user.id) return;
-          document.querySelectorAll("[data-profile-likes], [data-profile-comments], [data-header-likes], [data-header-comments]")
-            .forEach((element) => { element.textContent = "—"; });
-        }
+  async function syncDeletePostFromSupabase(postId) {
+    if (!isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("posts").delete().eq("id", postId);
+    } catch {}
+  }
+
+  async function syncLikeToSupabase(postId, liked) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (liked) {
+        await sb.from("likes_table").insert({ user_id: user.id, post_id: postId });
+      } else {
+        await sb.from("likes_table").delete().eq("user_id", user.id).eq("post_id", postId);
       }
+    } catch {}
+  }
 
-      async function loadHeaderFollowCounts(user) {
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to view profile counts.");
-          }
-
-          const [followers, following] = await Promise.all([
-            client.from("follows")
-              .select("follower_id", { count: "exact", head: true })
-              .eq("following_id", user.id),
-            client.from("follows")
-              .select("following_id", { count: "exact", head: true })
-              .eq("follower_id", user.id)
-          ]);
-          if (followers.error) throw followers.error;
-          if (following.error) throw following.error;
-          if (currentUser()?.id !== user.id) return;
-
-          document.querySelector("[data-header-followers]").textContent = String(followers.count || 0);
-          document.querySelector("[data-header-following]").textContent = String(following.count || 0);
-        } catch (error) {
-          console.error("Unable to load profile follow counts.", error);
-          if (currentUser()?.id !== user.id) return;
-          document.querySelector("[data-header-followers]").textContent = "—";
-          document.querySelector("[data-header-following]").textContent = "—";
-        }
+  async function syncBookmarkToSupabase(postId, isSaved) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (isSaved) {
+        await sb.from("bookmarks").upsert({ user_id: user.id, post_id: postId });
+      } else {
+        await sb.from("bookmarks").delete().eq("user_id", user.id).eq("post_id", postId);
       }
+    } catch {}
+  }
 
-      function navigate(route) {
-        const value = String(route || "").replace(/^#/, "");
-        if (value.endsWith(".html") || value.includes(".html?")) {
-          location.href = new URL(value, location.href).href;
-          return;
-        }
-        if (value === "logout") {
-          writeStore(STORAGE.session, null);
-          location.href = "index.html";
-          return;
-        }
-        if (value.startsWith("post/")) {
-          location.href = `post.html?id=${encodeURIComponent(value.slice(5))}`;
-          return;
-        }
-        if (value.startsWith("dashboard/")) {
-          location.href = `dashboard.html?tab=${encodeURIComponent(value.slice(10))}`;
-          return;
-        }
-        const [path, query = ""] = value.split("?");
-        const page = {
-          home: "index.html", about: "about.html", contact: "contact.html",
-          competitions: "competitions.html", login: "login.html", signup: "signup.html",
-          dashboard: "dashboard.html", write: "write.html", bookmarks: "bookmarks.html",
-          settings: "settings.html", post: "post.html", notifications: "notifications.html",
-          profile: "profile.html"
-        }[path];
-        if (!page) {
-          location.href = "index.html";
-          return;
-        }
-        const params = new URLSearchParams(query);
-        const target = new URL(page, location.href);
-        params.forEach((paramValue, key) => target.searchParams.set(key, paramValue));
-        location.href = target.href;
+  async function syncCommentToSupabase(postId, commentObj) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(postId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data } = await sb
+        .from("comments")
+        .insert({
+          post_id: postId,
+          user_id: user.id,
+          author_name: commentObj.authorName,
+          content: commentObj.content
+        })
+        .select("id")
+        .single();
+
+      if (data?.id) {
+        const all = readStore(STORAGE.comments, []);
+        writeStore(
+          STORAGE.comments,
+          (Array.isArray(all) ? all : []).map((c) => (c.id === commentObj.id ? { ...c, id: String(data.id) } : c))
+        );
       }
+    } catch {}
+  }
 
-      function setPage(content, options = {}) {
-        layout.classList.toggle("content-only", Boolean(options.contentOnly));
-        layout.classList.toggle("detail-only", Boolean(options.detailOnly));
-        feed.innerHTML = content;
-        window.scrollTo({ top: 0, behavior: "auto" });
+  async function syncDeleteCommentFromSupabase(commentId) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    const numericId = Number(commentId);
+    if (!Number.isFinite(numericId)) return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("comments").delete().eq("id", numericId);
+    } catch {}
+  }
+
+  async function syncFollowToSupabase(targetWriterId, isFollowing) {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || !isUUID(targetWriterId) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      if (isFollowing) {
+        await sb.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
+      } else {
+        await sb.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId);
       }
+    } catch {}
+  }
 
-      function formatDate(value) {
-        return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", day: "numeric" }).format(new Date(value));
+  async function syncMarkNotificationsReadInSupabase() {
+    const user = currentUser();
+    if (!user || !isUUID(user.id) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("notifications").update({ is_read: true }).eq("recipient_id", user.id).eq("is_read", false);
+    } catch {}
+  }
+
+  async function syncProfileSettingsToSupabase(userObj) {
+    if (!userObj || !isUUID(userObj.id) || typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("profiles").upsert({
+        id: userObj.id,
+        full_name: userObj.name,
+        peotic_name: userObj.poeticName,
+        email: userObj.email || "",
+        username: (userObj.handle || "").replace(/^@/, "") || `writer-${userObj.id.slice(0, 6)}`,
+        bio: userObj.bio || "",
+        role: userObj.role || "both"
+      });
+    } catch {}
+  }
+
+  async function syncContactToSupabase(entry) {
+    if (typeof window.getSupabaseClient !== "function") return;
+    try {
+      const sb = await window.getSupabaseClient();
+      await sb.from("contact").insert({
+        name: entry.name,
+        email: entry.email,
+        subject: entry.subject || "Qalamly Community Inquiry",
+        message: entry.message
+      });
+    } catch {}
+  }
+
+  // --- STATE READERS ---
+  function users() {
+    const stored = readStore(STORAGE.users, []);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function allPosts() {
+    const custom = readStore(STORAGE.posts, []);
+    return Array.isArray(custom) ? custom : [];
+  }
+
+  function competitionsList() {
+    const stored = readStore(STORAGE.competitions, []);
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  function formatCompetitionDate(deadlineStr) {
+    if (!deadlineStr || deadlineStr === "Open") return "Open";
+    try {
+      const d = new Date(deadlineStr);
+      if (isNaN(d.getTime())) return deadlineStr;
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return deadlineStr;
+    }
+  }
+
+  async function fetchCompetitionsFromSupabase() {
+    if (typeof window.getSupabaseClient !== "function") return competitionsList();
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data, error } = await sb
+        .from("competitions")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && Array.isArray(data) && data.length > 0) {
+        writeStore(STORAGE.competitions, data);
+        return data;
       }
+    } catch (err) {
+      console.warn("Could not fetch competitions from Supabase:", err);
+    }
+    return competitionsList();
+  }
 
-      function routeParts() {
-        const route = document.body.dataset.page || location.pathname.split("/").pop().replace(/\.html$/, "") || "home";
-        const params = new URLSearchParams(location.search);
-        if (route === "index" || route === "") return { path: "home", params };
-        return { path: route, params };
-      }
+  function renderFrontpageFeaturedCompetition(competitions) {
+    const container = document.getElementById("frontpageFeaturedCompetition");
+    if (!container) return;
 
-      function showHome() {
-        layout.classList.remove("content-only", "detail-only");
-        feed.innerHTML = originalHome;
-        const cardList = feed.querySelector("#postList");
-        cardList.replaceChildren();
-        posts().filter((post) => post.status === "published")
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-          .forEach((post) => cardList.appendChild(createPostCard(post)));
-        renderTrendingPosts();
-        renderLikeStates();
-        refreshLikedPosts();
-        const savedBookmarks = bookmarkList();
-        cardList.querySelectorAll(".post-card").forEach((card) => {
-          const button = card.querySelector(".bookmark-button");
-          if (!button) return;
-          const saved = savedBookmarks.includes(card.dataset.postId);
-          button.setAttribute("aria-pressed", String(saved));
-          button.classList.toggle("bookmarked", saved);
-          button.textContent = saved ? "▣" : "♧";
-        });
-        const queryInput = document.getElementById("searchInput");
-        const sortSelect = document.getElementById("sortSelect");
-        const routeParams = routeParts().params;
-        const requestedTopic = routeParams.get("topic");
-        const requestedTag = routeParams.get("tag")?.replace(/^#/, "").toLowerCase() || "";
-        let topic = STORY_CATEGORIES.find((category) => category.toLowerCase() === requestedTopic?.toLowerCase()) || "All";
-        document.querySelectorAll("[data-topic]").forEach((button) => {
-          button.classList.toggle("selected", button.dataset.topic.toLowerCase() === topic.toLowerCase());
-        });
-        function filter() {
-          const query = queryInput.value.trim().toLowerCase();
-          let count = 0;
-          cardList.querySelectorAll(".post-card").forEach((card) => {
-            const category = card.dataset.category.toLowerCase();
-            const legacyCategories = LEGACY_CATEGORY_GROUPS[topic] || [];
-            const postTags = extractPostTags(card.dataset.fullBody || "", card.dataset.title || "");
-            const matchingTag = !requestedTag || postTags.some((tag) => tag.toLowerCase() === requestedTag)
-              || category.replace(/[^a-z0-9]+/g, "").toLowerCase() === requestedTag.replace(/[^a-z0-9]+/g, "");
-            const matches = (topic === "All" || category === topic.toLowerCase() || legacyCategories.includes(category))
-              && matchingTag
-              && (!query || card.textContent.toLowerCase().includes(query) || (card.dataset.fullBody || "").toLowerCase().includes(query));
-            card.hidden = !matches;
-            if (matches) count++;
-          });
-          document.getElementById("emptyState").style.display = count ? "none" : "block";
-          document.getElementById("resultCount").textContent = query || topic !== "All"
-            ? `${count} ${count === 1 ? "story" : "stories"} found`
-            : requestedTag ? `${count} ${count === 1 ? "story" : "stories"} tagged #${requestedTag}`
-            : "All the good things, in one place.";
-        }
-        function sort() {
-          const cards = [...cardList.querySelectorAll(".post-card")];
-          cards.sort((a, b) => sortSelect.value === "popular"
-            ? Number(b.dataset.likes) - Number(a.dataset.likes)
-            : new Date(b.dataset.date) - new Date(a.dataset.date));
-          cards.forEach((card) => cardList.appendChild(card));
-          filter();
-        }
-        queryInput.addEventListener("input", filter);
-        sortSelect.addEventListener("change", sort);
-        document.querySelectorAll("[data-topic]").forEach((button) => button.addEventListener("click", () => {
-          topic = button.dataset.topic;
-          const url = new URL(location.href);
-          if (topic === "All") url.searchParams.delete("topic");
-          else url.searchParams.set("topic", topic);
-          history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-          document.querySelectorAll("[data-topic]").forEach((item) => item.classList.toggle("selected", item === button));
-          filter();
-        }));
-        filter();
-        renderFollowSuggestions();
-        document.querySelectorAll(".top-nav a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === "#home"));
-      }
+    const all = competitions || competitionsList();
+    const activeComps = all.filter((c) => c.status === "Active" || !c.status);
+    if (!activeComps.length) {
+      container.innerHTML = "";
+      container.style.display = "none";
+      return;
+    }
 
-      function extractPostTags(...values) {
-        const tags = new Set();
-        values.join(" ").match(/#[\p{L}\p{N}_-]+/gu)?.forEach((tag) => {
-          tags.add(tag.slice(1));
-        });
-        return [...tags].slice(0, 3);
-      }
+    const featured = activeComps[0];
+    const otherActive = activeComps.slice(1);
+    const deadlineFmt = formatCompetitionDate(featured.deadline);
 
-      function renderTrendingPosts() {
-        const container = document.getElementById("trendingPosts");
-        if (!container) return;
-        const trending = posts()
-          .filter((post) => post.status === "published" && Number(post.likes) > 0)
-          .sort((a, b) => (Number(b.likes) || 0) - (Number(a.likes) || 0)
-            || String(b.createdAt || "").localeCompare(String(a.createdAt || "")))
-          .slice(0, 3);
-        if (!trending.length) {
-          container.innerHTML = '<p class="sidebar-promo-copy">Popular public stories will appear here as they receive likes.</p>';
-          return;
-        }
-        container.innerHTML = trending.map((post, index) => {
-          const tags = extractPostTags(post.title || "", post.body || "");
-          if (!tags.length && post.category) {
-            const categoryTag = String(post.category).replace(/[^\p{L}\p{N}_-]+/gu, "");
-            if (categoryTag) tags.push(categoryTag);
-          }
-          const tagLinks = tags.map((tag) =>
-            `<a class="trending-tag" href="index.html?tag=${encodeURIComponent(tag)}">#${escapeHTML(tag)}</a>`).join("");
-          return `<article class="trending-item"><span class="trend-number">${String(index + 1).padStart(2, "0")}</span><div class="trending-copy"><a class="trending-story" href="post.html?id=${encodeURIComponent(post.id)}">${escapeHTML(post.title)}</a><span>${escapeHTML(post.category)} · ${Number(post.likes) || 0} ${Number(post.likes) === 1 ? "like" : "likes"}</span>${tagLinks ? `<div class="trending-tags">${tagLinks}</div>` : ""}</div></article>`;
-        }).join("");
-      }
-
-      function createPostCard(post) {
-        const card = document.createElement("article");
-        card.className = "post-card";
-        card.dataset.postId = post.id;
-        card.dataset.category = post.category;
-        card.dataset.likes = String(post.likes || 0);
-        card.dataset.date = post.createdAt.slice(0, 10);
-        card.dataset.title = post.title;
-        card.dataset.imagePath = post.imagePath || "";
-        card.tabIndex = 0;
-        card.setAttribute("aria-label", `Read story: ${post.title}`);
-        card.dataset.fullBody = post.body;
-        const readingMinutes = Math.max(1, Math.ceil(post.body.trim().split(/\s+/).length / 200));
-        const imageUrl = safePostImageUrl(post.imagePath);
-        card.innerHTML = `<div class="post-content">
-          <div class="post-author"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div>${publicProfileLink(post.authorId, post.authorName, "author-name")}${followButtonMarkup(post.authorId)}<span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span></div>
-          <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
-          <h3 class="post-title">${escapeHTML(post.title)}</h3>
-          <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "…" : ""}</p>
-          <div class="post-footer"><div class="post-meta"><span>♡ <span class="like-count">${Number(post.likes) || 0}</span></span><span>◷ ${readingMinutes} min read</span><span aria-label="Comments">◯ <span class="comment-count">${Number(post.commentCount) || 0}</span></span></div>
-          <div class="post-actions"><button class="icon-button like-button" type="button" aria-label="Like this story" aria-pressed="false" data-post-id="${escapeHTML(post.id)}">♡ Like</button><button class="icon-button bookmark-button" type="button" aria-label="Bookmark this story" aria-pressed="false">♧</button>${shareControlMarkup(post.id, post.title)}</div></div></div>
-          <div class="post-image art-journal" aria-label="${imageUrl ? "Story picture" : "Illustration for this story"}">${imageUrl ? "" : "<span>✍️</span>"}</div>`;
-        if (imageUrl) {
-          const image = document.createElement("img");
-          image.className = "post-image-source";
-          image.src = imageUrl;
-          image.alt = `Picture for ${post.title}`;
-          card.querySelector(".post-image").appendChild(image);
-        }
-        return card;
-      }
-
-      function fullBodyFor(post) {
-        return post.body;
-      }
-
-      function findPost(id) {
-        const saved = posts().find((post) => post.id === id);
-        if (saved) return saved;
-        const card = [...document.querySelectorAll(".post-card")].find((item) => item.dataset.postId === id);
-        if (!card) return null;
-        return {
-          id, title: card.querySelector(".post-title").textContent,
-          body: card.dataset.fullBody || card.querySelector(".post-excerpt").textContent,
-          category: card.dataset.category, authorName: card.querySelector(".author-name").textContent,
-          createdAt: new Date(card.dataset.date).toISOString(), likes: Number(card.dataset.likes),
-          imagePath: card.dataset.imagePath || "", status: "published"
-        };
-      }
-
-      function renderDetail(id) {
-        const post = findPost(id);
-        const user = currentUser();
-        const isOwner = Boolean(user && post && post.authorId === user.id);
-        if (!post || post.status !== "published" && !isOwner) {
-          setPage('<div class="page-view"><section class="page-hero"><div class="page-kicker">Story unavailable</div><h1>We couldn’t find that story.</h1><p>It may have been removed or is not public.</p><a class="primary-button" href="index.html">Back to stories</a></section></div>', { detailOnly: true });
-          return;
-        }
-        const imageUrl = safePostImageUrl(post.imagePath);
-        const content = `<div class="page-view"><a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
-          <article class="detail-article"><span class="category-label">${escapeHTML(post.category.toUpperCase())}</span><h1>${escapeHTML(post.title)}</h1>
-          <div class="detail-byline"><div class="avatar purple">${escapeHTML(initials(post.authorName))}</div><div><strong>${publicProfileLink(post.authorId, post.authorName)}</strong><span>${escapeHTML(formatDate(post.createdAt))} · ${Math.max(1, Math.ceil(fullBodyFor(post).trim().split(/\s+/).length / 200))} min read</span></div>${followButtonMarkup(post.authorId)}</div>
-          <div class="detail-cover art-journal"${imageUrl ? "" : ' aria-hidden="true"'}>${imageUrl ? "" : "✍️"}</div><div class="detail-body">${escapeHTML(fullBodyFor(post))}</div>
-          <div class="detail-actions"><button class="primary-button" type="button" data-like-detail="${escapeHTML(post.id)}" data-like-count="${Number(post.likes) || 0}" aria-label="Like this story" aria-pressed="false">♡ Like · ${Number(post.likes) || 0}</button>${post.status === "published" ? shareControlMarkup(post.id, post.title) : ""}<a class="secondary-button" href="index.html">Discover more stories</a>${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a><button class="secondary-button delete-action" type="button" data-delete-post="${escapeHTML(post.id)}">Delete story</button>` : ""}</div>
-          ${post.status === "published" ? `<section class="comments-section" aria-labelledby="commentsHeading" data-comment-section data-post-id="${escapeHTML(post.id)}">
-            <h2 id="commentsHeading">Comments <span data-comment-count>(0)</span></h2>
-            <p class="comment-status" data-comment-status role="status">Loading comments…</p>
-            <div class="comment-list" data-comment-list></div>
-            <form class="comment-form" data-comment-form data-post-id="${escapeHTML(post.id)}">
-              <label for="commentContent">Join the conversation</label>
-              <textarea id="commentContent" name="content" rows="3" maxlength="1000" required placeholder="Share a thoughtful response…"></textarea>
-              <div class="comment-form-footer"><span>${user ? "Be kind and constructive." : "Log in to leave a comment."}</span><button class="primary-button" type="submit">Post comment</button></div>
-            </form>
-          </section>` : ""}</article></div>`;
-        setPage(content, { detailOnly: true });
-        renderLikeStates();
-        refreshLikedPosts();
-        refreshFollowState().catch((error) => {
-          console.error("Unable to load followed state for this story author.", error);
-          if (currentUser()) notify("Follow status could not be loaded. Please refresh and try again.");
-        });
-        renderFollowSuggestions();
-        if (imageUrl) {
-          const image = document.createElement("img");
-          image.src = imageUrl;
-          image.alt = `Picture for ${post.title}`;
-          feed.querySelector(".detail-cover").appendChild(image);
-        }
-        if (post.status === "published") loadPostComments(post.id);
-      }
-
-      function createCommentElement(comment) {
-        const item = document.createElement("article");
-        item.className = "comment-item";
-        item.dataset.commentId = comment.id;
-        const header = document.createElement("div");
-        header.className = "comment-header";
-        const author = comment.user_id ? document.createElement("a") : document.createElement("strong");
-        author.textContent = comment.author_name || "Sunday reader";
-        if (comment.user_id) {
-          author.href = `profile.html?id=${encodeURIComponent(comment.user_id)}`;
-          author.className = "profile-name-link comment-author-link";
-        }
-        const date = document.createElement("time");
-        date.dateTime = comment.created_at;
-        date.textContent = formatDate(comment.created_at);
-        const body = document.createElement("p");
-        body.textContent = comment.content;
-        header.append(author, date);
-        item.append(header, body);
-        if (currentUser()?.id === comment.user_id) {
-          const removeButton = document.createElement("button");
-          removeButton.className = "comment-delete";
-          removeButton.type = "button";
-          removeButton.dataset.deleteComment = comment.id;
-          removeButton.textContent = "Delete";
-          removeButton.setAttribute("aria-label", "Delete your comment");
-          header.appendChild(removeButton);
-        }
-        return item;
-      }
-
-      async function loadPostComments(postId) {
-        const section = document.querySelector("[data-comment-section]");
-        if (!section || section.dataset.postId !== postId) return;
-
-        const status = section.querySelector("[data-comment-status]");
-        const list = section.querySelector("[data-comment-list]");
-        const count = section.querySelector("[data-comment-count]");
-        try {
-          const { data, error } = await (await getSupabaseClient())
-            .from("comments")
-            .select("id, post_id, user_id, author_name, content, created_at")
-            .eq("post_id", postId)
-            .order("created_at", { ascending: true });
-          if (error) throw error;
-          if (!section.isConnected || section.dataset.postId !== postId) return;
-
-          list.replaceChildren(...data.map(createCommentElement));
-          count.textContent = `(${data.length})`;
-          status.textContent = data.length ? "" : "No comments yet. Start the conversation.";
-          updatePostCommentCount(postId, data.length);
-        } catch (error) {
-          console.error("Unable to load comments for story.", error);
-          if (section.isConnected) status.textContent = "Comments could not be loaded. Please refresh and try again.";
-        }
-      }
-
-      function renderDashboard(tab = "all") {
-        const user = currentUser();
-        if (!user) {
-          sessionStorage.setItem("sunday.next", "dashboard");
-          navigate("#login");
-          return;
-        }
-        activeDashboardTab = tab;
-        const own = posts().filter((post) => post.authorId === user.id)
-          .filter((post) => tab === "all" || post.status === tab)
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-        const allCount = posts().filter((post) => post.authorId === user.id).length;
-        const publishedCount = posts().filter((post) => post.authorId === user.id && post.status === "published").length;
-        const list = own.length ? own.map((post) => `<div class="dashboard-post">
-          <div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${escapeHTML(formatDate(post.createdAt))}</span></div>
-          <span class="status-pill ${post.status === "draft" ? "draft" : ""}">${post.status === "draft" ? "Private draft" : "Published"}</span>
-          <div class="dashboard-post-actions">${post.status === "published" ? `${shareControlMarkup(post.id, post.title)}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Open</a>` : ""}
-            <a class="dashboard-action" href="write.html?edit=${encodeURIComponent(post.id)}">${post.status === "draft" ? "Edit draft" : "Edit"}</a>
-            <button class="dashboard-action delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button></div></div>`).join("")
-          : `<div class="empty-dashboard">${tab === "draft" ? "No private drafts yet. Start writing and save one for later." : tab === "published" ? "No public posts yet. Publish a story to share it with everyone." : "Your stories will live here. Start a new post whenever inspiration strikes."}</div>`;
-        setPage(`<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile · ${escapeHTML(user.role || "writer")}</div><h1>${escapeHTML(displayName(user))}</h1><p>${escapeHTML(user.handle || "Your Sunday profile")} · Your published stories and community connections.</p>
-          <div class="dashboard-stats profile-stats" aria-label="Profile statistics">
-            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-stories>${publishedCount}</strong><span>Stories</span></a>
-            <a class="dashboard-stat profile-stat-link" href="#userFollowers"><strong data-profile-followers>…</strong><span>Followers</span></a>
-            <a class="dashboard-stat profile-stat-link" href="#userFollowing"><strong data-profile-following>…</strong><span>Following</span></a>
-            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-likes>…</strong><span>Total likes</span></a>
-            <a class="dashboard-stat profile-stat-link" href="#userStories"><strong data-profile-comments>…</strong><span>Total comments</span></a>
+    container.style.display = "block";
+    container.innerHTML = `
+      <section class="featured-competition-card" aria-label="Featured Writing Competition">
+        <div class="featured-comp-header">
+          <div class="featured-comp-badges">
+            <span class="featured-pill-live">
+              <span class="pulse-dot" aria-hidden="true"></span> Active Challenge
+            </span>
+            <span class="featured-cat-tag">${escapeHTML(featured.category || "Creative Challenge")}</span>
+            ${featured.deadline ? `<span class="featured-deadline-tag">⏳ Closes ${escapeHTML(deadlineFmt)}</span>` : ""}
           </div>
-          <div class="dashboard-actions">${canWrite(user) ? '<a class="primary-button" href="write.html">✎ Write a story</a>' : '<a class="secondary-button" href="settings.html">Update your reader profile</a>'}<a class="secondary-button" href="index.html">Browse public stories</a><button class="secondary-button" type="button" data-signout>Log out</button></div></section>
-          <section class="community-lists" aria-label="Your community">
-            <section class="page-card" id="userFollowing"><h2>Following <span class="community-count" data-following-count>…</span></h2><div data-following-list><p class="community-status" role="status">Loading following…</p></div></section>
-            <section class="page-card" id="userFollowers"><h2>Followers <span class="community-count" data-followers-count>…</span></h2><div data-followers-list><p class="community-status" role="status">Loading followers…</p></div></section>
-          </section>
-          <section class="page-card" id="userStories"><h2>Your stories</h2><div class="dashboard-tabs"><button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${allCount})</button><button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${publishedCount})</button><button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts</button></div>${list}</section></div>`, { contentOnly: true });
-        loadDashboardConnections(user);
-        loadProfileEngagementCounts(user);
-        const targetId = location.hash.slice(1);
-        if (["userStories", "userFollowers", "userFollowing"].includes(targetId)) {
-          requestAnimationFrame(() => document.getElementById(targetId)?.scrollIntoView({ block: "start" }));
-        }
+          <a href="competitions.html" class="featured-view-all">
+            All Challenges (${activeComps.length}) →
+          </a>
+        </div>
+
+        <div class="featured-comp-body">
+          <div class="featured-comp-main">
+            ${featured.kicker ? `<div class="featured-comp-kicker">${escapeHTML(featured.kicker)}</div>` : ""}
+            <h2 class="featured-comp-title">
+              <a href="competitions.html?submit=${encodeURIComponent(featured.id)}">${escapeHTML(featured.title)}</a>
+            </h2>
+            <p class="featured-comp-desc">${escapeHTML(featured.description || "Submit your original story to this month's featured writing challenge.")}</p>
+
+            <div class="featured-comp-award-box">
+              <div class="featured-award-icon" aria-hidden="true">🏆</div>
+              <div class="featured-award-text">
+                <span class="featured-award-label">Competition Award / Prize</span>
+                <strong class="featured-award-val">${escapeHTML(featured.prize || "Official Editorial Spotlight & Featured Homepage Placement")}</strong>
+              </div>
+            </div>
+          </div>
+
+          ${otherActive.length > 0 ? `
+            <div class="featured-comp-sublist">
+              <span class="sublist-label">More active challenges:</span>
+              <div class="sublist-pills">
+                ${otherActive.map((c) => `
+                  <a class="sublist-pill" href="competitions.html?submit=${encodeURIComponent(c.id)}" title="${escapeHTML(c.title)}">
+                    <span class="sublist-bullet">✦</span> ${escapeHTML(c.title)} (${escapeHTML(c.category || "Story")})
+                  </a>
+                `).join("")}
+              </div>
+            </div>
+          ` : ""}
+
+          <div class="featured-comp-actions">
+            <a class="primary-button featured-enter-btn" href="competitions.html?submit=${encodeURIComponent(featured.id)}">
+              Submit Your Entry &amp; Upload File →
+            </a>
+            <a class="secondary-button" href="competitions.html#comp-${encodeURIComponent(featured.id)}">
+              Read Guidelines &amp; Details
+            </a>
+            <a class="secondary-button" href="write.html" style="font-size:11px;">
+              ✍️ Open Editor
+            </a>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function updateSidebarChallengePanel(competitions) {
+    const panel = document.getElementById("competitions");
+    if (!panel) return;
+
+    const all = competitions || competitionsList();
+    const activeComps = all.filter((c) => c.status === "Active" || !c.status);
+    if (!activeComps.length) {
+      panel.innerHTML = `
+        <div class="challenge-icon" aria-hidden="true">🏆</div>
+        <h3>Creative Writing Challenges</h3>
+        <p>Check back soon for our next monthly prompts and creative writing competitions.</p>
+        <a href="competitions.html" class="panel-link" style="display:inline-block;margin-top:8px;">View past challenges →</a>
+      `;
+      return;
+    }
+
+    const comp = activeComps[0];
+    const deadlineFmt = formatCompetitionDate(comp.deadline);
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div class="challenge-icon" aria-hidden="true" style="margin:0;font-size:22px;">🏆</div>
+        <span class="status-pill" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;">● Active</span>
+      </div>
+      <div style="font-size:9px;font-weight:800;color:var(--purple);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">
+        ${escapeHTML(comp.kicker || comp.category || "Writing Challenge")}
+      </div>
+      <h3 style="margin:0 0 6px;font-size:13px;font-weight:800;line-height:1.35;color:#1e1b2e;">
+        <a href="competitions.html?submit=${encodeURIComponent(comp.id)}" style="color:inherit;text-decoration:none;">${escapeHTML(comp.title)}</a>
+      </h3>
+      <p style="margin:0 0 10px;color:#786542;font-size:10px;line-height:1.5;">
+        ${escapeHTML(comp.description.length > 120 ? comp.description.slice(0, 117) + "…" : comp.description)}
+      </p>
+      <div style="background:rgba(255,255,255,0.75);border:1px solid #ebdcb2;border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:10px;font-weight:750;color:#92400e;">
+        🏆 ${escapeHTML(comp.prize || "Editorial Spotlight")}
+      </div>
+      <div class="challenge-date" style="margin-top:0;font-size:9px;color:#8d7b4f;margin-bottom:10px;">
+        Entries close: <strong>${escapeHTML(deadlineFmt)}</strong>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <a href="competitions.html?submit=${encodeURIComponent(comp.id)}" class="primary-button" style="flex:1;text-align:center;font-size:10px;padding:6px 8px;text-decoration:none;">Enter Challenge →</a>
+        <a href="competitions.html" class="secondary-button" style="font-size:10px;padding:6px 8px;text-decoration:none;">All (${activeComps.length})</a>
+      </div>
+    `;
+  }
+
+  function savePostUpdate(updatedPost) {
+    const custom = readStore(STORAGE.posts, []);
+    const arr = Array.isArray(custom) ? custom : [];
+    const exists = arr.some((p) => p.id === updatedPost.id);
+    const next = exists ? arr.map((p) => (p.id === updatedPost.id ? updatedPost : p)) : [updatedPost, ...arr];
+    writeStore(STORAGE.posts, next);
+  }
+
+  function deletePostById(postId) {
+    const custom = readStore(STORAGE.posts, []);
+    const arr = Array.isArray(custom) ? custom : [];
+    writeStore(STORAGE.posts, arr.filter((p) => p.id !== postId));
+    syncDeletePostFromSupabase(postId);
+  }
+
+  function currentUser() {
+    const id = readStore(STORAGE.session, null);
+    return id ? users().find((u) => u.id === id) || null : null;
+  }
+
+  function displayName(user) {
+    return user?.poeticName || user?.name || "Writer";
+  }
+
+  function canWrite(user) {
+    return Boolean(user && (user.role === "writer" || user.role === "both" || !user.role));
+  }
+
+  function bookmarkList() {
+    const all = readStore(STORAGE.bookmarks, {});
+    const key = currentUser()?.id || "guest";
+    return Array.isArray(all[key]) ? all[key] : [];
+  }
+
+  function toggleBookmark(postId) {
+    const all = readStore(STORAGE.bookmarks, {});
+    const key = currentUser()?.id || "guest";
+    const list = Array.isArray(all[key]) ? all[key] : [];
+    const isSaved = list.includes(postId);
+    const nextSaved = !isSaved;
+    all[key] = isSaved ? list.filter((id) => id !== postId) : [...new Set([...list, postId])];
+    writeStore(STORAGE.bookmarks, all);
+    syncBookmarkToSupabase(postId, nextSaved);
+    return nextSaved;
+  }
+
+  function likedPostsList() {
+    const all = readStore(STORAGE.likes, {});
+    const key = currentUser()?.id || "guest";
+    return Array.isArray(all[key]) ? all[key] : [];
+  }
+
+  function toggleLike(postId) {
+    const all = readStore(STORAGE.likes, {});
+    const key = currentUser()?.id || "guest";
+    const list = Array.isArray(all[key]) ? all[key] : [];
+    const wasLiked = list.includes(postId);
+    const nowLiked = !wasLiked;
+    all[key] = wasLiked ? list.filter((id) => id !== postId) : [...new Set([...list, postId])];
+    writeStore(STORAGE.likes, all);
+
+    const target = allPosts().find((p) => p.id === postId);
+    if (target) {
+      const nextLikes = Math.max(0, Number(target.likes || 0) + (wasLiked ? -1 : 1));
+      const updated = { ...target, likes: nextLikes };
+      savePostUpdate(updated);
+      if (nowLiked && currentUser() && target.authorId && target.authorId !== currentUser().id) {
+        addNotification(target.authorId, `${displayName(currentUser())} liked your story "${target.title}"`, target.id);
+      }
+      syncLikeToSupabase(postId, nowLiked);
+      return { liked: nowLiked, count: nextLikes };
+    }
+    return { liked: nowLiked, count: 0 };
+  }
+
+  function commentsForPost(postId) {
+    const all = readStore(STORAGE.comments, []);
+    return (Array.isArray(all) ? all : [])
+      .filter((c) => c.postId === postId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  function addCommentToPost(postId, content) {
+    const user = currentUser();
+    if (!user) return null;
+    const all = readStore(STORAGE.comments, []);
+    const comment = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `c-${Date.now()}`,
+      postId,
+      authorId: user.id,
+      authorName: displayName(user),
+      content: content.trim(),
+      createdAt: new Date().toISOString()
+    };
+    writeStore(STORAGE.comments, [...(Array.isArray(all) ? all : []), comment]);
+    const post = allPosts().find((p) => p.id === postId);
+    if (post && post.authorId !== user.id) {
+      addNotification(post.authorId, `${displayName(user)} commented on "${post.title}"`, postId);
+    }
+    syncCommentToSupabase(postId, comment);
+    return comment;
+  }
+
+  function deleteCommentById(commentId) {
+    const user = currentUser();
+    if (!user) return;
+    const all = readStore(STORAGE.comments, []);
+    writeStore(STORAGE.comments, (Array.isArray(all) ? all : []).filter((c) => !(String(c.id) === String(commentId) && c.authorId === user.id)));
+    syncDeleteCommentFromSupabase(commentId);
+  }
+
+  function followingList(userId) {
+    const all = readStore(STORAGE.follows, {});
+    const key = userId || currentUser()?.id || "guest";
+    return Array.isArray(all[key]) ? all[key] : [];
+  }
+
+  function followersCountFor(writerId) {
+    const all = readStore(STORAGE.follows, {});
+    let count = 0;
+    Object.values(all).forEach((arr) => {
+      if (Array.isArray(arr) && arr.includes(writerId)) count++;
+    });
+    const baseWriter = users().find((u) => u.id === writerId);
+    return Math.max(count, Number(baseWriter?.followers || 0));
+  }
+
+  function toggleFollowWriter(targetWriterId) {
+    const user = currentUser();
+    if (!user) {
+      navigate("login.html");
+      return false;
+    }
+    if (user.id === targetWriterId) {
+      notify("You cannot follow yourself.");
+      return false;
+    }
+    const all = readStore(STORAGE.follows, {});
+    const list = Array.isArray(all[user.id]) ? all[user.id] : [];
+    const isFollowing = list.includes(targetWriterId);
+    const nowFollowing = !isFollowing;
+    all[user.id] = isFollowing ? list.filter((id) => id !== targetWriterId) : [...new Set([...list, targetWriterId])];
+    writeStore(STORAGE.follows, all);
+    if (nowFollowing) {
+      addNotification(targetWriterId, `${displayName(user)} started following your writing.`, "");
+    }
+    syncFollowToSupabase(targetWriterId, nowFollowing);
+    updateHeader();
+    return nowFollowing;
+  }
+
+  function notificationsForCurrentUser() {
+    const user = currentUser();
+    if (!user) return [];
+    const all = readStore(STORAGE.notifications, []);
+    return (Array.isArray(all) ? all : [])
+      .filter((n) => n.recipientId === user.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  function addNotification(recipientId, message, postId = "") {
+    const all = readStore(STORAGE.notifications, []);
+    const item = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `n-${Date.now()}`,
+      recipientId,
+      postId,
+      message,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    };
+    writeStore(STORAGE.notifications, [item, ...(Array.isArray(all) ? all : [])]);
+  }
+
+  function markAllNotificationsRead() {
+    const user = currentUser();
+    if (!user) return;
+    const all = readStore(STORAGE.notifications, []);
+    const updated = (Array.isArray(all) ? all : []).map((n) =>
+      n.recipientId === user.id ? { ...n, isRead: true } : n
+    );
+    writeStore(STORAGE.notifications, updated);
+    syncMarkNotificationsReadInSupabase();
+    updateHeader();
+  }
+
+  function checkAndNotifyMonetization(user, recentStoriesCount, followersCount, likesCount, weeklyRate = 0) {
+    if (!user || recentStoriesCount < 36 || followersCount < 500 || likesCount < 1000) return;
+    const key = `qalamly.notified.monetization.${user.id}.v2`;
+    if (localStorage.getItem(key)) return;
+
+    localStorage.setItem(key, "true");
+    const msg = "🎉 Congratulations! You have met the Creator Monetization criteria: 500 followers, 1,000 reactions, and 3 posts weekly in 3 months! Apply now to start earning.";
+    addNotification(user.id, msg, "");
+    notify("🎉 Milestone Reached: You are eligible to apply for Creator Monetization!");
+
+    if (isUUID(user.id) && typeof window.getSupabaseClient === "function") {
+      window.getSupabaseClient().then((sb) => {
+        sb.from("notifications").insert({
+          recipient_id: user.id,
+          actor_id: null,
+          type: "monetization_eligible",
+          message: msg,
+          is_read: false
+        }).then(() => {}).catch(() => {});
+      }).catch(() => {});
+    }
+  }
+
+  // --- FORMATTING HELPERS ---
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    })[char]);
+  }
+
+  function initials(name) {
+    return String(name || "W")
+      .trim()
+      .split(/\s+/)
+      .map((part) => part[0] || "")
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "Q";
+  }
+
+  function formatDate(value) {
+    try {
+      return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
+    } catch {
+      return "Recent";
+    }
+  }
+
+  function readingMinutes(text) {
+    const words = String(text || "").trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(1, Math.ceil(words / 200));
+  }
+
+  // --- HEADER, NAVIGATION & GLOBAL CONNECTIONS ---
+  function ensureGlobalNavConnections() {
+    const topbar = document.querySelector(".topbar");
+    if (topbar && !document.getElementById("notifNavLink")) {
+      const notifLink = document.createElement("a");
+      notifLink.id = "notifNavLink";
+      notifLink.className = "notif-bell";
+      notifLink.href = "notifications.html";
+      notifLink.setAttribute("aria-label", "Notifications");
+      notifLink.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span class="notif-badge" id="notifBadge" hidden>0</span>`;
+      if (authLink) topbar.insertBefore(notifLink, authLink);
+    }
+
+    const leftSidebar = document.querySelector(".left-sidebar");
+    if (leftSidebar) {
+      const settingsLink = leftSidebar.querySelector('a[href="settings.html"]');
+      const divider = leftSidebar.querySelector(".side-divider");
+      const anchorNode = settingsLink || divider || null;
+
+      if (!leftSidebar.querySelector('a[href="writers.html"]')) {
+        const writersLink = document.createElement("a");
+        writersLink.className = "side-link";
+        writersLink.href = "writers.html";
+        writersLink.setAttribute("data-side-link", "");
+        writersLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span> Writers`;
+        leftSidebar.insertBefore(writersLink, anchorNode);
       }
 
-      async function renderPublicProfile(userId, profileName = "") {
-        if (!userId && !profileName.trim()) {
-          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This profile link is missing an account ID.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
-          return;
-        }
-        setPage(`<div class="page-view">${pageHero("Community profile", "Loading profile…", "Loading public account details.")}<section class="page-card"><p class="community-status" role="status">Loading profile…</p></section></div>`, { contentOnly: true });
-        try {
-          const client = await getSupabaseClient();
-          const profileFields = "id, username, full_name, bio, avatar_url, stories_count, followers_count, following_count, total_likes, total_comments";
-          let profile;
-          if (userId) {
-            const { data, error } = await client.from("profiles")
-              .select(profileFields)
-              .eq("id", userId)
-              .maybeSingle();
-            if (error) throw error;
-            profile = data;
-          } else {
-            let { data, error } = await client.from("profiles")
-              .select(profileFields)
-              .eq("full_name", profileName.trim())
-              .limit(2);
-            if (error) throw error;
-            if (!data.length) {
-              ({ data, error } = await client.from("profiles")
-                .select(profileFields)
-                .eq("username", profileName.trim().replace(/^@/, ""))
-                .limit(2));
-              if (error) throw error;
-            }
-            if (data.length > 1) {
-              const choices = data.map((item) => {
-                const choiceName = item.full_name || "Sunday member";
-                return `<a class="dashboard-post profile-choice" href="profile.html?id=${encodeURIComponent(item.id)}"><strong>${escapeHTML(choiceName)}</strong></a>`;
-              }).join("");
-              setPage(`<div class="page-view">${pageHero("Community profile", "Choose a profile", `More than one member matches “${escapeHTML(profileName.trim())}”. Select the right account.`)}<section class="page-card">${choices}</section></div>`, { contentOnly: true });
-              return;
-            }
-            profile = data[0] || null;
-            userId = profile?.id || "";
-          }
-          if (!profile) {
-            setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "This account could not be found.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
-            return;
-          }
-          const { data: stories, error: storiesError } = await client.from("posts")
-            .select("id, title, category, author_name, created_at")
-            .eq("user_id", userId)
-            .eq("status", "published")
-            .order("created_at", { ascending: false });
-          let rows;
-          if (storiesError) {
-            console.error("Unable to load public profile stories.", storiesError);
-            rows = '<p class="community-status" role="status">Public profile details are available, but stories could not be loaded. Please try again later.</p>';
-          } else {
-            rows = stories.length
-              ? stories.map((story) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(story.title || "Untitled story")}</strong><span>${escapeHTML(story.category || "Story")} · ${escapeHTML(formatDate(story.created_at))}</span></div><div class="dashboard-post-actions">${shareControlMarkup(story.id, story.title || "Untitled story")}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(story.id)}">Read story</a></div></div>`).join("")
-              : '<p class="community-status">No public stories yet.</p>';
-          }
-          const name = profile.full_name || "Anonymous Writer";
-          const username = profile.username || `member-${String(profile.id).slice(0, 8)}`;
-          const bio = typeof profile.bio === "string" ? profile.bio.trim() : "";
-          const avatarUrl = safePublicAvatarUrl(profile.avatar_url);
-          const metrics = [
-            ["stories_count", "Stories"],
-            ["followers_count", "Followers"],
-            ["following_count", "Following"],
-            ["total_likes", "Total likes"],
-            ["total_comments", "Total comments"]
-          ];
-          const metricCards = metrics.map(([field, label]) => {
-            const value = Number(profile[field]);
-            const displayValue = Number.isSafeInteger(value) && value >= 0 ? value : 0;
-            return `<div class="dashboard-stat"><strong>${displayValue}</strong><span>${label}</span></div>`;
-          }).join("");
-          setPage(`<div class="page-view"><section class="page-hero public-profile-hero">${avatarUrl
-            ? `<img class="public-profile-avatar" data-public-profile-avatar src="${escapeHTML(avatarUrl)}" alt="">`
-            : `<span class="avatar purple public-profile-avatar" aria-hidden="true">${escapeHTML(initials(name))}</span>`}
-            <div class="public-profile-copy"><div class="page-kicker">Community profile</div><h1>${escapeHTML(name)}</h1><p class="profile-handle">@${escapeHTML(username)}</p><p>${escapeHTML(bio || "Sunday community member")}</p></div>
-            <div class="dashboard-stats profile-stats">${metricCards}</div></section><section class="page-card"><h2>Public stories</h2>${rows}</section></div>`, { contentOnly: true });
-          const profileAvatar = document.querySelector("[data-public-profile-avatar]");
-          profileAvatar?.addEventListener("error", () => {
-            const fallback = document.createElement("span");
-            fallback.className = "avatar purple public-profile-avatar";
-            fallback.setAttribute("aria-hidden", "true");
-            fallback.textContent = initials(name);
-            profileAvatar.replaceWith(fallback);
-          }, { once: true });
-        } catch (error) {
-          console.error("Unable to load public profile.", error);
-          setPage(`<div class="page-view">${pageHero("Community profile", "Profile unavailable", "Public account details could not be loaded. Please try again later.")}<section class="page-card"><a class="secondary-button" href="index.html">Back to Sunday</a></section></div>`, { contentOnly: true });
-        }
+      if (!leftSidebar.querySelector('a[href="notifications.html"]')) {
+        const notifSideLink = document.createElement("a");
+        notifSideLink.className = "side-link";
+        notifSideLink.href = "notifications.html";
+        notifSideLink.setAttribute("data-side-link", "");
+        notifSideLink.innerHTML = `<span class="side-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span> Notifications`;
+        leftSidebar.insertBefore(notifSideLink, anchorNode);
       }
+    }
+  }
 
-      function safePublicAvatarUrl(value) {
-        if (typeof value !== "string" || value.length > 2048) return "";
-        try {
-          const url = new URL(value);
-          return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
-        } catch {
-          return "";
-        }
+  function updateHeader() {
+    ensureGlobalNavConnections();
+    const user = currentUser();
+    const writeLink = document.getElementById("writeLink");
+    const notifBadge = document.getElementById("notifBadge");
+
+    if (!user) {
+      if (authLink) {
+        authLink.hidden = false;
+        authLink.href = "login.html";
+        authLink.textContent = "Log in";
       }
+      if (headerProfile) headerProfile.hidden = true;
+      if (writeLink) writeLink.href = "write.html";
+      if (notifBadge) notifBadge.hidden = true;
+      return;
+    }
 
-      async function loadDashboardConnections(user) {
-        const followingList = document.querySelector("[data-following-list]");
-        const followersList = document.querySelector("[data-followers-list]");
-        if (!followingList || !followersList) return;
+    const ownPublished = allPosts().filter((p) => p.authorId === user.id && p.status === "published");
+    const followers = followersCountFor(user.id);
+    const following = followingList(user.id).length;
+    const unreadNotifs = notificationsForCurrentUser().filter((n) => !n.isRead).length;
 
-        try {
-          const client = await getSupabaseClient();
-          const { data: authData, error: authError } = await client.auth.getUser();
-          if (authError) throw authError;
-          if (!authData.user || authData.user.id !== user.id) {
-            throw new Error("Your Supabase session has expired. Log in again to view your community.");
-          }
+    if (notifBadge) {
+      notifBadge.hidden = unreadNotifs === 0;
+      notifBadge.textContent = String(unreadNotifs);
+    }
 
-          const { data: relationships, error } = await client
-            .from("follows")
-            .select("follower_id, following_id");
-          if (error) throw error;
-          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
+    if (authLink) {
+      authLink.hidden = false;
+      authLink.href = "index.html?logout=1";
+      authLink.textContent = "Log out";
+    }
 
-          const followingIds = [...new Set(relationships
-            .filter((relationship) => relationship.follower_id === user.id)
-            .map((relationship) => relationship.following_id))];
-          const followerIds = [...new Set(relationships
-            .filter((relationship) => relationship.following_id === user.id)
-            .map((relationship) => relationship.follower_id))];
-          followedUserIds = new Set(followingIds);
-          friendUserIds = new Set(followingIds.filter((id) => followerIds.includes(id)));
-          const names = new Map([[user.id, displayName(user)]]);
-          const relatedIds = [...new Set([...followingIds, ...followerIds])];
-          relatedIds.forEach((id) => {
-            const localUser = users().find((account) => account.id === id);
-            if (localUser) names.set(id, displayName(localUser));
-            const localPost = posts().find((post) => post.authorId === id && post.authorName);
-            if (localPost && !names.has(id)) names.set(id, localPost.authorName);
-          });
+    if (headerProfile) {
+      headerProfile.hidden = false;
+      const nameEl = document.getElementById("headerName");
+      const avatarEl = document.getElementById("headerAvatar");
+      const storiesStat = headerProfile.querySelector("[data-header-stories]");
+      const followersStat = headerProfile.querySelector("[data-header-followers]");
+      const followingStat = headerProfile.querySelector("[data-header-following]");
+      const fallbackStats = document.getElementById("headerStats");
 
-          if (relatedIds.length) {
-            const { data: authorPosts, error: postsError } = await client
-              .from("posts")
-              .select("user_id, author_name")
-              .eq("status", "published")
-              .in("user_id", relatedIds)
-              .order("created_at", { ascending: false });
-            if (postsError) throw postsError;
-            authorPosts.forEach((post) => {
-              if (post.author_name && !names.has(post.user_id)) names.set(post.user_id, post.author_name);
-            });
-          }
-          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
+      if (nameEl) nameEl.textContent = displayName(user);
+      if (avatarEl) avatarEl.textContent = initials(displayName(user));
 
-          const renderPeople = (ids, emptyMessage) => ids.length
-            ? ids.map((id) => {
-              const name = names.get(id) || "Sunday writer";
-              return `<div class="community-person"><span class="avatar purple">${escapeHTML(initials(name))}</span>${publicProfileLink(id, name, "community-person-name")}${followButtonMarkup(id, user)}</div>`;
-            }).join("")
-            : `<p class="community-status">${emptyMessage}</p>`;
-
-          document.querySelector("[data-following-count]").textContent = String(followingIds.length);
-          document.querySelector("[data-followers-count]").textContent = String(followerIds.length);
-          document.querySelector("[data-profile-following]").textContent = String(followingIds.length);
-          document.querySelector("[data-profile-followers]").textContent = String(followerIds.length);
-          followingList.innerHTML = renderPeople(followingIds, "You’re not following anyone yet.");
-          followersList.innerHTML = renderPeople(followerIds, "You don’t have any followers yet.");
-          updateFollowButtons(new Set(followingIds));
-        } catch (error) {
-          console.error("Unable to load dashboard followers and following.", error);
-          if (!followingList.isConnected || currentUser()?.id !== user.id) return;
-          const message = error instanceof Error && error.message.startsWith("Your Supabase session")
-            ? error.message
-            : "Your community could not be loaded. Please refresh and try again.";
-          followingList.innerHTML = `<p class="community-status" role="alert">${escapeHTML(message)}</p>`;
-          followersList.innerHTML = `<p class="community-status" role="alert">${escapeHTML(message)}</p>`;
-          document.querySelector("[data-following-count]").textContent = "—";
-          document.querySelector("[data-followers-count]").textContent = "—";
-          document.querySelector("[data-profile-following]").textContent = "—";
-          document.querySelector("[data-profile-followers]").textContent = "—";
-        }
+      if (storiesStat && followersStat && followingStat) {
+        storiesStat.textContent = String(ownPublished.length);
+        followersStat.textContent = String(followers);
+        followingStat.textContent = String(following);
+      } else if (fallbackStats) {
+        fallbackStats.textContent = `${ownPublished.length} stories · ${followers} followers · ${following} following`;
       }
+    }
+  }
 
-      function renderBookmarks() {
-        const savedPosts = posts();
-        const stories = bookmarkList().map((id) => savedPosts.find((post) => post.id === id))
-          .filter((post) => post && (post.status === "published" || post.authorId === currentUser()?.id));
-        const rows = stories.length ? stories.map((post) => `<div class="dashboard-post"><div class="dashboard-post-main"><strong>${escapeHTML(post.title)}</strong><span>${escapeHTML(post.category)} · ${publicProfileLink(post.authorId, post.authorName)}</span></div><div class="dashboard-post-actions">${post.status === "published" ? shareControlMarkup(post.id, post.title) : ""}<a class="dashboard-open" href="post.html?id=${encodeURIComponent(post.id)}">Read story</a></div></div>`).join("")
-          : '<div class="empty-dashboard">Your reading list is waiting. Bookmark a story from the public feed and it will be saved here.</div>';
-        setPage(`<div class="page-view">${pageHero("Saved for another day", "Your bookmarks", "A personal reading list of stories you want to come back to.")}<section class="page-card">${rows}</section></div>`, { contentOnly: true });
+  function routeParts() {
+    const pageAttr = document.body.dataset.page;
+    const file = location.pathname.split("/").pop().replace(/\.html$/, "");
+    const raw = pageAttr || file || "home";
+    const path = raw === "index" || raw === "" ? "home" : raw;
+    const params = new URLSearchParams(location.search);
+    return { path, params };
+  }
+
+  function navigate(route) {
+    const value = String(route || "").replace(/^#/, "");
+    if (value === "logout") {
+      writeStore(STORAGE.session, null);
+      if (typeof window.getSupabaseClient === "function") {
+        window.getSupabaseClient().then((sb) => sb.auth.signOut()).catch(() => {});
       }
+      location.href = "index.html?logout=1";
+      return;
+    }
+    if (value.startsWith("post/")) {
+      location.href = `post.html?id=${encodeURIComponent(value.slice(5))}`;
+      return;
+    }
+    if (value.endsWith(".html") || value.includes(".html?")) {
+      location.href = value;
+      return;
+    }
+    const pageMap = {
+      home: "index.html",
+      about: "about.html",
+      contact: "contact.html",
+      competitions: "competitions.html",
+      login: "login.html",
+      signup: "signup.html",
+      dashboard: "dashboard.html",
+      write: "write.html",
+      bookmarks: "bookmarks.html",
+      settings: "settings.html",
+      post: "post.html",
+      writers: "writers.html",
+      profile: "profile.html",
+      notifications: "notifications.html"
+    };
+    const [base, query = ""] = value.split("?");
+    const targetFile = pageMap[base] || "index.html";
+    location.href = query ? `${targetFile}?${query}` : targetFile;
+  }
 
-      function pageHero(kicker, title, description) {
-        return `<section class="page-hero"><div class="page-kicker">${kicker}</div><h1>${title}</h1><p>${description}</p></section>`;
+  function setPage(content, options = {}) {
+    if (layout) {
+      layout.classList.toggle("content-only", Boolean(options.contentOnly));
+      layout.classList.toggle("detail-only", Boolean(options.detailOnly));
+    }
+    if (feed) feed.innerHTML = content;
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  function pageHero(kicker, title, description) {
+    return `<section class="page-hero"><div class="page-kicker">${escapeHTML(kicker)}</div><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></section>`;
+  }
+
+  // --- CARD BUILDER ---
+  function createPostCardHTML(post) {
+    const savedBookmarks = bookmarkList();
+    const likedList = likedPostsList();
+    const isSaved = savedBookmarks.includes(post.id);
+    const isLiked = likedList.includes(post.id);
+    const commentCount = commentsForPost(post.id).length;
+    const mins = readingMinutes(post.body);
+    const isRTL = RTL_LANGUAGES.has(post.language);
+    const artClass = post.artClass || "art-journal";
+    const artEmoji = post.artEmoji || "✒️";
+    const resolvedImg = post.imageData || (post.imagePath ? publicImageUrl(post.imagePath) : "");
+    const coverHTML = resolvedImg
+      ? `<div class="post-image"><img src="${escapeHTML(resolvedImg)}" alt="${escapeHTML(post.title)}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;"></div>`
+      : `<div class="post-image ${escapeHTML(artClass)}" aria-label="Story illustration"><span>${artEmoji}</span></div>`;
+
+    return `
+      <article class="post-card" tabindex="0" data-post-id="${escapeHTML(post.id)}" data-category="${escapeHTML(post.category)}" data-language="${escapeHTML(post.language || "English")}" data-likes="${Number(post.likes) || 0}" data-date="${escapeHTML(post.createdAt)}" aria-label="Read story: ${escapeHTML(post.title)}">
+        <div class="post-content" ${isRTL ? 'dir="rtl" lang="ur"' : ""}>
+          <div class="post-author" dir="ltr">
+            <a href="profile.html?id=${encodeURIComponent(post.authorId || "")}" class="author-profile-trigger" style="display:inline-flex;align-items:center;gap:8px;">
+              <div class="avatar purple">${escapeHTML(initials(post.authorName))}</div>
+              <span class="author-name">${escapeHTML(post.authorName)}</span>
+            </a>
+            <span class="post-date">· ${escapeHTML(formatDate(post.createdAt))}</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;" dir="ltr">
+            <span class="category-label">${escapeHTML((post.category || "Life").toUpperCase())}</span>
+            ${post.language && post.language !== "English" ? `<span class="category-label lang-badge">${escapeHTML(post.language)}</span>` : ""}
+          </div>
+          <h3 class="post-title">${escapeHTML(post.title)}</h3>
+          <p class="post-excerpt">${escapeHTML(post.body.slice(0, 190))}${post.body.length > 190 ? "..." : ""}</p>
+          <div class="post-footer" dir="ltr">
+            <div class="post-meta">
+              <span>♥ <span class="like-count">${Number(post.likes) || 0}</span></span>
+              <span>· ${mins} min read</span>
+              <span>· 💬 ${commentCount}</span>
+            </div>
+            <div class="post-actions">
+              <button class="icon-button like-button ${isLiked ? "liked" : ""}" type="button" aria-label="Like this story" aria-pressed="${isLiked}">${isLiked ? "♥" : "♡"}</button>
+              <button class="icon-button bookmark-button ${isSaved ? "bookmarked" : ""}" type="button" aria-label="Bookmark this story" aria-pressed="${isSaved}">${isSaved ? "🔖" : "🏷️"}</button>
+            </div>
+          </div>
+        </div>
+        ${coverHTML}
+      </article>
+    `;
+  }
+
+  // --- RIGHT SIDEBAR HYDRATION (HOME) ---
+  function hydrateRightSidebar() {
+    const writerSuggestions = document.getElementById("writerSuggestions");
+    const followed = followingList();
+    if (writerSuggestions) {
+      const currentId = currentUser()?.id;
+      const list = users().filter((u) => u.id !== currentId).slice(0, 4);
+      if (list.length) {
+        writerSuggestions.innerHTML = list.map((w) => {
+          const isFollowing = followed.includes(w.id);
+          return `
+            <div class="person">
+              <a href="profile.html?id=${encodeURIComponent(w.id)}" style="display:flex;align-items:center;gap:9px;flex:1;min-width:0;">
+                <div class="avatar ${escapeHTML(w.avatarColor || "purple")}">${escapeHTML(initials(displayName(w)))}</div>
+                <div class="person-info">
+                  <strong>${escapeHTML(displayName(w))}</strong>
+                  <span>${escapeHTML(w.bio || "Qalamly community writer")}</span>
+                </div>
+              </a>
+              <button class="follow-button ${isFollowing ? "following" : ""}" type="button" data-follow-id="${escapeHTML(w.id)}">${isFollowing ? "Following" : "Follow"}</button>
+            </div>
+          `;
+        }).join("");
+      } else {
+        writerSuggestions.innerHTML = `<p class="sidebar-promo-copy">Registered community writers will appear here.</p>`;
       }
+    }
 
-      function renderAbout() {
-        setPage(`<div class="page-view">${pageHero("A place to put your words", "Stories make a little more room for us.", "Sunday is a welcoming home for personal essays, thoughtful ideas, and the small observations that make a day feel larger.")}<section class="page-card"><h2>Made for writers at every stage</h2><p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Sunday is for both. Read the community’s public stories, find a prompt when you need a nudge, and share your own work when you are ready.</p><p>Our aim is simple: make it easier to write honestly, discover a different point of view, and meet people who care about the same things.</p></section>
-          <section class="page-card"><h2>Start earning with your writing</h2><p>Turn your words into an opportunity with Sunday. Write, share your ideas, build your audience, and work toward earning from your content.</p>
-            <h3>How it works</h3>
-            <ol class="monetization-steps">
-              <li><strong>Create your Sunday account.</strong> Sign up for free and complete your writer profile.</li>
-              <li><strong>Start writing.</strong> Publish original blogs, articles, poetry, stories, educational content, and other valuable writing.</li>
-              <li><strong>Build your audience.</strong> Gain followers and encourage readers to engage through likes, comments, and shares.</li>
-              <li><strong>Meet the monetization criteria.</strong> Eligibility requires:
-                <ul>
-                  <li>At least <strong>500 followers</strong>.</li>
-                  <li>At least <strong>100 genuine engagements</strong>.</li>
-                  <li>Original, high-quality content.</li>
-                  <li>Following Sunday’s Community Guidelines.</li>
-                  <li>No serious copyright, plagiarism, spam, or policy violations.</li>
-                  <li>An active account in good standing.</li>
-                </ul>
-              </li>
-              <li><strong>Apply for monetization.</strong> Once eligible, apply to the Sunday Monetization Program from your Earnings Dashboard.</li>
-              <li><strong>Get approved and start earning.</strong> After review and approval, eligible content may generate earnings based on genuine reader activity and engagement.</li>
-            </ol>
-            <h3>How earnings are calculated</h3><p>Earnings may depend on genuine article views, reader engagement, reading time, likes, comments, other interactions, and overall content quality. Meeting the eligibility criteria does not guarantee approval or earnings.</p>
-          </section>
-          <section class="page-card"><h2>A gentle set of guidelines</h2><p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p></section></div>`, { contentOnly: true });
+    const trendingContainer = document.getElementById("trendingPosts");
+    if (trendingContainer) {
+      const topPosts = allPosts()
+        .filter((p) => p.status === "published")
+        .sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0))
+        .slice(0, 3);
+      if (topPosts.length) {
+        trendingContainer.innerHTML = topPosts.map((p, idx) => `
+          <a class="trending-item" href="post.html?id=${encodeURIComponent(p.id)}">
+            <span class="trend-number">0${idx + 1}</span>
+            <div>
+              <strong>${escapeHTML(p.title)}</strong>
+              <span>${escapeHTML(p.category)} · ${Number(p.likes || 0)} likes</span>
+            </div>
+          </a>
+        `).join("");
+      } else {
+        trendingContainer.innerHTML = `<p class="sidebar-promo-copy">No trending stories yet. Publish the first story!</p>`;
       }
+    }
 
-      function renderContact() {
-        setPage(`<div class="page-view">${pageHero("We’d love to hear from you", "Say hello.", "Questions, ideas, kind words, or a story about your writing life—our inbox is open.")}<section class="page-card page-form"><h2>Contact us</h2><p>Send your message to the Sunday team.</p><form id="contactForm" data-contact-form>
-          <div class="form-field"><label for="contactName">Name</label><input id="contactName" name="name" autocomplete="name" maxlength="80" required></div>
-          <div class="form-field"><label for="contactEmail">Email</label><input id="contactEmail" name="email" type="email" autocomplete="email" maxlength="254" required></div>
-          <div class="form-field"><label for="contactSubject">Subject</label><input id="contactSubject" name="subject" maxlength="150" required></div>
-          <div class="form-field"><label for="contactMessage">Message</label><textarea id="contactMessage" name="message" rows="6" maxlength="5000" required></textarea></div>
-          <button class="primary-button" type="submit">Send</button><p class="form-note" data-contact-status role="status"></p>
-        </form></section></div>`, { contentOnly: true });
-      }
+    updateSidebarChallengePanel();
+  }
 
-      function renderCompetitions() {
-        setPage(`<div class="page-view">${pageHero("A little nudge to put pen to paper", "The October writing prompt", "Write about a place that feels like home. There is no single right answer: a kitchen, a bus route, a borrowed room, or a person can all be home.")}<section class="page-card"><h2>Your prompt</h2><p>“Write about a place that feels like home.”</p><p>Try writing for ten minutes without editing. Begin with a detail you can see, hear, or smell. When your story is ready, publish it with the topic “Life” and include “October prompt” in your title or opening paragraph.</p><p><strong>Entries close October 31, 2026.</strong> The community will celebrate a few favorite stories in November.</p><a class="primary-button" href="write.html">✎ Write your entry</a></section><section class="page-card"><h2>Friendly guidelines</h2><p>Stories should be your own work, respectful of others’ privacy, and no longer than 1,200 characters in this demo. Sharing is optional; saving a draft keeps your entry private until you decide to publish.</p></section></div>`, { contentOnly: true });
-      }
+  // --- PAGE RENDERERS ---
+  function showHome(params) {
+    if (layout) layout.classList.remove("content-only", "detail-only");
 
-      function renderAuth(mode, message = "") {
-        if (currentUser()) {
-          navigate("dashboard.html");
-          return;
-        }
-        const signup = mode === "signup";
-        const formTitle = signup ? "Create your writer account" : "Welcome back";
-        const intro = signup ? "Join Sunday to keep private drafts and share your stories when you’re ready." : "Log in to pick up where your writing left off.";
-        setPage(`<div class="page-view">${pageHero(signup ? "A page of your own" : "Your words are waiting", formTitle, intro)}
-          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div><form id="authForm" data-auth-mode="${mode}" novalidate>
-          ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="How should we call you?"></div>' : ""}
-          ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
-          <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"></div>
-          <div class="form-field"><label for="authPassword">Password</label><input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}"></div>
-          ${signup ? '<div class="form-field"><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Enter your password again"></div>' : ""}
-          ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role" required><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
-          <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
-          <p class="form-note">Authentication is handled by Supabase. Profile details, drafts, and stories are stored only in this browser and do not sync between devices.</p>
-          </form><p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Sunday? <a class="panel-link" href="signup.html">Create an account</a>.'}</p></section></div>`, { contentOnly: true });
-      }
+    const initialTopic = params.get("topic") || "All";
+    const initialQuery = params.get("q") || "";
+    const initialLang = params.get("lang") || "All";
 
-      function renderWriter(message = "", draftId = "") {
-        const user = currentUser();
-        if (!user) {
-          sessionStorage.setItem("sunday.next", "write");
-          navigate("#signup");
-          return;
-        }
-        if (!canWrite(user)) {
-          setPage(`<div class="page-view">${pageHero("Reader account", "Your next chapter can include writing.", "Your account is set up for reading. Change your account type to Writer or Both in settings to publish stories.")}<section class="page-card"><a class="primary-button" href="settings.html">Update account type</a> <a class="secondary-button" href="index.html">Browse stories</a></section></div>`, { contentOnly: true });
-          return;
-        }
-        const editingPost = draftId ? posts().find((post) => post.id === draftId && post.authorId === user.id) : null;
-        if (draftId && !editingPost) {
-          setPage(`<div class="page-view">${pageHero("Story unavailable", "This isn’t one of your stories", message || "Only the author can edit a story.")}<section class="page-card"><a class="primary-button" href="dashboard.html">Back to your dashboard</a></section></div>`, { contentOnly: true });
-          return;
-        }
-        const isPublishedEdit = editingPost?.status === "published";
-        const title = editingPost?.title || "";
-        const body = editingPost?.body || "";
-        const category = editingPost?.category || "Lifestyle";
-        const currentImageUrl = safePostImageUrl(editingPost?.imagePath);
-        setPage(`<div class="page-view">${pageHero(isPublishedEdit ? "Update your story" : editingPost ? "Pick up where you left off" : "Make something yours", isPublishedEdit ? "Edit published story" : editingPost ? "Resume your story" : "Write a story", "Every good story starts somewhere. Publish it for the community or save a private draft to finish later.")}
-          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div><form id="writerForm" data-edit-id="${escapeHTML(editingPost?.id || "")}" data-edit-status="${escapeHTML(editingPost?.status || "")}" novalidate>
-          <div class="form-field"><label for="postTitle">Story title</label><input id="postTitle" name="title" maxlength="120" required placeholder="Give your story a title" value="${escapeHTML(title)}"></div>
-          <div class="form-field"><label for="postCategory">Topic</label><select id="postCategory" name="category">${STORY_CATEGORIES.map((option) => `<option${category.toLowerCase() === option.toLowerCase() ? " selected" : ""}>${option}</option>`).join("")}${STORY_CATEGORIES.some((option) => option.toLowerCase() === category.toLowerCase()) ? "" : `<option selected>${escapeHTML(category)}</option>`}</select></div>
-          <div class="form-field"><label for="postImage">Story picture <span class="form-label-note">(optional, JPG, PNG, WebP or GIF; up to 5 MB)</span></label><input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><div class="image-preview${currentImageUrl ? " visible" : ""}" data-image-preview data-current-image="${escapeHTML(currentImageUrl)}">${currentImageUrl ? `<img src="${escapeHTML(currentImageUrl)}" alt="Current story picture preview">` : ""}</div>${currentImageUrl ? '<label class="remove-image-option"><input name="removeImage" type="checkbox"> Remove current picture</label>' : ""}<span class="form-label-note">Pictures are uploaded when published; a selected picture is not saved with a private draft.</span></div>
-          <div class="form-field"><label for="postBody">Your story</label><textarea id="postBody" name="body" maxlength="12000" required placeholder="Start with the detail you can't stop thinking about...">${escapeHTML(body)}</textarea></div>
-          <div class="modal-actions writer-actions"><button class="primary-button" type="submit" name="status" value="published">${isPublishedEdit ? "Save changes" : "Publish to the community"}</button>${isPublishedEdit ? '<a class="secondary-button" href="dashboard.html">Cancel</a>' : '<button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>'}</div>
-          </form><p class="form-note">Published stories appear on the home page and your dashboard. Private drafts are visible only in your dashboard in this browser.</p></section></div>`, { contentOnly: true });
-      }
+    const topicContainer = document.getElementById("topicList");
+    if (topicContainer) {
+      topicContainer.innerHTML = ["All", ...STORY_CATEGORIES].map((cat) => `
+        <button class="topic-chip ${cat === initialTopic ? "selected" : ""}" type="button" data-topic="${escapeHTML(cat)}">
+          ${cat === "All" ? "All stories" : escapeHTML(cat)}
+        </button>
+      `).join("");
+    }
 
-      function renderSettings(message = "") {
-        const user = currentUser();
-        if (!user) { navigate("login.html"); return; }
-        setPage(`<div class="page-view">${pageHero("Your account", "Profile settings", "Update the details shown beside your writing.")}
-          <section class="page-card page-form"><div class="form-error ${message ? "visible" : ""}" id="settingsError" role="alert">${escapeHTML(message)}</div><form id="settingsFormPage" novalidate>
-          <div class="form-field"><label for="settingsName">Your name</label><input id="settingsName" name="name" required maxlength="60" value="${escapeHTML(user.name)}"></div>
-          <div class="form-field"><label for="settingsPoeticName">Poetic name</label><input id="settingsPoeticName" name="poeticName" required maxlength="60" value="${escapeHTML(displayName(user))}"></div>
-          <div class="form-field"><label for="settingsHandle">Profile handle</label><input id="settingsHandle" name="handle" required maxlength="30" value="${escapeHTML(user.handle)}"></div>
-          <div class="form-field"><label for="settingsRole">Account type</label><select id="settingsRole" name="role"><option value="reader"${user.role === "reader" ? " selected" : ""}>Reader</option><option value="writer"${user.role === "writer" ? " selected" : ""}>Writer</option><option value="both"${user.role === "both" || !user.role ? " selected" : ""}>Reader and writer</option></select></div>
-          <button class="primary-button" type="submit">Save profile</button></form></section>
-          <section class="page-card"><h2>Account privacy</h2><p>Drafts are private to this local browser account. Publishing a post makes it visible in this browser’s public feed.</p></section></div>`, { contentOnly: true });
-      }
+    feed.innerHTML = `
+      <section class="welcome-banner" aria-label="Welcome">
+        <div class="welcome-copy">
+          <div class="eyebrow">A little corner of the internet</div>
+          <h1>Good stories live here.</h1>
+          <p>Fresh ideas, honest words, and perspectives in English, Urdu, and Balochi.</p>
+        </div>
+        <div class="banner-decoration" aria-hidden="true">✒️</div>
+      </section>
 
-      function setAuthError(message) {
-        const error = document.querySelector(".form-error");
-        if (error) {
-          error.textContent = message;
-          error.classList.add("visible");
-        }
-      }
+      <!-- Featured Competition Frontpage Spotlight -->
+      <div id="frontpageFeaturedCompetition" class="featured-competition-wrapper" aria-label="Featured Writing Competition"></div>
 
-      function localProfile(authUser, details = {}) {
-        const existing = users().find((user) => user.id === authUser.id);
-        if (existing) return existing;
+      <div class="section-heading">
+        <div>
+          <h2 id="feedHeading">${initialTopic === "All" ? "Public dashboard" : `${escapeHTML(initialTopic)} stories`}</h2>
+          <p id="resultCount" aria-live="polite">Stories shared by the Qalamly community.</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label>
+            <span class="sr-only">Filter by language</span>
+            <select class="sort-select" id="langSelect" aria-label="Filter by language">
+              <option value="All">All languages</option>
+              ${STORY_LANGUAGES.map((l) => `<option value="${escapeHTML(l)}" ${initialLang === l ? "selected" : ""}>${escapeHTML(l)}</option>`).join("")}
+            </select>
+          </label>
+          <label>
+            <span class="sr-only">Sort stories</span>
+            <select class="sort-select" id="sortSelect" aria-label="Sort stories">
+              <option value="latest">Most recent</option>
+              <option value="popular">Most loved</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <section class="post-list" id="postList" aria-label="All blog posts"></section>
+      <div class="empty-state" id="emptyState">No stories published yet. Be the first to share a story with the community!</div>
+    `;
 
-        const metadata = authUser.user_metadata || {};
-        const email = authUser.email || "";
-        const name = details.name || metadata.full_name || metadata.Full_Name || email.split("@")[0] || "Writer";
-        const poeticName = details.poeticName || metadata.poetic_name || metadata.Poetic_Name || name;
-        const requestedRole = details.role || metadata.role || metadata.Writer_o_reader;
-        const role = ["reader", "writer", "both"].includes(requestedRole) ? requestedRole : "both";
-        const account = {
-          id: authUser.id, name, poeticName, role, handle: `@${email.split("@")[0]}`,
-          email, followers: 0, following: 0
-        };
-        writeStore(STORAGE.users, [...users(), account]);
-        return account;
-      }
+    const postListEl = document.getElementById("postList");
+    const searchInput = document.getElementById("searchInput");
+    const sortSelect = document.getElementById("sortSelect");
+    const langSelect = document.getElementById("langSelect");
 
-      async function handleAuth(form, signup) {
-        const errorNode = document.getElementById("authError");
-        const name = signup ? form.elements.name.value.trim() : "";
-        const poeticName = signup ? form.elements.poeticName.value.trim() : "";
-        const email = form.elements.email.value.trim().toLowerCase();
-        const password = form.elements.password.value;
-        if (signup && name.length < 2) { setAuthError("Please enter a name with at least two characters."); return; }
-        if (signup && poeticName.length < 2) { setAuthError("Please enter a poetic name with at least two characters."); return; }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setAuthError("Enter a valid email address."); return; }
-        if (signup && password.length < 8) { setAuthError("Choose a password with at least 8 characters."); return; }
-        if (signup && password !== form.elements.confirmPassword.value) { setAuthError("The passwords do not match. Please confirm your password."); return; }
-        if (signup && !["reader", "writer", "both"].includes(form.elements.role.value)) { setAuthError("Choose whether you are here as a reader, writer, or both."); return; }
-        try {
-          const auth = (await getSupabaseClient()).auth;
-          if (signup) {
-            const { data, error } = await auth.signUp({
-              email,
-              password,
-              options: {
-                data: {
-                  full_name: name,
-                  poetic_name: poeticName,
-                  role: form.elements.role.value,
-                  Full_Name: name,
-                  Poetic_Name: poeticName,
-                  Writer_o_reader: form.elements.role.value
-                }
-              }
-            });
-            if (error) throw error;
-            if (!data.user) throw new Error("Supabase did not return the new account. Please try again.");
-            const account = localProfile(data.user, { name, poeticName, role: form.elements.role.value });
-            if (!data.session) {
-              notify("Check your email to confirm your account, then log in.");
-              renderAuth("login");
-              return;
-            }
-            writeStore(STORAGE.session, account.id);
-            sessionStorage.removeItem("sunday.next");
-            updateHeader();
-            navigate(account.role === "reader" ? "dashboard.html" : "write.html");
-            return;
-          }
-          const { data, error } = await auth.signInWithPassword({ email, password });
-          if (error) throw error;
-          if (!data.user || !data.session) throw new Error("Sign-in did not return an active session. Please try again.");
-          const account = localProfile(data.user);
-          writeStore(STORAGE.session, account.id);
-          const next = sessionStorage.getItem("sunday.next") || "dashboard";
-          sessionStorage.removeItem("sunday.next");
-          updateHeader();
-          navigate(next === "write" && !canWrite(account) ? "dashboard.html" : `${next}.html`);
-        } catch (error) {
-          console.error("Account action failed.", error);
-          if (errorNode) {
-            errorNode.textContent = error instanceof Error ? error.message : "Account could not be saved. Please try again.";
-            errorNode.classList.add("visible");
-          }
-        }
-      }
+    if (searchInput && initialQuery) {
+      searchInput.value = initialQuery;
+    }
 
-      function renderRoute() {
-        updateHeader();
-        const { path, params } = routeParts();
-        const pageName = path === "home" ? "index.html" : `${path}.html`;
-        document.querySelectorAll(".top-nav a").forEach((link) => link.classList.toggle("active", link.getAttribute("href") === pageName));
-        document.querySelectorAll("[data-side-link]").forEach((link) => link.classList.toggle("selected", link.getAttribute("href") === pageName));
+    let activeTopic = initialTopic;
 
-        if (path === "home" && params.get("logout") === "1") {
-          writeStore(STORAGE.session, null);
-          updateHeader();
-          showHome();
-          notify("You’re logged out");
-          return;
-        }
-        if (path === "home" || path === "") { showHome(); return; }
-        if (path === "bookmarks") { renderBookmarks(); return; }
-        if (path === "about") { renderAbout(); return; }
-        if (path === "contact") { renderContact(); return; }
-        if (path === "competitions") { renderCompetitions(); return; }
-        if (path === "notifications") { renderNotificationsPage(); return; }
-        if (path === "dashboard") { renderDashboard(params.get("tab") || "all"); return; }
-        if (path === "profile") {
-          renderPublicProfile(params.get("id") || "", params.get("name") || "");
-          return;
-        }
-        if (path === "settings") { renderSettings(); return; }
-        if (path === "write") {
-          renderWriter("", params.get("edit") || "");
-          return;
-        }
-        if (path === "login" || path === "signup") { renderAuth(path); return; }
-        if (path === "post") { renderDetail(params.get("id") || ""); return; }
-        if (path === "auth-next") { navigate(`#${params.get("to") || "dashboard"}`); return; }
-        navigate("#home");
-      }
+    function renderFeedCards() {
+      const query = (searchInput?.value || "").trim().toLowerCase();
+      const lang = langSelect?.value || "All";
+      const sortBy = sortSelect?.value || "latest";
 
-      document.addEventListener("click", async (event) => {
-        const notificationBell = document.querySelector("[data-notification-bell]");
-        const notificationToggle = event.target.closest("[data-notifications-toggle]");
-        if (notificationToggle) {
-          const preview = notificationBell?.querySelector("[data-notification-preview]");
-          const open = preview?.hidden ?? true;
-          if (preview) preview.hidden = !open;
-          notificationToggle.setAttribute("aria-expanded", String(open));
-          return;
-        }
-        if (!event.target.closest(".share-control")) {
-          document.querySelectorAll(".share-control [data-share-post][aria-expanded='true']").forEach((button) => {
-            button.setAttribute("aria-expanded", "false");
-            button.closest(".share-control").querySelector(".share-menu").hidden = true;
-          });
-        }
-        const shareButton = event.target.closest("[data-share-post]");
-        if (shareButton) {
-          event.preventDefault();
-          const menu = shareButton.closest(".share-control").querySelector(".share-menu");
-          const open = shareButton.getAttribute("aria-expanded") !== "true";
-          if (open) populateShareMenu(shareButton);
-          shareButton.setAttribute("aria-expanded", String(open));
-          menu.hidden = !open;
-          return;
-        }
-        if (notificationBell && !notificationBell.contains(event.target)) {
-          const preview = notificationBell.querySelector("[data-notification-preview]");
-          const toggle = notificationBell.querySelector("[data-notifications-toggle]");
-          if (preview) preview.hidden = true;
-          if (toggle) toggle.setAttribute("aria-expanded", "false");
-        }
-        const markReadButton = event.target.closest("[data-mark-notification-read]");
-        if (markReadButton) {
-          event.preventDefault();
-          await markNotificationRead(markReadButton.dataset.markNotificationRead, markReadButton);
-          return;
-        }
-        const notificationLink = event.target.closest("[data-notification-open]");
-        if (notificationLink) {
-          event.preventDefault();
-          const opened = await markNotificationRead(notificationLink.dataset.notificationOpen, notificationLink);
-          if (opened) location.href = notificationLink.href;
-          return;
-        }
-        const followButton = event.target.closest("[data-follow-user]");
-        if (followButton) {
-          event.preventDefault();
-          await toggleFollow(followButton);
-          return;
-        }
-        const sideLink = event.target.closest("[data-side-link]");
-        if (sideLink) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          navigate(sideLink.getAttribute("href"));
-          return;
-        }
-        const authFormLink = event.target.closest("#authForm a[href]");
-        if (authFormLink) return;
-        const writeLink = event.target.closest("#writeLink");
-        if (writeLink) {
-          event.preventDefault();
-          if (!currentUser()) {
-            sessionStorage.setItem("sunday.next", "write");
-            navigate("#signup");
-          } else navigate("#write");
-          return;
-        }
-        const signout = event.target.closest("[data-signout]");
-        if (signout) { navigate("#logout"); return; }
-        const deleteComment = event.target.closest("[data-delete-comment]");
-        if (deleteComment) {
-          event.preventDefault();
-          if (!confirm("Delete your comment? This cannot be undone.")) return;
-
-          const user = currentUser();
-          if (!user) {
-            notify("Please log in to delete your comment.");
-            return;
-          }
-
-          deleteComment.disabled = true;
-          try {
-            const client = await getSupabaseClient();
-            const { data: authData, error: authError } = await client.auth.getUser();
-            if (authError) throw authError;
-            if (!authData.user || authData.user.id !== user.id) {
-              throw new Error("Your Supabase session is no longer active. Log in again before deleting comments.");
-            }
-
-            const comment = deleteComment.closest(".comment-item");
-            const section = deleteComment.closest("[data-comment-section]");
-            const postId = section.dataset.postId;
-            const { data, error } = await client
-              .from("comments")
-              .delete()
-              .eq("id", deleteComment.dataset.deleteComment)
-              .eq("user_id", authData.user.id)
-              .select("id")
-              .maybeSingle();
-            if (error) throw error;
-            if (!data) throw new Error("The comment could not be deleted. It may already be gone or not belong to your account.");
-
-            comment.remove();
-            const count = section.querySelector("[data-comment-count]");
-            const commentCount = section.querySelector("[data-comment-list]").children.length;
-            count.textContent = `(${commentCount})`;
-            section.querySelector("[data-comment-status]").textContent = commentCount ? "" : "No comments yet. Start the conversation.";
-            updatePostCommentCount(postId, commentCount);
-          } catch (error) {
-            console.error("Unable to delete comment.", error);
-            notify(error instanceof Error ? error.message : "Your comment could not be deleted. Please try again.");
-            deleteComment.disabled = false;
-          }
-          return;
-        }
-        const deletePost = event.target.closest("[data-delete-post]");
-        if (deletePost) {
-          event.preventDefault();
-          if (!confirm("Delete this story? This cannot be undone.")) return;
-          try {
-            await deleteUserPost(deletePost.dataset.deletePost);
-          } catch (error) {
-            console.error("Unable to delete story.", error);
-            notify(error instanceof Error ? error.message : "The story could not be deleted.");
-          }
-          return;
-        }
-        const tab = event.target.closest("[data-dashboard-tab]");
-        if (tab) { renderDashboard(tab.dataset.dashboardTab); return; }
-        const detailLike = event.target.closest("[data-like-detail]");
-        if (detailLike) {
-          await handleLike(detailLike.dataset.likeDetail, detailLike);
-          return;
-        }
-        const likeButton = event.target.closest(".like-button");
-        const bookmarkButton = event.target.closest(".bookmark-button");
-        if (bookmarkButton) {
-          const card = bookmarkButton.closest(".post-card");
-          const saved = bookmarkButton.getAttribute("aria-pressed") === "true";
-          saveBookmark(card.dataset.postId, !saved);
-          bookmarkButton.setAttribute("aria-pressed", String(!saved));
-          bookmarkButton.classList.toggle("bookmarked", !saved);
-          bookmarkButton.textContent = saved ? "♧" : "▣";
-          notify(saved ? "Removed from your bookmarks" : "Story saved to your bookmarks");
-          return;
-        }
-        if (likeButton) {
-          const card = likeButton.closest(".post-card");
-          await handleLike(card.dataset.postId, likeButton);
-          return;
-        }
-        const card = event.target.closest(".post-card[data-post-id]");
-        if (card && !event.target.closest("button, a")) navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
-      });
-
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          const openShareButton = document.querySelector(".share-control [data-share-post][aria-expanded='true']");
-          if (openShareButton) {
-            openShareButton.setAttribute("aria-expanded", "false");
-            openShareButton.closest(".share-control").querySelector(".share-menu").hidden = true;
-            openShareButton.focus();
-          }
-          const bell = document.querySelector("[data-notification-bell]");
-          const preview = bell?.querySelector("[data-notification-preview]");
-          const toggle = bell?.querySelector("[data-notifications-toggle]");
-          if (preview && !preview.hidden) {
-            preview.hidden = true;
-            toggle.setAttribute("aria-expanded", "false");
-            toggle.focus();
-          }
-        }
-        if (event.key === "Escape" && toast.classList.contains("notification-toast")) {
-          toast.classList.remove("show", "notification-toast");
-          toast.replaceChildren();
-        }
-      });
-
-      document.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        const card = event.target.closest(".post-card[data-post-id]");
-        if (!card || event.target !== card) return;
-        event.preventDefault();
-        navigate(`#post/${encodeURIComponent(card.dataset.postId)}`);
-      });
-
-      document.addEventListener("change", (event) => {
-        const imageInput = event.target.closest("#postImage");
-        const removeImage = event.target.closest('[name="removeImage"]');
-        if (!imageInput && !removeImage) return;
-
-        const form = (imageInput || removeImage).form;
-        const preview = form.querySelector("[data-image-preview]");
-        const image = preview.querySelector("img");
-
-        if (imageInput) {
-          const file = imageInput.files[0];
-          if (file && (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) || file.size > 5 * 1024 * 1024)) {
-            imageInput.value = "";
-            setAuthError("Choose a JPG, PNG, WebP, or GIF picture that is no larger than 5 MB.");
-            return;
-          }
-        }
-        if (image?.dataset.objectUrl) URL.revokeObjectURL(image.dataset.objectUrl);
-
-        if (imageInput) {
-          const file = imageInput.files[0];
-          if (file) {
-            if (form.elements.removeImage) form.elements.removeImage.checked = false;
-            const objectUrl = URL.createObjectURL(file);
-            if (image) {
-              image.src = objectUrl;
-              image.dataset.objectUrl = objectUrl;
-            } else {
-              const previewImage = document.createElement("img");
-              previewImage.src = objectUrl;
-              previewImage.alt = "Selected story picture preview";
-              previewImage.dataset.objectUrl = objectUrl;
-              preview.appendChild(previewImage);
-            }
-            preview.classList.add("visible");
-          } else if (preview.dataset.currentImage && image) {
-            image.src = preview.dataset.currentImage;
-            delete image.dataset.objectUrl;
-            preview.classList.add("visible");
-          } else {
-            image?.remove();
-            preview.classList.remove("visible");
-          }
-        } else if (removeImage.checked) {
-          form.elements.image.value = "";
-          preview.classList.remove("visible");
+      const featuredContainer = document.getElementById("frontpageFeaturedCompetition");
+      if (featuredContainer) {
+        if (query || activeTopic !== "All") {
+          featuredContainer.style.display = "none";
         } else {
-          const currentImage = preview.dataset.currentImage;
-          if (currentImage && image) {
-            image.src = currentImage;
-            delete image.dataset.objectUrl;
-            preview.classList.add("visible");
-          }
+          featuredContainer.style.display = "";
         }
+      }
+
+      const published = allPosts().filter((p) => p.status === "published");
+      const filtered = published.filter((p) => {
+        const topicMatch = activeTopic === "All" || p.category.toLowerCase() === activeTopic.toLowerCase();
+        const langMatch = lang === "All" || (p.language || "English") === lang;
+        const queryMatch = !query ||
+          p.title.toLowerCase().includes(query) ||
+          p.body.toLowerCase().includes(query) ||
+          p.authorName.toLowerCase().includes(query) ||
+          p.category.toLowerCase().includes(query);
+        return topicMatch && langMatch && queryMatch;
       });
 
-      document.addEventListener("submit", async (event) => {
-        const form = event.target;
-        if (form.matches("[data-contact-form]")) {
-          event.preventDefault();
-          const formData = new FormData(form);
-          const name = String(formData.get("name") || "").trim();
-          const email = String(formData.get("email") || "").trim();
-          const subject = String(formData.get("subject") || "").trim();
-          const message = String(formData.get("message") || "").trim();
-          const status = form.querySelector("[data-contact-status]");
-          const submitButton = form.querySelector('button[type="submit"]');
-          submitButton.disabled = true;
-          status.textContent = "Sending your message…";
-          try {
-            const { error } = await (await getSupabaseClient())
-              .from("contact")
-              .insert([{ name, email, subject, message }]);
-            if (error) throw error;
-            status.textContent = "Your message was sent. Thank you for contacting Sunday.";
-            form.reset();
-          } catch (error) {
-            console.error("Unable to submit contact form.", error);
-            status.textContent = "Your message could not be sent. Please try again later.";
-          } finally {
-            submitButton.disabled = false;
-          }
-          return;
-        }
-        if (form.id === "authForm") {
-          event.preventDefault();
-          await handleAuth(form, form.dataset.authMode === "signup");
-          return;
-        }
-        if (form.matches("[data-comment-form]")) {
-          event.preventDefault();
-          const user = currentUser();
-          if (!user) {
-            notify("Please log in to leave a comment.");
-            return;
-          }
+      filtered.sort((a, b) =>
+        sortBy === "popular"
+          ? Number(b.likes || 0) - Number(a.likes || 0)
+          : new Date(b.createdAt) - new Date(a.createdAt)
+      );
 
-          const content = form.elements.content.value.trim();
-          const status = form.closest("[data-comment-section]").querySelector("[data-comment-status]");
-          if (!content) {
-            status.textContent = "Write a comment before posting.";
-            return;
-          }
+      postListEl.innerHTML = filtered.map(createPostCardHTML).join("");
+      const emptyEl = document.getElementById("emptyState");
+      if (emptyEl) emptyEl.style.display = filtered.length ? "none" : "block";
 
-          const submitButton = form.querySelector('button[type="submit"]');
-          submitButton.disabled = true;
-          try {
-            const client = await getSupabaseClient();
-            const { data: authData, error: authError } = await client.auth.getUser();
-            if (authError) throw authError;
-            if (!authData.user || authData.user.id !== user.id) {
-              throw new Error("Your Supabase session is no longer active. Log in again before commenting.");
-            }
+      const headingEl = document.getElementById("feedHeading");
+      if (headingEl) headingEl.textContent = activeTopic === "All" ? "Public dashboard" : `${activeTopic} stories`;
 
-            const { data: comment, error } = await client
-              .from("comments")
-              .insert({
-                post_id: form.dataset.postId,
-                user_id: authData.user.id,
-                author_name: user.poeticName || user.name,
-                content
-              })
-              .select("id, post_id, user_id, author_name, content, created_at")
-              .single();
-            if (error) throw error;
-            if (!comment) throw new Error("The comment was not returned by the server. Please refresh and check the story.");
+      const countEl = document.getElementById("resultCount");
+      if (countEl) {
+        countEl.textContent = query || activeTopic !== "All" || lang !== "All"
+          ? `${filtered.length} ${filtered.length === 1 ? "story" : "stories"} found`
+          : "Stories shared by the Qalamly community.";
+      }
+    }
 
-            const section = form.closest("[data-comment-section]");
-            const list = section.querySelector("[data-comment-list]");
-            list.appendChild(createCommentElement(comment));
-            let commentCount = list.children.length;
-            try {
-              const { count, error: countError } = await client
-                .from("comments")
-                .select("id", { count: "exact", head: true })
-                .eq("post_id", form.dataset.postId);
-              if (countError) throw countError;
-              if (count !== null) commentCount = count;
-            } catch (error) {
-              console.error("Unable to refresh the comment count after posting.", error);
-            }
-            section.querySelector("[data-comment-count]").textContent = `(${commentCount})`;
-            updatePostCommentCount(form.dataset.postId, commentCount);
-            status.textContent = "Your comment was posted.";
-            form.reset();
-          } catch (error) {
-            console.error("Unable to post comment.", error);
-            status.textContent = error instanceof Error && error.message.startsWith("Your Supabase session")
-              ? error.message
-              : "Your comment could not be posted. Please try again.";
-            notify("Could not post your comment. Please try again.");
-          } finally {
-            submitButton.disabled = false;
-          }
-          return;
+    renderFeedCards();
+    renderFrontpageFeaturedCompetition();
+    hydrateRightSidebar();
+
+    fetchCompetitionsFromSupabase().then((comps) => {
+      renderFrontpageFeaturedCompetition(comps);
+      updateSidebarChallengePanel(comps);
+    });
+
+    if (searchInput) searchInput.oninput = renderFeedCards;
+    if (sortSelect) sortSelect.onchange = renderFeedCards;
+    if (langSelect) langSelect.onchange = renderFeedCards;
+
+    document.querySelectorAll("#topicList [data-topic]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeTopic = btn.dataset.topic;
+        document.querySelectorAll("#topicList [data-topic]").forEach((b) => b.classList.toggle("selected", b === btn));
+        renderFeedCards();
+      });
+    });
+  }
+
+  function renderDetail(id) {
+    const post = allPosts().find((p) => p.id === id);
+    const user = currentUser();
+    const isOwner = Boolean(user && post && post.authorId === user.id);
+
+    if (!post || (post.status !== "published" && !isOwner)) {
+      setPage(
+        `<div class="page-view"><section class="page-hero"><div class="page-kicker">Story unavailable</div><h1>We couldn't find that story.</h1><p>It may have been removed or is a private draft.</p><a class="primary-button" href="index.html">Back to stories</a></section></div>`,
+        { detailOnly: true }
+      );
+      return;
+    }
+
+    const isLiked = likedPostsList().includes(post.id);
+    const isSaved = bookmarkList().includes(post.id);
+    const isRTL = RTL_LANGUAGES.has(post.language);
+    const comments = commentsForPost(post.id);
+    const resolvedImg = post.imageData || (post.imagePath ? publicImageUrl(post.imagePath) : "");
+
+    const coverHTML = resolvedImg
+      ? `<div class="detail-cover"><img src="${escapeHTML(resolvedImg)}" alt="${escapeHTML(post.title)}" style="width:100%;max-height:380px;object-fit:cover;border-radius:14px;"></div>`
+      : `<div class="detail-cover ${escapeHTML(post.artClass || "art-journal")}" aria-hidden="true">${post.artEmoji || "✒️"}</div>`;
+
+    const commentsHTML = comments.length
+      ? comments.map((c) => `
+          <div class="comment-item">
+            <div class="comment-header">
+              <a href="profile.html?id=${encodeURIComponent(c.authorId || "")}"><strong>${escapeHTML(c.authorName)}</strong></a>
+              <span>${escapeHTML(formatDate(c.createdAt))}</span>
+              ${user && user.id === c.authorId ? `<button type="button" class="comment-delete" data-delete-comment="${escapeHTML(c.id)}" data-post-id="${escapeHTML(post.id)}">Delete</button>` : ""}
+            </div>
+            <p>${escapeHTML(c.content)}</p>
+          </div>
+        `).join("")
+      : `<p class="sidebar-promo-copy">No responses yet. Start the conversation below.</p>`;
+
+    setPage(
+      `<div class="page-view">
+        <a class="detail-back" href="${isOwner ? "dashboard.html" : "index.html"}">← Back to ${isOwner ? "your dashboard" : "stories"}</a>
+        <article class="detail-article">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span class="category-label">${escapeHTML(post.category.toUpperCase())}</span>
+            <span class="category-label lang-badge">${escapeHTML(post.language || "English")}</span>
+            ${post.status === "draft" ? `<span class="status-pill draft">Private Draft</span>` : ""}
+          </div>
+          <h1 ${isRTL ? 'dir="rtl" lang="ur"' : ""}>${escapeHTML(post.title)}</h1>
+          <div class="detail-byline">
+            <a href="profile.html?id=${encodeURIComponent(post.authorId || "")}" style="display:flex;align-items:center;gap:9px;">
+              <div class="avatar purple">${escapeHTML(initials(post.authorName))}</div>
+              <div>
+                <strong>${escapeHTML(post.authorName)}</strong>
+                <span>${escapeHTML(formatDate(post.createdAt))} · ${readingMinutes(post.body)} min read</span>
+              </div>
+            </a>
+          </div>
+          ${coverHTML}
+          <div class="detail-body" ${isRTL ? 'dir="rtl" lang="ur"' : ""}>${escapeHTML(post.body)}</div>
+          <div class="detail-actions">
+            <button class="primary-button ${isLiked ? "liked" : ""}" type="button" data-like-detail="${escapeHTML(post.id)}">${isLiked ? "♥ Liked" : "♡ Like"} · ${Number(post.likes) || 0}</button>
+            <button class="secondary-button" type="button" data-bookmark-detail="${escapeHTML(post.id)}">${isSaved ? "🔖 Bookmarked" : "🏷️ Bookmark"}</button>
+            <button class="secondary-button" type="button" data-share-post="${escapeHTML(post.id)}">Share link</button>
+            ${isOwner ? `<a class="secondary-button" href="write.html?edit=${encodeURIComponent(post.id)}">Edit story</a>` : ""}
+          </div>
+        </article>
+
+        <section class="page-card" style="margin-top:20px;">
+          <h2>Responses (${comments.length})</h2>
+          ${user ? `
+            <form id="commentForm" data-post-id="${escapeHTML(post.id)}" style="margin-bottom:18px;">
+              <div class="form-field">
+                <label for="commentInput">Share a thoughtful response</label>
+                <textarea id="commentInput" name="content" rows="3" maxlength="1000" required placeholder="What resonated with you in this story?"></textarea>
+              </div>
+              <button class="primary-button" type="submit">Post response</button>
+            </form>
+          ` : `<p class="form-note" style="margin-bottom:14px;"><a class="panel-link" href="login.html">Log in</a> to leave a response on this story.</p>`}
+          <div class="comments-list">${commentsHTML}</div>
+        </section>
+      </div>`,
+      { detailOnly: true }
+    );
+  }
+
+  function renderDashboard(tab = "all") {
+    const user = currentUser();
+    if (!user) {
+      sessionStorage.setItem("qalamly.next", "dashboard");
+      navigate("login.html");
+      return;
+    }
+
+    const ownAll = allPosts().filter((p) => p.authorId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const published = ownAll.filter((p) => p.status === "published");
+    const drafts = ownAll.filter((p) => p.status === "draft");
+    const shown = tab === "published" ? published : tab === "draft" ? drafts : ownAll;
+    const followers = followersCountFor(user.id);
+    const following = followingList(user.id).length;
+    const totalLikes = published.reduce((sum, p) => sum + (Number(p.likes) || 0), 0);
+
+    // Monetization criteria: 500 followers, 1000 reactions, 3 posts weekly in 3 months (36 in 90 days)
+    const threeMonthsAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+    const recentPublished = published.filter(p => new Date(p.createdAt || p.created_at || Date.now()).getTime() >= threeMonthsAgo);
+    const recentStoriesCount = recentPublished.length;
+    const weeklyRate = Number((recentStoriesCount / 12).toFixed(1));
+
+    const isStoriesMet = recentStoriesCount >= 36 || (published.length >= 36 && weeklyRate >= 3.0);
+    const isFollowersMet = followers >= 500;
+    const isLikesMet = totalLikes >= 1000;
+    const isMonetizationEligible = isStoriesMet && isFollowersMet && isLikesMet;
+
+    // Check criteria and trigger in-app notification if milestone reached
+    checkAndNotifyMonetization(user, recentStoriesCount, followers, totalLikes, weeklyRate);
+
+    const monetizationCardHTML = isMonetizationEligible
+      ? `
+        <div class="monetization-banner eligible">
+          <div class="monetization-badge">✦ Milestone Reached</div>
+          <h3>You meet all Creator Monetization criteria! 🎉</h3>
+          <p>You've achieved 500+ followers, 1,000+ reader reactions, and maintained 3 posts weekly over 3 months (${recentStoriesCount} stories). You are qualified to join the Qalamly Creator Program and earn from your writing.</p>
+          <div class="monetization-criteria-mini">
+            <span class="criterion-chip met">✓ ${recentStoriesCount}/36 Stories (3/wk in 3 mos)</span>
+            <span class="criterion-chip met">✓ ${followers}/500 Followers</span>
+            <span class="criterion-chip met">✓ ${totalLikes}/1,000 Reactions</span>
+          </div>
+          <a class="primary-button" href="apply.html">Apply for Monetization Now →</a>
+        </div>
+      `
+      : `
+        <div class="monetization-banner progress">
+          <div class="monetization-badge">Creator Monetization Progress</div>
+          <h3>Unlock earnings from your stories</h3>
+          <p>Criteria to qualify: <strong>500 followers</strong>, <strong>1,000 reactions</strong>, and <strong>3 posts weekly over 3 months</strong> (36 stories). You will be automatically notified as soon as you meet all criteria!</p>
+          <div class="monetization-criteria-mini">
+            <span class="criterion-chip ${isStoriesMet ? "met" : ""}">${isStoriesMet ? "✓" : "○"} ${recentStoriesCount}/36 Stories (${weeklyRate}/3 weekly)</span>
+            <span class="criterion-chip ${isFollowersMet ? "met" : ""}">${isFollowersMet ? "✓" : "○"} ${followers}/500 Followers</span>
+            <span class="criterion-chip ${isLikesMet ? "met" : ""}">${isLikesMet ? "✓" : "○"} ${totalLikes}/1,000 Reactions</span>
+          </div>
+          <a class="secondary-button" href="apply.html" style="font-size:11px;padding:6px 12px;">View Guidelines &amp; Apply</a>
+        </div>
+      `;
+
+    const listHTML = shown.length
+      ? shown.map((post) => `
+          <div class="dashboard-post">
+            <div class="dashboard-post-main">
+              <strong>${escapeHTML(post.title)}</strong>
+              <span>${escapeHTML(post.category)} · ${escapeHTML(post.language || "English")} · ${escapeHTML(formatDate(post.createdAt))} · ♥ ${Number(post.likes) || 0}</span>
+            </div>
+            <span class="status-pill ${post.status === "draft" ? "draft" : ""}">${post.status === "draft" ? "Private draft" : "Published"}</span>
+            <a class="dashboard-open" href="${post.status === "draft" ? `write.html?edit=${encodeURIComponent(post.id)}` : `post.html?id=${encodeURIComponent(post.id)}`}">${post.status === "draft" ? "Resume" : "Read"}</a>
+            <a class="dashboard-open" href="write.html?edit=${encodeURIComponent(post.id)}">Edit</a>
+            <button class="dashboard-delete" type="button" data-delete-post="${escapeHTML(post.id)}">Delete</button>
+          </div>
+        `).join("")
+      : `<div class="empty-dashboard">No stories in this tab yet. Start writing whenever inspiration strikes!</div>`;
+
+    setPage(
+      `<div class="page-view">
+        <section class="page-hero">
+          <div class="page-kicker">Your private space · ${escapeHTML(user.role || "writer")}</div>
+          <h1>Welcome, ${escapeHTML(displayName(user))}</h1>
+          <p>${escapeHTML(user.bio || "Your drafts stay private; published stories appear in the community feed.")}</p>
+          <div class="dashboard-actions">
+            ${canWrite(user) ? '<a class="primary-button" href="write.html">+ Write a story</a>' : '<a class="primary-button" href="settings.html">Enable writing in Settings</a>'}
+            <a class="secondary-button" href="profile.html?id=${encodeURIComponent(user.id)}">View public profile</a>
+            <a class="secondary-button" href="settings.html">Settings</a>
+            <button class="secondary-button" type="button" data-signout>Log out</button>
+          </div>
+        </section>
+        <div class="dashboard-stats" id="userStories">
+          <div class="dashboard-stat"><strong>${ownAll.length}</strong><span>Total stories</span></div>
+          <div class="dashboard-stat"><strong>${published.length}</strong><span>Published</span></div>
+          <div class="dashboard-stat"><strong>${drafts.length}</strong><span>Private drafts</span></div>
+          <div class="dashboard-stat" id="userFollowers"><strong>${followers}</strong><span>Followers</span></div>
+          <div class="dashboard-stat" id="userFollowing"><strong>${following}</strong><span>Following</span></div>
+        </div>
+        ${monetizationCardHTML}
+        <section class="page-card">
+          <h2>Manage your writing</h2>
+          <div class="dashboard-tabs">
+            <button class="dashboard-tab ${tab === "all" ? "active" : ""}" data-dashboard-tab="all">All (${ownAll.length})</button>
+            <button class="dashboard-tab ${tab === "published" ? "active" : ""}" data-dashboard-tab="published">Published (${published.length})</button>
+            <button class="dashboard-tab ${tab === "draft" ? "active" : ""}" data-dashboard-tab="draft">Drafts (${drafts.length})</button>
+          </div>
+          ${listHTML}
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderWriter(message = "", editId = "") {
+    const user = currentUser();
+    if (!user) {
+      sessionStorage.setItem("qalamly.next", "write");
+      navigate("login.html");
+      return;
+    }
+    if (!canWrite(user)) {
+      setPage(
+        `<div class="page-view">${pageHero("Reader account", "Ready to share your own voice?", "Switch your account role to 'Writer' or 'Reader and writer' in settings to start publishing.")}<section class="page-card"><a class="primary-button" href="settings.html">Update account role</a></section></div>`,
+        { contentOnly: true }
+      );
+      return;
+    }
+
+    const existing = editId ? allPosts().find((p) => p.id === editId && p.authorId === user.id) : null;
+    const title = existing?.title || "";
+    const body = existing?.body || "";
+    const category = existing?.category || "Life";
+    const language = existing?.language || "English";
+    const existingImg = existing?.imageData || (existing?.imagePath ? publicImageUrl(existing.imagePath) : "");
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero(existing ? "Editing your story" : "Make something yours", existing ? "Update story" : "Write a story", "Write in English, Urdu, or Balochi. Publish to the community or save a private draft.")}
+        <section class="page-card page-form" style="max-width:100%;">
+          <div class="form-error ${message ? "visible" : ""}" id="writerError" role="alert">${escapeHTML(message)}</div>
+          <form id="writerForm" data-edit-id="${escapeHTML(existing?.id || "")}" novalidate>
+            <div class="form-field">
+              <label for="postTitle">Story title</label>
+              <input id="postTitle" name="title" maxlength="150" required placeholder="Give your story a compelling title..." value="${escapeHTML(title)}">
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+              <div class="form-field">
+                <label for="postCategory">Topic</label>
+                <select id="postCategory" name="category">
+                  ${STORY_CATEGORIES.map((c) => `<option value="${escapeHTML(c)}" ${category === c ? "selected" : ""}>${escapeHTML(c)}</option>`).join("")}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="postLanguage">Language</label>
+                <select id="postLanguage" name="language">
+                  ${STORY_LANGUAGES.map((l) => `<option value="${escapeHTML(l)}" ${language === l ? "selected" : ""}>${escapeHTML(l)}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="postImage">Cover Image <span class="form-label-note">(optional, auto-compressed, max 5MB)</span></label>
+              <input id="postImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+              <div class="image-preview ${existingImg ? "visible" : ""}" id="imagePreviewWrap">
+                <img id="imagePreviewEl" src="${escapeHTML(existingImg)}" alt="Story cover preview">
+              </div>
+              ${existingImg ? `<label class="remove-image-option"><input type="checkbox" id="removeCoverCheckbox" name="removeImage"> Remove current cover image</label>` : ""}
+            </div>
+            <div class="form-field">
+              <label for="postBody">Your story</label>
+              <textarea id="postBody" name="body" rows="12" maxlength="50000" required placeholder="Start with the detail you can't stop thinking about..." ${RTL_LANGUAGES.has(language) ? 'dir="rtl" lang="ur"' : ""}>${escapeHTML(body)}</textarea>
+            </div>
+            <div class="modal-actions writer-actions">
+              <button class="primary-button" type="submit" name="status" value="published">Publish story</button>
+              <button class="secondary-button" type="submit" name="status" value="draft">Save private draft</button>
+            </div>
+          </form>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+
+    const langSelect = document.getElementById("postLanguage");
+    const bodyArea = document.getElementById("postBody");
+    if (langSelect && bodyArea) {
+      langSelect.addEventListener("change", () => {
+        const isRTL = RTL_LANGUAGES.has(langSelect.value);
+        bodyArea.dir = isRTL ? "rtl" : "ltr";
+      });
+    }
+
+    const imageInput = document.getElementById("postImage");
+    const previewWrap = document.getElementById("imagePreviewWrap");
+    const previewEl = document.getElementById("imagePreviewEl");
+    if (imageInput && previewWrap && previewEl) {
+      imageInput.addEventListener("change", async () => {
+        const file = imageInput.files?.[0];
+        if (!file) return;
+        try {
+          const dataUrl = await compressImageFile(file, 900, 0.78);
+          previewEl.src = dataUrl;
+          previewWrap.classList.add("visible");
+        } catch {
+          notify("Could not preview selected image.");
         }
-        if (form.id === "writerForm") {
-          event.preventDefault();
-          const user = currentUser();
-          if (!user) { sessionStorage.setItem("sunday.next", "write"); navigate("#signup"); return; }
-          if (!canWrite(user)) { renderWriter(); return; }
-          const title = form.elements.title.value.trim();
-          const body = form.elements.body.value.trim();
-          if (!title || body.length < 10) { setAuthError("Add a title and at least 10 characters to your story."); return; }
-          const submitter = event.submitter;
-          const status = submitter?.value === "draft" ? "draft" : "published";
-          const imageFile = form.elements.image.files[0];
-          if (imageFile && (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(imageFile.type) || imageFile.size > 5 * 1024 * 1024)) {
-            setAuthError("Choose a JPG, PNG, WebP, or GIF picture that is no larger than 5 MB.");
-            return;
-          }
-          let uploadedImagePath = "";
-          let remotePostSaved = false;
-          let imagePathToRemove = "";
-          try {
-            const savedPosts = posts();
-            const editId = form.dataset.editId;
-            const existing = editId && savedPosts.find((post) => post.id === editId && post.authorId === user.id);
-            if (editId && !existing) { setAuthError("This story is no longer available in your account."); return; }
-            let post;
-            let nextPosts;
-            if (status === "draft") {
-              if (existing?.status === "published") {
-                setAuthError("Published stories must be saved as published.");
-                return;
-              }
-              post = existing
-                ? { ...existing, title, category: form.elements.category.value, body, createdAt: new Date().toISOString() }
-                : {
-                  id: crypto.randomUUID(), authorId: user.id, authorName: user.poeticName || user.name,
-                  title, category: form.elements.category.value, body,
-                  status: "draft", likes: 0, createdAt: new Date().toISOString()
-                };
-              nextPosts = existing ? savedPosts.map((item) => item.id === existing.id ? post : item) : [...savedPosts, post];
-            } else {
-              const client = await getSupabaseClient();
-              const { data: authData, error: authError } = await client.auth.getUser();
-              if (authError) throw authError;
-              if (!authData.user || authData.user.id !== user.id) {
-                throw new Error("Your Supabase session is no longer active. Log in again before publishing.");
-              }
-              const postId = existing?.id || crypto.randomUUID();
-              const previousImagePath = existing?.imagePath || "";
-              let imagePath = form.elements.removeImage?.checked ? "" : previousImagePath;
-              if (imageFile) {
-                const extension = {
-                  "image/jpeg": "jpg",
-                  "image/png": "png",
-                  "image/webp": "webp",
-                  "image/gif": "gif"
-                }[imageFile.type];
-                const newImagePath = `${authData.user.id}/${postId}/${crypto.randomUUID()}.${extension}`;
-                const { error: uploadError } = await client.storage
-                  .from("post-images")
-                  .upload(newImagePath, imageFile, { contentType: imageFile.type, upsert: false });
-                if (uploadError) throw uploadError;
-                uploadedImagePath = newImagePath;
-                imagePath = newImagePath;
-              }
-              if (previousImagePath && previousImagePath !== imagePath) imagePathToRemove = previousImagePath;
-              const postValues = {
-                id: postId,
-                title,
-                category: form.elements.category.value,
-                content: body,
-                user_id: authData.user.id,
-                author_name: user.poeticName || user.name,
-                status: "published",
-                image_path: imagePath || null
-              };
-              const query = existing?.status === "published"
-                ? client.from("posts").update(postValues).eq("id", existing.id).eq("user_id", authData.user.id)
-                : client.from("posts").insert(postValues);
-              const { data, error } = await query.select("*").single();
-              if (error) throw error;
-              if (!data) throw new Error("The server did not return the saved story. Please refresh and check your dashboard.");
-              remotePostSaved = true;
-              post = normalizeRemotePost(data);
-              nextPosts = [...savedPosts.filter((item) => item.id !== existing?.id && item.id !== post.id), post];
-            }
-            writeStore(STORAGE.posts, nextPosts);
-            if (imagePathToRemove) {
-              try {
-                const { error: removeError } = await (await getSupabaseClient()).storage
-                  .from("post-images")
-                  .remove([imagePathToRemove]);
-                if (removeError) console.error("Unable to remove the previous story picture.", removeError);
-              } catch (removeError) {
-                console.error("Unable to remove the previous story picture.", removeError);
-              }
-            }
-            notify(status === "draft" ? "Saved privately to your dashboard" : existing?.status === "published" ? "Your story has been updated" : "Published to your dashboard and the public feed");
-            navigate("#dashboard");
-          } catch (error) {
-            if (uploadedImagePath && !remotePostSaved) {
-              try {
-                const { error: cleanupError } = await (await getSupabaseClient()).storage
-                  .from("post-images")
-                  .remove([uploadedImagePath]);
-                if (cleanupError) console.error("Unable to clean up the picture after the story save failed.", cleanupError);
-              } catch (cleanupError) {
-                console.error("Unable to clean up the picture after the story save failed.", cleanupError);
-              }
-            }
-            setAuthError(error instanceof Error ? error.message : "Your story could not be saved.");
-          }
-          return;
+      });
+    }
+  }
+
+  function renderBookmarks() {
+    const ids = bookmarkList();
+    const savedStories = ids
+      .map((id) => allPosts().find((p) => p.id === id))
+      .filter((p) => p && (p.status === "published" || p.authorId === currentUser()?.id));
+
+    const rows = savedStories.length
+      ? savedStories.map(createPostCardHTML).join("")
+      : `<div class="empty-dashboard">Your reading list is empty. Click the bookmark icon on any story to save it for later.</div>`;
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Saved for another day", "Your bookmarks", "A personal reading list of stories you want to revisit.")}
+        <section class="post-list">${rows}</section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderWritersPage() {
+    const queryInput = document.getElementById("searchInput");
+    const followed = followingList();
+    const currentId = currentUser()?.id;
+
+    function buildWritersList(filterText = "") {
+      const q = filterText.trim().toLowerCase();
+      const list = users().filter((w) => {
+        if (w.id === currentId) return false;
+        if (!q) return true;
+        return (
+          displayName(w).toLowerCase().includes(q) ||
+          (w.bio || "").toLowerCase().includes(q) ||
+          (w.handle || "").toLowerCase().includes(q)
+        );
+      });
+
+      if (!list.length) {
+        return `<div class="empty-dashboard">No community writers found yet.</div>`;
+      }
+
+      return list.map((w) => {
+        const isFollowing = followed.includes(w.id);
+        const count = allPosts().filter((p) => p.authorId === w.id && p.status === "published").length;
+        return `
+          <div class="page-card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+            <a href="profile.html?id=${encodeURIComponent(w.id)}" style="display:flex;align-items:center;gap:14px;flex:1;min-width:0;">
+              <div class="avatar ${escapeHTML(w.avatarColor || "purple")}" style="width:48px;height:48px;font-size:15px;">${escapeHTML(initials(displayName(w)))}</div>
+              <div style="min-width:0;">
+                <strong style="font-size:15px;display:block;">${escapeHTML(displayName(w))}</strong>
+                <span style="font-size:11px;color:var(--muted);display:block;margin:3px 0;">${escapeHTML(w.handle || "")} · ${count} stories · <span data-writer-followers="${escapeHTML(w.id)}">${followersCountFor(w.id)}</span> followers</span>
+                <p style="margin:4px 0 0;font-size:12px;">${escapeHTML(w.bio || "Writer in the Qalamly community.")}</p>
+              </div>
+            </a>
+            <button class="follow-button ${isFollowing ? "following" : ""}" style="padding:9px 14px;font-size:11px;" type="button" data-follow-id="${escapeHTML(w.id)}">${isFollowing ? "Following" : "Follow"}</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Qalamly Community", "Writers to follow", "Meet the storytellers, poets, and essayists shaping Qalamly.")}
+        <div id="writersDirectory">${buildWritersList(queryInput?.value || "")}</div>
+      </div>`,
+      { contentOnly: false }
+    );
+
+    if (queryInput) {
+      queryInput.oninput = () => {
+        const dir = document.getElementById("writersDirectory");
+        if (dir) dir.innerHTML = buildWritersList(queryInput.value);
+      };
+    }
+  }
+
+  function renderProfilePage(writerId) {
+    const target = (writerId ? users().find((u) => u.id === writerId) : currentUser()) || null;
+    if (!target) {
+      setPage(
+        `<div class="page-view"><section class="page-hero"><div class="page-kicker">Profile unavailable</div><h1>Writer not found.</h1><p>This profile could not be found or has not been created yet.</p><a class="primary-button" href="writers.html">Browse writers</a></section></div>`,
+        { contentOnly: true }
+      );
+      return;
+    }
+
+    const isSelf = currentUser()?.id === target.id;
+    const isFollowing = followingList().includes(target.id);
+    const writerPosts = allPosts()
+      .filter((p) => p.authorId === target.id && p.status === "published")
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    setPage(
+      `<div class="page-view">
+        <section class="page-hero">
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+            <div class="avatar ${escapeHTML(target.avatarColor || "purple")}" style="width:64px;height:64px;font-size:20px;">${escapeHTML(initials(displayName(target)))}</div>
+            <div style="flex:1;min-width:200px;">
+              <div class="page-kicker">${escapeHTML(target.handle || "@writer")}</div>
+              <h1 style="margin:4px 0;">${escapeHTML(displayName(target))}</h1>
+              <p>${escapeHTML(target.bio || "Writer and reader on Qalamly.")}</p>
+            </div>
+            ${!isSelf ? `<button class="primary-button ${isFollowing ? "following" : ""}" type="button" data-follow-id="${escapeHTML(target.id)}" data-follow-label="writer">${isFollowing ? "Following" : "Follow writer"}</button>` : `<a class="secondary-button" href="settings.html">Edit profile</a>`}
+          </div>
+          <div class="dashboard-stats" style="margin-top:20px;margin-bottom:0;">
+            <div class="dashboard-stat"><strong>${writerPosts.length}</strong><span>Published stories</span></div>
+            <div class="dashboard-stat"><strong id="profileFollowersCount" data-writer-followers="${escapeHTML(target.id)}">${followersCountFor(target.id)}</strong><span>Followers</span></div>
+            <div class="dashboard-stat"><strong>${Number(target.following || followingList(target.id).length)}</strong><span>Following</span></div>
+          </div>
+        </section>
+        <h2 style="font-size:18px;margin:22px 0 12px;">Stories by ${escapeHTML(displayName(target))}</h2>
+        <section class="post-list">
+          ${writerPosts.length ? writerPosts.map(createPostCardHTML).join("") : `<div class="empty-dashboard">No public stories published yet.</div>`}
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderNotificationsPage() {
+    const user = currentUser();
+    if (!user) {
+      sessionStorage.setItem("qalamly.next", "notifications");
+      navigate("login.html");
+      return;
+    }
+
+    const list = notificationsForCurrentUser();
+    const rows = list.length
+      ? list.map((n) => `
+          <div class="dashboard-post" style="${!n.isRead ? "background:#f8f6ff;padding-left:10px;padding-right:10px;border-radius:10px;" : ""}">
+            <div class="dashboard-post-main">
+              <strong>${escapeHTML(n.message)}</strong>
+              <span>${escapeHTML(formatDate(n.createdAt))}</span>
+            </div>
+            ${n.postId ? `<a class="dashboard-open" href="post.html?id=${encodeURIComponent(n.postId)}">View story</a>` : (n.message && n.message.includes("Monetization")) ? `<a class="dashboard-open" href="apply.html" style="font-weight:700;color:var(--purple);">Apply now →</a>` : ""}
+          </div>
+        `).join("")
+      : `<div class="empty-dashboard">You're all caught up! New likes, comments, and followers will appear here.</div>`;
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Activity", "Your notifications", "Updates when readers engage with your stories.")}
+        <section class="page-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h2 style="margin:0;">Recent activity</h2>
+            ${list.some((n) => !n.isRead) ? `<button class="secondary-button" type="button" id="markReadBtn">Mark all as read</button>` : ""}
+          </div>
+          ${rows}
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+
+    const markBtn = document.getElementById("markReadBtn");
+    if (markBtn) {
+      markBtn.addEventListener("click", () => {
+        markAllNotificationsRead();
+        renderNotificationsPage();
+        notify("All notifications marked as read.");
+      });
+    }
+  }
+
+  function renderAbout() {
+    setPage(
+      `<div class="page-view">
+        ${pageHero("A place to put your words", "Stories make a little more room for us.", "Qalamly is a welcoming home for personal essays, poetry, and stories in English, Urdu, and Balochi.")}
+        <section class="page-card">
+          <h2>Made for writers at every stage</h2>
+          <p>Some people arrive with a notebook full of drafts. Some arrive with one sentence they cannot stop thinking about. Qalamly is for both. Read the community's public stories, join a monthly prompt, and share your own work when you are ready.</p>
+        </section>
+        <section class="page-card">
+          <h2>Community guidelines</h2>
+          <p>Be generous with one another. Credit the work that inspires you. Share writing that is yours to share, and help us keep the conversation curious, kind, and welcoming.</p>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderContact() {
+    setPage(
+      `<div class="page-view">
+        ${pageHero("We'd love to hear from you", "Say hello.", "Questions, ideas, kind words, or feedback about Qalamly—send us a message below.")}
+        <section class="page-card page-form">
+          <h2>Send a message</h2>
+          <form id="contactForm">
+            <div class="form-field"><label for="contactName">Your name</label><input id="contactName" name="name" required placeholder="Your name"></div>
+            <div class="form-field"><label for="contactEmail">Your email</label><input id="contactEmail" name="email" type="email" required placeholder="you@example.com"></div>
+            <div class="form-field"><label for="contactSubject">Subject</label><input id="contactSubject" name="subject" placeholder="Story question, feedback, or hello"></div>
+            <div class="form-field"><label for="contactMsg">Message</label><textarea id="contactMsg" name="message" rows="5" required placeholder="How can we help?"></textarea></div>
+            <button class="primary-button" type="submit">Send message</button>
+          </form>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  async function renderCompetitions(params) {
+    const user = currentUser();
+    let competitions = [];
+
+    // Fetch live competitions from Supabase
+    if (typeof window.getSupabaseClient === "function") {
+      try {
+        const sb = await window.getSupabaseClient();
+        const { data, error } = await sb.from("competitions").select("*").order("created_at", { ascending: false });
+        if (!error && Array.isArray(data) && data.length > 0) {
+          competitions = data;
         }
-        if (form.id === "settingsFormPage") {
-          event.preventDefault();
-          const user = currentUser();
+      } catch (err) {
+        console.warn("Could not fetch live competitions:", err);
+      }
+    }
+
+    const cardsHTML = competitions.length
+      ? competitions.map(c => {
+          const isClosed = c.status === "Closed";
+          const deadlineDate = c.deadline ? new Date(c.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Open";
+
+          return `
+            <article class="page-card competition-topic-card" id="comp-${escapeHTML(c.id)}" style="margin-bottom:20px;border:1px solid #dcd7f8;position:relative;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
+                <div>
+                  <span class="criteria-kicker" style="color:var(--purple);font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;">${escapeHTML(c.kicker || "Writing Prompt")}</span>
+                  <h2 style="margin:4px 0 6px;font-size:20px;">${escapeHTML(c.title)}</h2>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <span class="status-pill" style="background:#f2f0fc;color:var(--purple);font-size:11px;font-weight:700;">${escapeHTML(c.category || "Story")}</span>
+                  <span class="status-pill ${isClosed ? "draft" : ""}" style="font-size:11px;font-weight:700;">${isClosed ? "Closed" : "● Active"}</span>
+                </div>
+              </div>
+
+              <p style="font-size:13px;line-height:1.6;color:#353648;margin:0 0 14px;">${escapeHTML(c.description)}</p>
+
+              <div style="background:#f9f8fe;border:1px solid #ece8f9;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:14px;">🏆</span>
+                  <strong style="font-size:12px;color:#7a5200;">Award: ${escapeHTML(c.prize || "Editorial Spotlight")}</strong>
+                </div>
+                <div style="font-size:11px;color:#6b6c82;line-height:1.5;">
+                  <strong>Guidelines:</strong> ${escapeHTML(c.guidelines || "Max 3,000 words. PDF, DOCX, TXT. Original unpublished work.")}
+                </div>
+                <div style="font-size:11px;color:var(--muted);margin-top:6px;">
+                  <strong>Deadline:</strong> ${escapeHTML(deadlineDate)}
+                </div>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                ${!isClosed ? `
+                  <button class="primary-button" type="button" data-submit-comp-id="${escapeHTML(c.id)}" data-submit-comp-title="${escapeHTML(c.title)}">
+                    Submit Entry &amp; Upload File →
+                  </button>
+                ` : `<button class="secondary-button" disabled style="opacity:0.6;">Submissions Closed</button>`}
+                <a class="secondary-button" href="write.html">Write Story in Editor</a>
+              </div>
+            </article>
+          `;
+        }).join("")
+      : `
+        <div class="page-card" style="padding:32px 24px;text-align:center;border:1px solid #dcd7f8;">
+          <h3 style="margin:0 0 8px;">No competitions yet</h3>
+          <p style="margin:0;color:#5c5d6b;">Check back soon for new writing prompts and challenges.</p>
+        </div>
+      `;
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Put your words forward", "Qalamly Writing Competitions", "Join writing challenges, respond to monthly creative prompts, and submit your stories and documents directly for review.")}
+        ${cardsHTML}
+
+        <!-- Submission Modal Dialog -->
+        <dialog id="compSubmissionDialog" class="editor-dialog" style="max-width:560px;border-radius:18px;padding:0;border:1px solid #dcd7f8;box-shadow:var(--shadow);">
+          <form id="compSubmissionForm" method="dialog" style="padding:24px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+              <div>
+                <span class="criteria-kicker" style="color:var(--purple);font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;">COMPETITION ENTRY</span>
+                <h2 id="compModalHeading" style="margin:4px 0 0;font-size:18px;">Submit Competition Entry</h2>
+              </div>
+              <button type="button" id="closeCompModalBtn" class="icon-button" style="font-size:18px;border:0;background:none;cursor:pointer;">×</button>
+            </div>
+
+            <input type="hidden" id="entryCompId" name="competitionId">
+            <input type="hidden" id="entryCompTitle" name="competitionTitle">
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryAuthorName" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Your Name / Pen Name <span style="color:red;">*</span></label>
+              <input id="entryAuthorName" name="name" required style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;" value="${user ? escapeHTML(user.poeticName || user.name) : ""}">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryAuthorEmail" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Your Email Address <span style="color:red;">*</span></label>
+              <input id="entryAuthorEmail" name="email" type="email" required style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;" value="${user ? escapeHTML(user.email || "") : ""}">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryStoryTitle" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Story / Entry Title <span style="color:red;">*</span></label>
+              <input id="entryStoryTitle" name="title" required placeholder="e.g. Memory of a Distant Courtyard" style="width:100%;height:38px;padding:0 10px;border-radius:8px;border:1px solid #dcdde8;font-size:13px;">
+            </div>
+
+            <div class="form-field" style="margin-bottom:12px;">
+              <label for="entryStoryExcerpt" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Story Excerpt or Opening Text <span style="color:red;">*</span></label>
+              <textarea id="entryStoryExcerpt" name="excerpt" rows="4" required placeholder="Paste your story text or opening lines..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #dcdde8;font-size:12px;line-height:1.5;"></textarea>
+            </div>
+
+            <div class="form-field" style="margin-bottom:16px;">
+              <label for="entryFile" style="display:block;font-size:11px;font-weight:700;margin-bottom:4px;">Attach Story Document (PDF, Word DOCX, TXT, EPUB, Images) <span style="font-weight:normal;color:var(--muted);">(Optional, max 10MB)</span></label>
+              <input id="entryFile" name="entryFile" type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.epub,image/*" style="width:100%;font-size:12px;">
+              <span id="fileUploadNote" style="display:block;font-size:10px;color:var(--muted);margin-top:4px;">Your file will be received directly in the admin dashboard for evaluation.</span>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:10px;">
+              <button type="button" id="cancelCompModalBtn" class="secondary-button" style="padding:8px 14px;font-size:12px;">Cancel</button>
+              <button type="submit" id="submitEntryBtn" class="primary-button" style="padding:8px 18px;font-size:12px;">Submit Entry to Admin →</button>
+            </div>
+          </form>
+        </dialog>
+      </div>`,
+      { contentOnly: true }
+    );
+
+    attachCompetitionHandlers();
+
+    // Auto-open submit modal if navigated with ?submit=<id> or ?id=<id>
+    const targetCompId = params?.get("submit") || params?.get("id");
+    if (targetCompId) {
+      setTimeout(() => {
+        const btn = document.querySelector(`[data-submit-comp-id="${targetCompId}"]`);
+        if (btn) {
+          btn.scrollIntoView({ behavior: "smooth", block: "center" });
+          btn.click();
+        }
+      }, 150);
+    }
+  }
+
+  function attachCompetitionHandlers() {
+    const dialog = document.getElementById("compSubmissionDialog");
+    const form = document.getElementById("compSubmissionForm");
+    const heading = document.getElementById("compModalHeading");
+    const idInput = document.getElementById("entryCompId");
+    const titleInput = document.getElementById("entryCompTitle");
+    const closeBtn = document.getElementById("closeCompModalBtn");
+    const cancelBtn = document.getElementById("cancelCompModalBtn");
+    const submitBtn = document.getElementById("submitEntryBtn");
+
+    closeBtn?.addEventListener("click", () => dialog?.close());
+    cancelBtn?.addEventListener("click", () => dialog?.close());
+
+    document.querySelectorAll("[data-submit-comp-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const compId = btn.dataset.submitCompId;
+        const compTitle = btn.dataset.submitCompTitle;
+        if (idInput) idInput.value = compId;
+        if (titleInput) titleInput.value = compTitle;
+        if (heading) heading.textContent = `Submit Entry: ${compTitle}`;
+        dialog?.showModal();
+      });
+    });
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const user = currentUser();
+      const compId = idInput?.value || "";
+      const compTitle = titleInput?.value || "Competition";
+      const name = document.getElementById("entryAuthorName")?.value.trim() || "";
+      const email = document.getElementById("entryAuthorEmail")?.value.trim() || "";
+      const storyTitle = document.getElementById("entryStoryTitle")?.value.trim() || "";
+      const excerpt = document.getElementById("entryStoryExcerpt")?.value.trim() || "";
+      const fileInput = document.getElementById("entryFile");
+      const file = fileInput?.files?.[0];
+
+      if (!name || !email || !storyTitle || !excerpt) {
+        notify("Please fill in all required fields.");
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Uploading & Submitting...";
+
+      let fileUrl = "";
+      let fileName = "";
+      let fileSize = "";
+
+      if (file) {
+        fileName = file.name;
+        const sizeKb = Math.round(file.size / 1024);
+        fileSize = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`;
+
+        try {
+          fileUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch (err) {
+          console.warn("File encoding error:", err);
+        }
+      }
+
+      const submissionRecord = {
+        competition_id: compId,
+        competition_title: compTitle,
+        user_id: user?.id && isUUID(user.id) ? user.id : null,
+        author_name: name,
+        author_email: email,
+        author_handle: user?.handle || `@${name.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
+        story_title: storyTitle,
+        story_excerpt: excerpt,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_size: fileSize,
+        status: "Submitted",
+        submitted_at: new Date().toISOString()
+      };
+
+      let saved = false;
+      if (typeof window.getSupabaseClient === "function") {
+        try {
+          const sb = await window.getSupabaseClient();
+          const { error } = await sb.from("competition_submissions").insert(submissionRecord);
+          if (!error) saved = true;
+        } catch (err) {
+          console.warn("Supabase submission error:", err);
+        }
+      }
+
+      // Also cache in local storage for dual compatibility
+      try {
+        const existing = JSON.parse(localStorage.getItem("qalamly.competition_submissions.v1") || "[]");
+        existing.unshift(submissionRecord);
+        localStorage.setItem("qalamly.competition_submissions.v1", JSON.stringify(existing));
+      } catch {}
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Entry to Admin →";
+      dialog?.close();
+
+      notify(saved ? "Entry & file submitted successfully! Received in Admin Studio." : "Entry saved and submitted for admin review!");
+    });
+  }
+
+  function renderSettings(message = "") {
+    const user = currentUser();
+    if (!user) {
+      navigate("login.html");
+      return;
+    }
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Your account", "Profile settings", "Customize how your name, bio, and pen name appear across Qalamly.")}
+        <section class="page-card page-form">
+          <div class="form-error ${message ? "visible" : ""}" id="settingsError" role="alert">${escapeHTML(message)}</div>
+          <form id="settingsFormPage" novalidate>
+            <div class="form-field"><label for="settingsName">Full name</label><input id="settingsName" name="name" required maxlength="60" value="${escapeHTML(user.name)}"></div>
+            <div class="form-field"><label for="settingsPoeticName">Poetic / Pen name</label><input id="settingsPoeticName" name="poeticName" required maxlength="60" value="${escapeHTML(displayName(user))}"></div>
+            <div class="form-field"><label for="settingsHandle">Profile handle</label><input id="settingsHandle" name="handle" required maxlength="30" value="${escapeHTML(user.handle || "")}"></div>
+            <div class="form-field"><label for="settingsBio">Short bio</label><textarea id="settingsBio" name="bio" rows="3" maxlength="200">${escapeHTML(user.bio || "")}</textarea></div>
+            <div class="form-field">
+              <label for="settingsRole">Account role</label>
+              <select id="settingsRole" name="role">
+                <option value="reader" ${user.role === "reader" ? "selected" : ""}>Reader</option>
+                <option value="writer" ${user.role === "writer" ? "selected" : ""}>Writer</option>
+                <option value="both" ${user.role === "both" || !user.role ? "selected" : ""}>Reader and writer</option>
+              </select>
+            </div>
+            <button class="primary-button" type="submit">Save changes</button>
+          </form>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderAuth(mode, message = "") {
+    if (currentUser()) {
+      navigate("dashboard.html");
+      return;
+    }
+    const signup = mode === "signup";
+    const eyeToggleHTML = (targetId) => `
+      <button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="${targetId}" aria-label="Show password" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path>
+          <circle cx="12" cy="12" r="2.5"></circle>
+          <path class="password-eye-slash" d="m4 4 16 16"></path>
+        </svg>
+      </button>`;
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero(signup ? "A page of your own" : "Your words are waiting", signup ? "Create your Qalamly account" : "Welcome back", signup ? "Join Qalamly to keep private drafts, follow writers, and publish stories." : "Log in to pick up where your reading and writing left off.")}
+        <section class="page-card page-form">
+          <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
+          <form id="authForm" novalidate>
+            ${signup ? '<div class="form-field"><label for="authName">Your name</label><input id="authName" name="name" required maxlength="60" autocomplete="name" placeholder="Your full name"></div>' : ""}
+            ${signup ? '<div class="form-field"><label for="authPoeticName">Poetic name <span class="form-label-note">(your pen name)</span></label><input id="authPoeticName" name="poeticName" required maxlength="60" autocomplete="nickname" placeholder="The name readers will see"></div>' : ""}
+            <div class="form-field"><label for="authEmail">Email</label><input id="authEmail" name="email" type="email" required autocomplete="email" placeholder="you@example.com"></div>
+            <div class="form-field">
+              <label for="authPassword">Password</label>
+              <div class="password-input-wrap">
+                <input id="authPassword" name="password" type="password" required minlength="${signup ? "8" : "1"}" autocomplete="${signup ? "new-password" : "current-password"}" placeholder="${signup ? "At least 8 characters" : "Your password"}">
+                ${eyeToggleHTML("authPassword")}
+              </div>
+            </div>
+            ${signup ? `<div class="form-field"><label for="authConfirmPassword">Confirm password</label><div class="password-input-wrap"><input id="authConfirmPassword" name="confirmPassword" type="password" required minlength="8" autocomplete="new-password" placeholder="Re-enter password">${eyeToggleHTML("authConfirmPassword")}</div></div>` : ""}
+            ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role"><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
+            <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
+          </form>
+          <p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function showFormError(msg) {
+    const err = document.querySelector(".form-error");
+    if (err) {
+      err.textContent = msg;
+      err.classList.add("visible");
+    }
+  }
+
+  // --- ROUTER DISPATCH ---
+  function renderRoute() {
+    updateHeader();
+    const { path, params } = routeParts();
+
+    if (path === "home" && params.get("logout") === "1") {
+      writeStore(STORAGE.session, null);
+      if (typeof window.getSupabaseClient === "function") {
+        window.getSupabaseClient().then((sb) => sb.auth.signOut()).catch(() => {});
+      }
+      updateHeader();
+      notify("You have been logged out.");
+    }
+
+    const activeFile = path === "home" ? "index.html" : `${path}.html`;
+    document.querySelectorAll(".top-nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === activeFile));
+    document.querySelectorAll("[data-side-link]").forEach((a) => a.classList.toggle("selected", a.getAttribute("href") === activeFile));
+
+    const globalSearch = document.getElementById("searchInput");
+    if (globalSearch && path !== "home" && path !== "writers") {
+      globalSearch.onkeydown = (e) => {
+        if (e.key === "Enter" && globalSearch.value.trim()) {
+          e.preventDefault();
+          navigate(`index.html?q=${encodeURIComponent(globalSearch.value.trim())}`);
+        }
+      };
+    }
+
+    switch (path) {
+      case "home": showHome(params); break;
+      case "about": renderAbout(); break;
+      case "contact": renderContact(); break;
+      case "competitions": renderCompetitions(params); break;
+      case "bookmarks": renderBookmarks(); break;
+      case "dashboard": renderDashboard(params.get("tab") || "all"); break;
+      case "write": renderWriter("", params.get("edit") || ""); break;
+      case "settings": renderSettings(); break;
+      case "login":
+      case "signup": renderAuth(path); break;
+      case "post": renderDetail(params.get("id") || ""); break;
+      case "writers": renderWritersPage(); break;
+      case "profile": renderProfilePage(params.get("id") || ""); break;
+      case "notifications": renderNotificationsPage(); break;
+      default: showHome(params);
+    }
+
+    // Hydrate live data from Supabase tables asynchronously
+    hydrateFromSupabase();
+  }
+
+  // --- KEYBOARD NAVIGATION FOR STORY CARDS ---
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest(".post-card[data-post-id]");
+    if (!card || event.target !== card) return;
+    event.preventDefault();
+    navigate(`post/${card.dataset.postId}`);
+  });
+
+  // --- GLOBAL CLICK LISTENERS ---
+  document.addEventListener("click", (event) => {
+    const passwordToggle = event.target.closest("[data-password-toggle]");
+    if (passwordToggle) {
+      const inputId = passwordToggle.getAttribute("aria-controls");
+      const passwordInput = inputId ? document.getElementById(inputId) : null;
+      if (passwordInput) {
+        const show = passwordInput.type === "password";
+        passwordInput.type = show ? "text" : "password";
+        passwordToggle.setAttribute("aria-pressed", String(show));
+        passwordToggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      }
+      return;
+    }
+
+    const signout = event.target.closest("[data-signout]");
+    if (signout) {
+      navigate("logout");
+      return;
+    }
+
+    const tabBtn = event.target.closest("[data-dashboard-tab]");
+    if (tabBtn) {
+      renderDashboard(tabBtn.dataset.dashboardTab);
+      return;
+    }
+
+    const deletePostBtn = event.target.closest("[data-delete-post]");
+    if (deletePostBtn) {
+      const id = deletePostBtn.dataset.deletePost;
+      deletePostById(id);
+      notify("Story deleted.");
+      renderDashboard("all");
+      updateHeader();
+      return;
+    }
+
+    const followBtn = event.target.closest("[data-follow-id]");
+    if (followBtn) {
+      event.preventDefault();
+      if (!currentUser()) {
+        navigate("login.html");
+        return;
+      }
+      const writerId = followBtn.dataset.followId;
+      const nowFollowing = toggleFollowWriter(writerId);
+      const isProfileHeroBtn = followBtn.dataset.followLabel === "writer";
+      followBtn.classList.toggle("following", nowFollowing);
+      followBtn.textContent = nowFollowing ? "Following" : (isProfileHeroBtn ? "Follow writer" : "Follow");
+
+      const updatedCount = followersCountFor(writerId);
+      document.querySelectorAll(`[data-writer-followers="${CSS.escape ? CSS.escape(writerId) : writerId}"]`).forEach((el) => {
+        el.textContent = String(updatedCount);
+      });
+
+      notify(nowFollowing ? "Writer followed!" : "Unfollowed writer.");
+      return;
+    }
+
+    const detailLike = event.target.closest("[data-like-detail]");
+    if (detailLike) {
+      const id = detailLike.dataset.likeDetail;
+      const res = toggleLike(id);
+      detailLike.classList.toggle("liked", res.liked);
+      detailLike.textContent = `${res.liked ? "♥ Liked" : "♡ Like"} · ${res.count}`;
+      return;
+    }
+
+    const detailBookmark = event.target.closest("[data-bookmark-detail]");
+    if (detailBookmark) {
+      const id = detailBookmark.dataset.bookmarkDetail;
+      const saved = toggleBookmark(id);
+      detailBookmark.textContent = saved ? "🔖 Bookmarked" : "🏷️ Bookmark";
+      notify(saved ? "Saved to bookmarks" : "Removed from bookmarks");
+      return;
+    }
+
+    const shareBtn = event.target.closest("[data-share-post]");
+    if (shareBtn) {
+      const url = `${location.origin}${location.pathname.replace(/[^/]+$/, "")}post.html?id=${encodeURIComponent(shareBtn.dataset.sharePost)}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(() => notify("Story link copied to clipboard!"));
+      } else {
+        notify("Share URL: " + url);
+      }
+      return;
+    }
+
+    const deleteComment = event.target.closest("[data-delete-comment]");
+    if (deleteComment) {
+      deleteCommentById(deleteComment.dataset.deleteComment);
+      renderDetail(deleteComment.dataset.postId);
+      notify("Response removed.");
+      return;
+    }
+
+    const likeButton = event.target.closest(".like-button");
+    if (likeButton) {
+      event.stopPropagation();
+      const card = likeButton.closest(".post-card");
+      if (!card) return;
+      const res = toggleLike(card.dataset.postId);
+      likeButton.setAttribute("aria-pressed", String(res.liked));
+      likeButton.classList.toggle("liked", res.liked);
+      likeButton.textContent = res.liked ? "♥" : "♡";
+      const countEl = card.querySelector(".like-count");
+      if (countEl) countEl.textContent = String(res.count);
+      return;
+    }
+
+    const bookmarkButton = event.target.closest(".bookmark-button");
+    if (bookmarkButton) {
+      event.stopPropagation();
+      const card = bookmarkButton.closest(".post-card");
+      if (!card) return;
+      const saved = toggleBookmark(card.dataset.postId);
+      bookmarkButton.setAttribute("aria-pressed", String(saved));
+      bookmarkButton.classList.toggle("bookmarked", saved);
+      bookmarkButton.textContent = saved ? "🔖" : "🏷️";
+      if (routeParts().path === "bookmarks" && !saved) {
+        renderBookmarks();
+      }
+      notify(saved ? "Story saved to bookmarks" : "Removed from bookmarks");
+      return;
+    }
+
+    const card = event.target.closest(".post-card[data-post-id]");
+    if (card && !event.target.closest("button") && !event.target.closest("a")) {
+      navigate(`post/${card.dataset.postId}`);
+    }
+  });
+
+  // --- GLOBAL FORM SUBMISSIONS ---
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+
+    if (form.id === "contactForm") {
+      event.preventDefault();
+      const name = form.elements.name?.value.trim() || "";
+      const email = form.elements.email?.value.trim() || "";
+      const subject = form.elements.subject?.value.trim() || "Qalamly Community Inquiry";
+      const message = form.elements.message?.value.trim() || "";
+      if (!name || !email || !message) return;
+
+      const entry = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `msg-${Date.now()}`,
+        name,
+        email,
+        subject,
+        message,
+        createdAt: new Date().toISOString()
+      };
+      await syncContactToSupabase(entry);
+      form.reset();
+      notify("Thank you! Your message has been sent to the Qalamly team.");
+      return;
+    }
+
+    if (form.id === "commentForm") {
+      event.preventDefault();
+      const postId = form.dataset.postId;
+      const content = form.elements.content.value.trim();
+      if (!content) return;
+      addCommentToPost(postId, content);
+      renderDetail(postId);
+      notify("Response published!");
+      return;
+    }
+
+    if (form.id === "authForm") {
+      event.preventDefault();
+      const isSignup = routeParts().path === "signup";
+      const email = form.elements.email.value.trim().toLowerCase();
+      const password = form.elements.password.value;
+      const list = users();
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFormError("Please enter a valid email address.");
+        return;
+      }
+
+      if (typeof window.getSupabaseClient !== "function") {
+        showFormError("Database client is unavailable. Check your connection.");
+        return;
+      }
+
+      try {
+        const sb = await window.getSupabaseClient();
+
+        if (isSignup) {
           const name = form.elements.name.value.trim();
-          let handle = form.elements.handle.value.trim().replace(/\s+/g, "");
-          if (!name || name.length < 2 || !handle) { setAuthError("Enter a display name and profile handle."); return; }
-          if (!handle.startsWith("@")) handle = `@${handle}`;
-          try {
-              const poeticName = form.elements.poeticName.value.trim();
-              const role = form.elements.role.value;
-              if (poeticName.length < 2) { setAuthError("Please enter a poetic name with at least two characters."); return; }
-              if (!["reader", "writer", "both"].includes(role)) { setAuthError("Choose Reader, Writer, or Reader and writer."); return; }
-              const updatedUsers = users().map((item) => item.id === user.id ? { ...item, name, poeticName, handle, role } : item);
-              writeStore(STORAGE.users, updatedUsers);
-              const savedPosts = posts();
-              savedPosts.forEach((post) => {
-                if (post.authorId === user.id) post.authorName = poeticName;
-              });
-              writeStore(STORAGE.posts, savedPosts);
-            updateHeader();
-            notify("Your profile has been updated");
-            navigate("#dashboard");
-          } catch (error) {
-            setAuthError(error instanceof Error ? error.message : "Your settings could not be saved.");
-          }
-        }
-      });
+          const poeticName = form.elements.poeticName.value.trim();
+          const confirm = form.elements.confirmPassword.value;
+          const role = form.elements.role.value;
+          if (name.length < 2 || poeticName.length < 2) { showFormError("Please enter your name and poetic pen name."); return; }
+          if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
+          if (password !== confirm) { showFormError("Passwords do not match."); return; }
 
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && document.querySelector(".modal-backdrop.open")) {
-          document.querySelectorAll(".modal-backdrop.open").forEach((modal) => modal.classList.remove("open"));
+          const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: name,
+                poetic_name: poeticName,
+                peotic_name: poeticName,
+                role
+              }
+            }
+          });
+
+          if (signUpErr || !signUpData?.user?.id) {
+            showFormError(signUpErr?.message || "Could not create account. Please try again.");
+            return;
+          }
+
+          const sbUserId = signUpData.user.id;
+          const cleanHandle = `${poeticName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${sbUserId.slice(0, 6)}`;
+
+          await sb.from("profiles").upsert({
+            id: sbUserId,
+            full_name: name,
+            peotic_name: poeticName,
+            email,
+            role,
+            username: cleanHandle
+          });
+
+          const newUser = {
+            id: sbUserId,
+            name,
+            poeticName,
+            email,
+            role,
+            handle: `@${cleanHandle}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+          writeStore(STORAGE.users, [...list.filter((u) => u.id !== newUser.id), newUser]);
+          writeStore(STORAGE.session, newUser.id);
+          notify("Account created! Welcome to Qalamly.");
+          navigate("dashboard.html");
+        } else {
+          const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+          if (signInErr || !signInData?.user) {
+            showFormError(signInErr?.message || "Invalid email or password.");
+            return;
+          }
+
+          const sbU = signInData.user;
+          const meta = sbU.user_metadata || {};
+          const loggedInUser = list.find((u) => u.id === sbU.id) || {
+            id: sbU.id,
+            name: meta.full_name || email.split("@")[0],
+            poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+            email,
+            role: (meta.role || "both").toLowerCase(),
+            handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
+            bio: "Writer and reader on Qalamly.",
+            followers: 0,
+            following: 0
+          };
+
+          writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbU.id), loggedInUser]);
+          writeStore(STORAGE.session, loggedInUser.id);
+          const next = sessionStorage.getItem("qalamly.next") || "dashboard";
+          sessionStorage.removeItem("qalamly.next");
+          navigate(`${next}.html`);
         }
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
+      }
+      return;
+    }
+
+    if (form.id === "writerForm") {
+      event.preventDefault();
+      const user = currentUser();
+      if (!user) { navigate("login.html"); return; }
+
+      const title = form.elements.title.value.trim();
+      const body = form.elements.body.value.trim();
+      const category = form.elements.category.value;
+      const language = form.elements.language.value;
+      const status = event.submitter?.value === "draft" ? "draft" : "published";
+      const editId = form.dataset.editId;
+      const removeImage = Boolean(form.elements.removeImage?.checked);
+
+      if (!title || body.length < 10) {
+        showFormError("Please enter a title and at least 10 characters for your story.");
+        return;
+      }
+
+      const fileInput = form.elements.image;
+      const rawFile = fileInput?.files?.[0] || null;
+      let imageData = "";
+      if (rawFile) {
+        if (rawFile.size > 5 * 1024 * 1024) {
+          showFormError("Image must be under 5MB.");
+          return;
+        }
+        try {
+          imageData = await compressImageFile(rawFile, 1000, 0.78);
+        } catch (err) {
+          showFormError(err instanceof Error ? err.message : "Could not process image.");
+          return;
+        }
+      }
+
+      const existing = editId ? allPosts().find((p) => p.id === editId) : null;
+      const finalImage = removeImage ? "" : (imageData || existing?.imageData || "");
+
+      const postObj = {
+        id: existing ? existing.id : crypto.randomUUID(),
+        authorId: user.id,
+        authorName: displayName(user),
+        title,
+        category,
+        language,
+        body,
+        imageData: finalImage,
+        imagePath: removeImage ? "" : (existing?.imagePath || ""),
+        status,
+        likes: existing ? existing.likes : 0,
+        createdAt: existing ? existing.createdAt : new Date().toISOString()
+      };
+
+      await syncPostToSupabase(postObj, rawFile);
+      savePostUpdate(postObj);
+      notify(status === "draft" ? "Draft saved privately." : "Story published to Qalamly!");
+      navigate("dashboard.html");
+      return;
+    }
+
+    if (form.id === "settingsFormPage") {
+      event.preventDefault();
+      const user = currentUser();
+      if (!user) return;
+      const name = form.elements.name.value.trim();
+      const poeticName = form.elements.poeticName.value.trim();
+      let handle = form.elements.handle.value.trim().replace(/\s+/g, "");
+      const bio = form.elements.bio.value.trim();
+      const role = form.elements.role.value;
+
+      if (name.length < 2 || poeticName.length < 2) {
+        showFormError("Name and poetic name must be at least 2 characters.");
+        return;
+      }
+
+      if (!handle.startsWith("@")) handle = `@${handle}`;
+      const updatedUser = { ...user, name, poeticName, handle, bio, role };
+      const list = users().map((u) => (u.id === user.id ? updatedUser : u));
+      writeStore(STORAGE.users, list);
+
+      const customPosts = readStore(STORAGE.posts, []);
+      if (Array.isArray(customPosts)) {
+        customPosts.forEach((p) => {
+          if (p.authorId === user.id) p.authorName = poeticName;
+        });
+        writeStore(STORAGE.posts, customPosts);
+      }
+
+      const allComments = readStore(STORAGE.comments, []);
+      if (Array.isArray(allComments)) {
+        allComments.forEach((c) => {
+          if (c.authorId === user.id) c.authorName = poeticName;
+        });
+        writeStore(STORAGE.comments, allComments);
+      }
+
+      await syncProfileSettingsToSupabase(updatedUser);
+      updateHeader();
+      notify("Profile settings saved.");
+      navigate("dashboard.html");
+    }
+  });
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE.competitions) {
+      const comps = competitionsList();
+      renderFrontpageFeaturedCompetition(comps);
+      updateSidebarChallengePanel(comps);
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    const { path } = routeParts();
+    if (path === "home") {
+      fetchCompetitionsFromSupabase().then((comps) => {
+        renderFrontpageFeaturedCompetition(comps);
+        updateSidebarChallengePanel(comps);
       });
-      setupSearch();
-      syncRemotePosts().catch((error) => {
-        console.error("Unable to fetch published posts from Supabase.", error);
-        notify("Stories could not be refreshed from the server.");
-      }).finally(renderRoute);
-    })();
+    }
+  });
+
+  renderRoute();
+})();
