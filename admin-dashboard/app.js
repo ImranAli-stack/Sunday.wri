@@ -3,8 +3,7 @@
 
   const SUPABASE_URL = window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
   const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
-  const ADMIN_PASSKEY = "admin2026";
-  const ADMIN_SESSION_KEY = "qalamly_admin_auth_v1";
+  const ADMIN_EMAILS = new Set(["ia050866@gmail.com", "imran0ali0ahmed@gmail.com"]);
   const STORAGE_KEY = "qalamly-admin-demo-v1";
 
   // Default seed fallback if offline
@@ -41,7 +40,8 @@
     competitions: ["Competition Topics", "Create, edit, and publish writing challenges displayed on the competitions page."],
     submissions: ["Competition Submissions", "Review, evaluate, and download participant files submitted for competitions."],
     messages: ["Community messages", "Read and manage incoming inquiries from the contact table."],
-    database: ["Database console", "Live table explorer and raw record interface for Supabase."]
+    database: ["Database console", "Live table explorer and raw record interface for Supabase."],
+    security: ["Security", "Update your administrator password and manage two-factor authentication."]
   };
 
   let state = {
@@ -49,6 +49,7 @@
     comments: [],
     likes: [],
     users: [],
+    admins: [],
     payouts: [],
     messages: [],
     applications: [],
@@ -69,6 +70,9 @@
     isLiveDb: false,
     dbLoading: false
   };
+  let adminUser = null;
+  let pendingAdminMfa = null;
+  let pendingAdminEnrollment = null;
 
   const content = document.getElementById("content");
   const searchInput = document.getElementById("globalSearch");
@@ -101,64 +105,411 @@
     return null;
   }
 
-  // --- ADMIN AUTH CHECK ---
-  function checkAdminAuth() {
-    // Check URL parameter for instant key access
-    const params = new URLSearchParams(window.location.search);
-    const keyParam = params.get("key") || params.get("passkey") || params.get("token");
-    if (keyParam === ADMIN_PASSKEY) {
-      sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
-      return true;
-    }
+  async function isAdminUser(user, sb) {
+    if (!user) return false;
+    const email = String(user?.email || "").toLowerCase();
+    if (ADMIN_EMAILS.has(email)) return true;
+    if (user?.app_metadata?.role === "admin" || user?.user_metadata?.role === "admin") return true;
 
-    // Check session storage
-    if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "true") {
-      return true;
+    if (!sb) {
+      try { sb = await getClient(); } catch {}
     }
-
-    // Check if logged in user is admin email
-    try {
-      const sessionId = JSON.parse(localStorage.getItem("qalamly.session.v3"));
-      const users = JSON.parse(localStorage.getItem("qalamly.users.v3")) || [];
-      const user = users.find(u => u.id === sessionId);
-      if (user && (user.email === "ia050866@gmail.com" || user.email === "imran0ali0ahmed@gmail.com" || user.role === "admin")) {
-        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
-        return true;
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from("admins")
+          .select("id, is_active, role")
+          .eq("id", user.id)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (!error && data) return true;
+      } catch (err) {
+        console.warn("Admins table check error:", err);
       }
-    } catch {}
-
+    }
     return false;
   }
 
-  function showAdminAuthGate() {
+  async function checkAdminAuth() {
+    const sb = await getClient();
+    if (!sb) return { authenticated: false };
+    const { data, error } = await sb.auth.getUser();
+    if (error) throw error;
+    if (!data?.user) return { authenticated: false };
+    const authorized = await isAdminUser(data.user, sb);
+    if (!authorized) return { authenticated: false, unauthorized: true };
+
+    const { data: factors, error: factorsError } = await sb.auth.mfa.listFactors();
+    if (factorsError) throw factorsError;
+    const verifiedFactor = (factors?.totp || []).find((factor) => factor.status === "verified");
+    if (verifiedFactor) {
+      const { data: assurance, error: assuranceError } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assuranceError) throw assuranceError;
+      if (assurance?.currentLevel !== "aal2") {
+        const { data: challenge, error: challengeError } = await sb.auth.mfa.challenge({ factorId: verifiedFactor.id });
+        if (challengeError) throw challengeError;
+        pendingAdminMfa = { factorId: verifiedFactor.id, challengeId: challenge.id };
+        return { authenticated: false, mfaRequired: true };
+      }
+    }
+
+    adminUser = data.user;
+    return { authenticated: true };
+  }
+
+  async function fetchAdminRegistrationStatus() {
+    // 1. Try server endpoint first
+    try {
+      const res = await fetch("/api/admin/status");
+      if (res.ok) {
+        const json = await res.json();
+        return json;
+      }
+    } catch {}
+
+    // 2. Query Supabase directly
+    try {
+      const sb = await getClient();
+      if (sb) {
+        const { data: rpcData, error: rpcErr } = await sb.rpc("is_admin_registration_available");
+        if (!rpcErr && typeof rpcData === "boolean") {
+          return {
+            registrationAvailable: rpcData,
+            locked: !rpcData,
+            message: rpcData ? "Initial administrator registration is open." : "Registration locked."
+          };
+        }
+        const { count, error } = await sb
+          .from("admins")
+          .select("*", { count: "exact", head: true })
+          .eq("is_active", true);
+        if (!error) {
+          const avail = count === 0;
+          return {
+            registrationAvailable: avail,
+            locked: !avail,
+            adminCount: count
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Direct Supabase registration check:", e);
+    }
+    return { registrationAvailable: true, locked: false };
+  }
+
+  function showAdminMfaGate() {
     content.innerHTML = `
-      <div style="max-width:440px;margin:70px auto;padding:32px;background:white;border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow);text-align:center;">
-        <div style="width:54px;height:54px;border-radius:16px;background:var(--purple-pale);color:var(--purple);display:grid;place-items:center;margin:0 auto 16px;font-size:24px;">🔒</div>
-        <div class="eyebrow" style="margin-bottom:6px;">RESTRICTED ACCESS</div>
-        <h1 style="font-size:22px;margin:0 0 10px;">Admin Studio Authentication</h1>
-        <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 24px;">This database dashboard gives full read, edit, and delete access. Please verify your admin credentials to continue.</p>
-        <form id="adminAuthForm" style="text-align:left;">
-          <div class="field" style="margin-bottom:16px;">
-            <label for="adminPasskeyInput" style="display:block;font-size:11px;font-weight:700;margin-bottom:6px;">Admin Passkey</label>
-            <input id="adminPasskeyInput" type="password" placeholder="Enter passkey..." required style="width:100%;height:40px;border-radius:8px;border:1px solid #dcdde8;padding:0 12px;font-size:13px;">
-            <span style="font-size:10px;color:var(--muted);margin-top:4px;display:block;">Default security passkey: <code>${ADMIN_PASSKEY}</code></span>
+      <div class="auth-gate-container">
+        <div class="auth-icon-badge">🔐</div>
+        <div class="eyebrow" style="margin-bottom:6px;">TWO-FACTOR VERIFICATION</div>
+        <h1 style="font-size:22px;margin:0 0 10px;">Verify your identity</h1>
+        <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 24px;">Enter the current six-digit code from your authenticator app.</p>
+        <form id="adminMfaForm" style="text-align:left;">
+          <div class="auth-field" style="margin-bottom:16px;">
+            <label for="adminMfaCode">Authentication code</label>
+            <input id="adminMfaCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required style="width:100%;height:40px;border-radius:8px;border:1px solid #dcdde8;padding:0 12px;font-size:13px;">
           </div>
-          <button class="button primary" type="submit" style="width:100%;height:40px;font-size:12px;">Unlock Admin Dashboard →</button>
+          <button class="button primary" type="submit" style="width:100%;height:40px;font-size:12px;">Verify and continue</button>
+          <p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>
         </form>
       </div>
     `;
+  }
 
-    document.getElementById("adminAuthForm")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const val = document.getElementById("adminPasskeyInput").value.trim();
-      if (val === ADMIN_PASSKEY) {
-        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
-        showToast("Admin access verified. Loading database...");
-        initAdmin();
-      } else {
-        showToast("Incorrect passkey. Please try again.", true);
-      }
-    });
+  async function showAdminAuthGate(errorMessage = "", activeTab = "signin") {
+    // Show placeholder while checking registration status
+    content.innerHTML = `
+      <div class="auth-gate-container">
+        <div class="auth-icon-badge">🔒</div>
+        <div class="eyebrow" style="margin-bottom:6px;">RESTRICTED ACCESS</div>
+        <h1 style="font-size:22px;margin:0 0 10px;">Admin Studio Authentication</h1>
+        <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 24px;">Connecting to security services...</p>
+      </div>
+    `;
+
+    const regStatus = await fetchAdminRegistrationStatus();
+    const isLocked = Boolean(regStatus.locked || regStatus.registrationAvailable === false);
+    // If registration is available and no error was passed, we can default to signin or allow toggle
+    let currentTab = activeTab;
+
+    function renderGate(tab = currentTab, err = errorMessage, succ = "") {
+      currentTab = tab;
+      content.innerHTML = `
+        <div class="auth-gate-container">
+          <div class="auth-icon-badge">${tab === "register" ? "⚡" : "🔒"}</div>
+          <div class="eyebrow" style="margin-bottom:6px;">${tab === "register" ? "INITIAL SYSTEM SETUP" : "RESTRICTED ACCESS"}</div>
+          <h1 style="font-size:22px;margin:0 0 10px;">${tab === "register" ? "One-Time Admin Setup" : "Admin Studio Authentication"}</h1>
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
+            ${tab === "register"
+              ? "Bootstrap the primary administrator account for this platform."
+              : "Sign in with your verified administrator credentials."}
+          </p>
+
+          <div class="auth-tabs">
+            <button class="auth-tab ${tab === "signin" ? "active" : ""}" type="button" id="tabSignIn">
+              🔑 Sign In
+            </button>
+            <button class="auth-tab ${tab === "register" ? "active" : ""}" type="button" id="tabRegister">
+              ⚡ One-Time Setup
+              <span class="auth-tab-pill ${isLocked ? "locked" : ""}">
+                ${isLocked ? "Locked" : "Open"}
+              </span>
+            </button>
+          </div>
+
+          ${err ? `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;margin-bottom:14px;font-weight:600;">${esc(err)}</p>` : `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>`}
+          ${succ ? `<div class="auth-banner success"><span style="font-size:16px;">✓</span><div><strong>Success</strong><p style="margin:2px 0 0;font-size:11px;">${esc(succ)}</p></div></div>` : ""}
+
+          ${tab === "signin" ? `
+            <form id="adminAuthForm">
+              <div class="auth-field">
+                <label for="adminEmailInput">Administrator email</label>
+                <input id="adminEmailInput" name="email" type="email" autocomplete="username" required placeholder="admin@example.com">
+              </div>
+              <div class="auth-field">
+                <label for="adminPasswordInput">Password</label>
+                <input id="adminPasswordInput" name="password" type="password" autocomplete="current-password" required placeholder="••••••••">
+              </div>
+              <button class="button primary" type="submit" id="adminSignInBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">Unlock Admin Dashboard →</button>
+              <button class="button secondary" id="adminForgotPassword" type="button" style="width:100%;margin-top:10px;">Forgot password?</button>
+            </form>
+            ${!isLocked ? `
+              <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);">
+                First time configuring Qalamly? <button type="button" id="linkToRegister" class="text-button" style="font-size:11px;font-weight:700;">Complete One-Time Setup →</button>
+              </div>
+            ` : ""}
+          ` : `
+            ${isLocked ? `
+              <div class="auth-banner locked">
+                <span style="font-size:18px;">🔒</span>
+                <div>
+                  <strong>Registration Locked</strong>
+                  <p style="margin:4px 0 0;font-size:11px;">
+                    An administrator has already been registered for this platform. To ensure security, one-time registration is permanently closed.
+                  </p>
+                </div>
+              </div>
+              <button class="button primary" type="button" id="backToSignInBtn" style="width:100%;height:42px;font-size:12px;">Go to Administrator Sign In →</button>
+            ` : `
+              <div class="auth-banner info">
+                <span style="font-size:18px;">⚡</span>
+                <div>
+                  <strong>Primary Administrator Setup</strong>
+                  <p style="margin:4px 0 0;font-size:11px;">
+                    This one-time registration sets up the master administrator account. Once registered, this form will be permanently locked.
+                  </p>
+                </div>
+              </div>
+              <form id="adminRegForm">
+                <div class="auth-field">
+                  <label for="adminRegName">Full name</label>
+                  <input id="adminRegName" name="name" type="text" autocomplete="name" required placeholder="e.g. Imran Ali">
+                </div>
+                <div class="auth-field">
+                  <label for="adminRegEmail">Administrator email</label>
+                  <input id="adminRegEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com">
+                </div>
+                <div class="auth-field">
+                  <label for="adminRegPassword">Admin password</label>
+                  <input id="adminRegPassword" name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters">
+                  <div class="auth-field-hint">Must be at least 8 characters.</div>
+                </div>
+                <div class="auth-field">
+                  <label for="adminRegConfirm">Confirm password</label>
+                  <input id="adminRegConfirm" name="confirmPassword" type="password" autocomplete="new-password" required minlength="8" placeholder="Re-enter password">
+                </div>
+                ${regStatus.hasSetupSecret ? `
+                  <div class="auth-field">
+                    <label for="adminRegSecret">Setup security key</label>
+                    <input id="adminRegSecret" name="secret" type="password" placeholder="Server setup secret key">
+                  </div>
+                ` : ""}
+                <button class="button primary" type="submit" id="adminRegSubmitBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">Complete One-Time Registration →</button>
+              </form>
+              <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);">
+                Already registered? <button type="button" id="linkToSignIn" class="text-button" style="font-size:11px;font-weight:700;">Sign in here →</button>
+              </div>
+            `}
+          `}
+        </div>
+      `;
+
+      // Event bindings
+      document.getElementById("tabSignIn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("tabRegister")?.addEventListener("click", () => renderGate("register"));
+      document.getElementById("linkToRegister")?.addEventListener("click", () => renderGate("register"));
+      document.getElementById("linkToSignIn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("backToSignInBtn")?.addEventListener("click", () => renderGate("signin"));
+
+      // Sign In Handler
+      document.getElementById("adminAuthForm")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submitBtn = document.getElementById("adminSignInBtn");
+        const errorEl = document.getElementById("adminAuthError");
+        const email = event.currentTarget.elements.email.value.trim().toLowerCase();
+        const password = event.currentTarget.elements.password.value;
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Authenticating...";
+        }
+
+        try {
+          const sb = await getClient();
+          if (!sb) throw new Error("Supabase authentication is unavailable.");
+          const { data, error } = await sb.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          const authorized = await isAdminUser(data.user, sb);
+          if (!authorized) {
+            await sb.auth.signOut();
+            throw new Error("This account is not authorized as an administrator.");
+          }
+          await initAdmin();
+        } catch (err) {
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not sign in.";
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Unlock Admin Dashboard →";
+          }
+        }
+      });
+
+      // One-Time Registration Handler
+      document.getElementById("adminRegForm")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const submitBtn = document.getElementById("adminRegSubmitBtn");
+        const errorEl = document.getElementById("adminAuthError");
+
+        const fullName = form.elements.name.value.trim();
+        const email = form.elements.email.value.trim().toLowerCase();
+        const password = form.elements.password.value;
+        const confirmPassword = form.elements.confirmPassword.value;
+        const secret = form.elements.secret?.value.trim() || "";
+
+        if (password !== confirmPassword) {
+          if (errorEl) errorEl.textContent = "Passwords do not match.";
+          return;
+        }
+        if (password.length < 8) {
+          if (errorEl) errorEl.textContent = "Password must be at least 8 characters.";
+          return;
+        }
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Registering administrator...";
+        }
+
+        try {
+          // 1. Validate with server if running
+          try {
+            const valRes = await fetch("/api/admin/register-validate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password, fullName, setupSecret: secret })
+            });
+            if (!valRes.ok) {
+              const errJson = await valRes.json();
+              throw new Error(errJson.error || "Server rejected registration.");
+            }
+          } catch (valErr) {
+            if (!valErr.message.includes("Failed to fetch") && !valErr.message.includes("404")) {
+              throw valErr;
+            }
+          }
+
+          // 2. Register user in Supabase auth
+          const sb = await getClient();
+          if (!sb) throw new Error("Supabase is unavailable.");
+
+          let authUser = null;
+          let { data: authData, error: authError } = await sb.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: fullName,
+                role: "admin"
+              }
+            }
+          });
+
+          if (authError && authError.message.toLowerCase().includes("already registered")) {
+            const { data: signInData, error: signInError } = await sb.auth.signInWithPassword({ email, password });
+            if (signInError) throw signInError;
+            authUser = signInData.user;
+          } else if (authError) {
+            throw authError;
+          } else {
+            authUser = authData.user;
+          }
+
+          if (!authUser) {
+            throw new Error("Admin user could not be initialized. Please check confirmation settings.");
+          }
+
+          // 3. Register in public.admins table (via RPC or direct insert)
+          let recorded = false;
+          try {
+            const { data: rpcRes, error: rpcErr } = await sb.rpc("register_initial_admin", {
+              admin_full_name: fullName
+            });
+            if (!rpcErr) recorded = true;
+          } catch (rpcEx) {
+            console.warn("RPC register notice:", rpcEx);
+          }
+
+          if (!recorded) {
+            const { error: insErr } = await sb.from("admins").insert({
+              id: authUser.id,
+              email: authUser.email,
+              full_name: fullName,
+              role: "super_admin",
+              is_active: true
+            });
+            if (insErr && !insErr.message.toLowerCase().includes("duplicate")) {
+              console.warn("Direct admins insert notice:", insErr);
+            }
+          }
+
+          showToast("Administrator registered successfully! One-time setup is now locked.");
+          await initAdmin();
+        } catch (err) {
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not complete registration.";
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Complete One-Time Registration →";
+          }
+        }
+      });
+
+      // Forgot Password Handler
+      document.getElementById("adminForgotPassword")?.addEventListener("click", async () => {
+        const email = document.getElementById("adminEmailInput")?.value.trim().toLowerCase() || "";
+        const errorEl = document.getElementById("adminAuthError");
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          if (errorEl) errorEl.textContent = "Enter your administrator email first.";
+          return;
+        }
+        try {
+          const sb = await getClient();
+          const basePath = window.location.pathname.includes("/admin-dashboard/")
+            ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
+            : window.location.pathname.replace(/[^/]*$/, "");
+          const { error } = await sb.auth.resetPasswordForEmail(email, {
+            redirectTo: `${window.location.origin}${basePath}login.html`
+          });
+          if (error) throw error;
+          showToast("If that account exists, a password reset link has been sent.");
+        } catch (err) {
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not send a reset email.";
+        }
+      });
+    }
+
+    renderGate();
   }
 
   // --- DATABASE HYDRATION ---
@@ -180,7 +531,8 @@
         { data: payoutRows, error: payErr },
         { data: contactRows, error: contactErr },
         { data: compRows, error: compErr },
-        { data: subRows, error: subErr }
+        { data: subRows, error: subErr },
+        { data: adminRows, error: adminErr }
       ] = await Promise.all([
         sb.from("posts").select("*").order("created_at", { ascending: false }),
         sb.from("profiles").select("*").order("created_at", { ascending: false }),
@@ -190,8 +542,12 @@
         sb.from("payouts").select("*").order("created_at", { ascending: false }),
         sb.from("contact").select("*").order("created_at", { ascending: false }),
         sb.from("competitions").select("*").order("created_at", { ascending: false }),
-        sb.from("competition_submissions").select("*").order("submitted_at", { ascending: false })
+        sb.from("competition_submissions").select("*").order("submitted_at", { ascending: false }),
+        sb.from("admins").select("*").order("created_at", { ascending: false })
       ]);
+
+      if (adminErr) console.warn("Admins fetch notice:", adminErr);
+      state.admins = Array.isArray(adminRows) ? adminRows : [];
 
       if (postErr) console.warn("Posts fetch error:", postErr);
       if (profErr) console.warn("Profiles fetch error:", profErr);
@@ -913,7 +1269,8 @@
       competitions: state.competitions.length,
       competition_submissions: state.submissions.length,
       payouts: state.payouts.length,
-      contact: state.messages.length
+      contact: state.messages.length,
+      admins: state.admins.length
     };
 
     const targetData = {
@@ -925,7 +1282,8 @@
       competitions: state.competitions,
       competition_submissions: state.submissions,
       payouts: state.payouts,
-      contact: state.messages
+      contact: state.messages,
+      admins: state.admins
     }[state.dbTable] || [];
 
     const jsonPreview = JSON.stringify(targetData, null, 2);
@@ -951,6 +1309,49 @@
     `;
   }
 
+  function renderSecurity() {
+    return `
+      ${pageHeader("ADMIN SECURITY", "Password & two-factor authentication", "Manage credentials for the signed-in administrator account.")}
+      <section class="panel" style="max-width:720px;padding:22px;margin-bottom:16px;">
+        <h2 style="margin:0 0 6px;font-size:16px;">Change password</h2>
+        <p class="table-note">Set a new password for ${esc(adminUser?.email || "your administrator account")}.</p>
+        <form id="adminChangePasswordForm">
+          <div class="field"><label for="adminNewPassword">New password</label><input id="adminNewPassword" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="field"><label for="adminConfirmPassword">Confirm new password</label><input id="adminConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+          <button class="button primary" type="submit">Change password</button>
+          <p id="adminSecurityError" role="alert" style="color:var(--red);font-size:11px;"></p>
+        </form>
+      </section>
+      <section class="panel" style="max-width:720px;padding:22px;">
+        <h2 style="margin:0 0 6px;font-size:16px;">Two-factor authentication</h2>
+        <p class="table-note">Use a TOTP authenticator app to add a second sign-in step.</p>
+        <p id="adminTotpStatus" role="status" class="table-note">Checking authenticator status…</p>
+        <div id="adminTotpControls"></div>
+      </section>
+    `;
+  }
+
+  async function loadAdminSecurityStatus() {
+    const status = document.getElementById("adminTotpStatus");
+    const controls = document.getElementById("adminTotpControls");
+    if (!status || !controls) return;
+    try {
+      const sb = await getClient();
+      if (!sb) throw new Error("Supabase authentication is unavailable.");
+      const { data, error } = await sb.auth.mfa.listFactors();
+      if (error) throw error;
+      const verified = (data?.totp || []).filter((factor) => factor.status === "verified");
+      status.textContent = verified.length
+        ? "Two-factor authentication is enabled for this administrator account."
+        : "Two-factor authentication is not enabled.";
+      controls.innerHTML = verified.length
+        ? verified.map((factor) => `<button class="button danger" type="button" data-disable-admin-totp="${esc(factor.id)}">Turn off authenticator</button>`).join("")
+        : `<button class="button secondary" type="button" data-enable-admin-totp>Set up authenticator</button>`;
+    } catch (err) {
+      status.textContent = err instanceof Error ? `Could not check 2FA status: ${err.message}` : "Could not check 2FA status.";
+    }
+  }
+
   function render() {
     const pageName = document.getElementById("pageName");
     if (pageName) pageName.textContent = headings[state.view]?.[0] || "Overview";
@@ -971,6 +1372,7 @@
       case "submissions": content.innerHTML = renderSubmissions(); break;
       case "monetization": content.innerHTML = renderMonetization(); break;
       case "messages": content.innerHTML = renderMessages(); break;
+      case "security": content.innerHTML = renderSecurity(); loadAdminSecurityStatus(); break;
       case "database": content.innerHTML = renderDatabaseConsole(); break;
       default: content.innerHTML = renderOverview();
     }
@@ -1827,6 +2229,49 @@
 
   // --- GLOBAL LISTENERS ---
   document.addEventListener("click", event => {
+    const enableTotp = event.target.closest("[data-enable-admin-totp]");
+    if (enableTotp) {
+      (async () => {
+        const sb = await getClient();
+        const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Qalamly admin authenticator" });
+        if (error) throw error;
+        pendingAdminEnrollment = data;
+        const controls = document.getElementById("adminTotpControls");
+        if (controls) {
+          controls.innerHTML = `
+            <p class="table-note">Scan this QR code in your authenticator app, then enter its six-digit code.</p>
+            <img src="${esc(data.totp.qr_code)}" alt="Authenticator setup QR code" style="width:180px;height:180px;">
+            <p class="table-note">Setup key: <code>${esc(data.totp.secret)}</code></p>
+            <form id="verifyAdminTotpForm">
+              <div class="field"><label for="adminEnrollTotpCode">Authentication code</label><input id="adminEnrollTotpCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div>
+              <button class="button primary" type="submit">Verify and enable 2FA</button>
+              <p id="adminSecurityError" role="alert" style="color:var(--red);font-size:11px;"></p>
+            </form>`;
+        }
+      })().catch((err) => {
+        const status = document.getElementById("adminTotpStatus");
+        if (status) status.textContent = err instanceof Error ? err.message : "Could not start authenticator setup.";
+      });
+      return;
+    }
+
+    const disableTotp = event.target.closest("[data-disable-admin-totp]");
+    if (disableTotp) {
+      if (!window.confirm("Turn off two-factor authentication for the administrator account?")) return;
+      (async () => {
+        const sb = await getClient();
+        const { error } = await sb.auth.mfa.unenroll({ factorId: disableTotp.dataset.disableAdminTotp });
+        if (error) throw error;
+        pendingAdminEnrollment = null;
+        await loadAdminSecurityStatus();
+        showToast("Two-factor authentication is disabled.");
+      })().catch((err) => {
+        const status = document.getElementById("adminTotpStatus");
+        if (status) status.textContent = err instanceof Error ? err.message : "Could not disable two-factor authentication.";
+      });
+      return;
+    }
+
     const viewButton = event.target.closest("[data-view]");
     if (viewButton) {
       state.view = viewButton.dataset.view;
@@ -1841,12 +2286,92 @@
     if (actionButton) {
       const { action, id } = actionButton.dataset;
       if (action === "lock-admin") {
-        sessionStorage.removeItem(ADMIN_SESSION_KEY);
-        showAdminAuthGate();
-        showToast("Admin session locked.");
+        (async () => {
+          const sb = await getClient();
+          if (sb) {
+            const { error } = await sb.auth.signOut();
+            if (error) throw error;
+          }
+          adminUser = null;
+          adminInitialized = false;
+          showAdminAuthGate();
+          showToast("Administrator signed out.");
+        })().catch((err) => showToast(err instanceof Error ? err.message : "Could not sign out.", true));
         return;
       }
       performAction(action, id);
+    }
+  });
+
+  document.addEventListener("submit", async event => {
+    if (event.target.id === "adminChangePasswordForm") {
+      event.preventDefault();
+      const form = event.target;
+      const password = form.elements.password.value;
+      const confirmPassword = form.elements.confirmPassword.value;
+      if (password.length < 8) {
+        document.getElementById("adminSecurityError").textContent = "Password must be at least 8 characters.";
+        return;
+      }
+      if (password !== confirmPassword) {
+        document.getElementById("adminSecurityError").textContent = "Passwords do not match.";
+        return;
+      }
+      try {
+        const sb = await getClient();
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) throw error;
+        form.reset();
+        showToast("Administrator password changed.");
+      } catch (err) {
+        document.getElementById("adminSecurityError").textContent = err instanceof Error ? err.message : "Could not change password.";
+      }
+      return;
+    }
+
+    if (event.target.id === "verifyAdminTotpForm") {
+      event.preventDefault();
+      if (!pendingAdminEnrollment?.id) {
+        document.getElementById("adminSecurityError").textContent = "Authenticator setup expired. Start again.";
+        return;
+      }
+      try {
+        const sb = await getClient();
+        const { data: challenge, error: challengeError } = await sb.auth.mfa.challenge({ factorId: pendingAdminEnrollment.id });
+        if (challengeError) throw challengeError;
+        const { error } = await sb.auth.mfa.verify({
+          factorId: pendingAdminEnrollment.id,
+          challengeId: challenge.id,
+          code: event.target.elements.code.value.trim()
+        });
+        if (error) throw error;
+        pendingAdminEnrollment = null;
+        await loadAdminSecurityStatus();
+        showToast("Two-factor authentication is enabled.");
+      } catch (err) {
+        const errorEl = document.getElementById("adminSecurityError");
+        if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not verify the authenticator code.";
+      }
+      return;
+    }
+
+    if (event.target.id === "adminMfaForm") {
+      event.preventDefault();
+      if (!pendingAdminMfa) return;
+      try {
+        const sb = await getClient();
+        const { error } = await sb.auth.mfa.verify({
+          factorId: pendingAdminMfa.factorId,
+          challengeId: pendingAdminMfa.challengeId,
+          code: event.target.elements.code.value.trim()
+        });
+        if (error) throw error;
+        pendingAdminMfa = null;
+        await initAdmin();
+      } catch (err) {
+        const errorEl = document.getElementById("adminAuthError");
+        if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "The authentication code could not be verified.";
+      }
     }
   });
 
@@ -1884,13 +2409,47 @@
   });
 
   // --- INITIALIZATION ---
-  function initAdmin() {
-    if (!checkAdminAuth()) {
-      showAdminAuthGate();
-      return;
+  let initializing = false;
+  let adminInitialized = false;
+
+  function updateAdminHeaderDisplay() {
+    if (!adminUser) return;
+    const email = adminUser.email || "Admin";
+    const name = adminUser.user_metadata?.full_name || email.split("@")[0] || "Admin";
+    const initials = name.slice(0, 2).toUpperCase();
+
+    const sidebarCardStrong = document.querySelector(".admin-card strong");
+    const sidebarAvatar = document.querySelector(".admin-card .admin-avatar");
+    const topAdminName = document.querySelector(".top-admin span:nth-child(2)");
+    const topAdminAvatar = document.querySelector(".top-admin .admin-avatar");
+
+    if (sidebarCardStrong) sidebarCardStrong.textContent = name;
+    if (sidebarAvatar) sidebarAvatar.textContent = initials;
+    if (topAdminName) topAdminName.textContent = name;
+    if (topAdminAvatar) topAdminAvatar.textContent = initials;
+  }
+
+  async function initAdmin() {
+    if (initializing) return;
+    initializing = true;
+    try {
+      const auth = await checkAdminAuth();
+      if (!auth.authenticated) {
+        if (auth.mfaRequired) showAdminMfaGate();
+        else showAdminAuthGate(auth.unauthorized ? "This account is not authorized to access the admin dashboard." : "");
+        return;
+      }
+      if (!adminInitialized) {
+        adminInitialized = true;
+        updateAdminHeaderDisplay();
+        render();
+        fetchAllFromDatabase();
+      }
+    } catch (err) {
+      showAdminAuthGate(err instanceof Error ? err.message : "Could not verify administrator access.");
+    } finally {
+      initializing = false;
     }
-    render();
-    fetchAllFromDatabase();
   }
 
   document.addEventListener("DOMContentLoaded", initAdmin);

@@ -1,0 +1,19 @@
+{
+  "name": "qalamly-platform",
+  "version": "1.0.0",
+  "description": "Qalamly community storytelling and publishing platform with direct Supabase Admin Studio.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "qalamly",
+    "supabase",
+    "admin-dashboard",
+    "publishing",
+    "blog"
+  ],
+  "author": "Qalamly",
+  "license": "ISC"
+}

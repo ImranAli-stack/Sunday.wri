@@ -42,6 +42,8 @@
   const authLink = document.getElementById("authLink");
   const headerProfile = document.getElementById("headerProfile");
   let toastTimer;
+  let pendingUserMfa = null;
+  let pendingTotpEnrollment = null;
 
   // --- STORAGE & STATE HELPERS ---
   function notify(message) {
@@ -2010,12 +2012,38 @@
             <button class="primary-button" type="submit">Save changes</button>
           </form>
         </section>
+        <section class="page-card page-form" style="margin-top:18px;">
+          <h2 style="margin-top:0;">Account security</h2>
+          <p class="form-note">Change your password or protect your account with an authenticator app.</p>
+          <div class="form-error" id="securityError" role="alert"></div>
+          <form id="changePasswordForm" novalidate>
+            <div class="form-field"><label for="newAccountPassword">New password</label><input id="newAccountPassword" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+            <div class="form-field"><label for="confirmAccountPassword">Confirm new password</label><input id="confirmAccountPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div>
+            <button class="secondary-button" type="submit">Change password</button>
+          </form>
+          <hr style="border:0;border-top:1px solid #ececf3;margin:22px 0;">
+          <h3 style="margin:0 0 6px;">Two-factor authentication</h3>
+          <p id="totpStatus" class="form-note" role="status">Checking authenticator status…</p>
+          <div id="totpControls"></div>
+        </section>
       </div>`,
       { contentOnly: true }
     );
+    loadUserSecurityStatus();
   }
 
   function renderAuth(mode, message = "") {
+    const recoveryParams = new URLSearchParams(window.location.search);
+    const recoveryHash = new URLSearchParams(window.location.hash.slice(1));
+    if (mode === "login" && (
+      recoveryParams.get("type") === "recovery" ||
+      recoveryHash.get("type") === "recovery" ||
+      recoveryParams.has("token_hash") ||
+      recoveryParams.has("code")
+    )) {
+      renderPasswordRecovery();
+      return;
+    }
     if (currentUser()) {
       navigate("dashboard.html");
       return;
@@ -2050,6 +2078,7 @@
             ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role"><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
             <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           </form>
+          ${!signup ? '<button class="panel-link" id="forgotPasswordButton" type="button" style="margin-top:14px;">Forgot password?</button>' : ""}
           <p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p>
         </section>
       </div>`,
@@ -2057,12 +2086,87 @@
     );
   }
 
-  function showFormError(msg) {
-    const err = document.querySelector(".form-error");
+  function renderPasswordRecovery(message = "") {
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Account recovery", "Choose a new password", "Set a new password for your Qalamly account.")}
+        <section class="page-card page-form">
+          <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
+          <form id="passwordRecoveryForm" novalidate>
+            <div class="form-field"><label for="recoveryPassword">New password</label><input id="recoveryPassword" name="password" type="password" minlength="8" autocomplete="new-password" required></div>
+            <div class="form-field"><label for="recoveryConfirmPassword">Confirm new password</label><input id="recoveryConfirmPassword" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></div>
+            <button class="primary-button" type="submit">Save new password</button>
+          </form>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderUserMfaChallenge(factorId, challengeId) {
+    pendingUserMfa = { factorId, challengeId };
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Account verification", "Enter your authenticator code", "Open your authenticator app and enter the current six-digit code.")}
+        <section class="page-card page-form">
+          <div class="form-error" id="authError" role="alert"></div>
+          <form id="userMfaForm" novalidate>
+            <div class="form-field"><label for="userMfaCode">Authentication code</label><input id="userMfaCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div>
+            <button class="primary-button" type="submit">Verify and continue</button>
+          </form>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  async function loadUserSecurityStatus() {
+    const status = document.getElementById("totpStatus");
+    const controls = document.getElementById("totpControls");
+    if (!status || !controls) return;
+    try {
+      const sb = await window.getSupabaseClient();
+      const { data, error } = await sb.auth.mfa.listFactors();
+      if (error) throw error;
+      const verified = (data?.totp || []).filter((factor) => factor.status === "verified");
+      status.textContent = verified.length
+        ? "Two-factor authentication is enabled for this account."
+        : "Two-factor authentication is not enabled.";
+      controls.innerHTML = verified.length
+        ? verified.map((factor) => `<button class="secondary-button" type="button" data-disable-totp="${escapeHTML(factor.id)}">Turn off authenticator</button>`).join("")
+        : '<button class="secondary-button" type="button" data-enable-totp>Set up authenticator</button>';
+    } catch (err) {
+      status.textContent = err instanceof Error ? `Could not check 2FA status: ${err.message}` : "Could not check 2FA status.";
+    }
+  }
+
+  function showFormError(msg, targetId = "") {
+    const err = targetId ? document.getElementById(targetId) : document.querySelector(".form-error");
     if (err) {
       err.textContent = msg;
       err.classList.add("visible");
     }
+  }
+
+  function completeUserLogin(sbUser, email, list) {
+    const meta = sbUser.user_metadata || {};
+    const loggedInUser = list.find((u) => u.id === sbUser.id) || {
+      id: sbUser.id,
+      name: meta.full_name || email.split("@")[0],
+      poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
+      email,
+      role: (meta.role || "both").toLowerCase(),
+      handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
+      bio: "Writer and reader on Qalamly.",
+      followers: 0,
+      following: 0
+    };
+
+    writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbUser.id), loggedInUser]);
+    writeStore(STORAGE.session, loggedInUser.id);
+    const next = sessionStorage.getItem("qalamly.next") || "dashboard";
+    sessionStorage.removeItem("qalamly.next");
+    navigate(`${next}.html`);
   }
 
   // --- ROUTER DISPATCH ---
@@ -2126,6 +2230,61 @@
 
   // --- GLOBAL CLICK LISTENERS ---
   document.addEventListener("click", (event) => {
+    const forgotPassword = event.target.closest("#forgotPasswordButton");
+    if (forgotPassword) {
+      const email = document.getElementById("authEmail")?.value.trim().toLowerCase() || "";
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFormError("Enter your account email first, then choose Forgot password.");
+        return;
+      }
+      window.getSupabaseClient().then((sb) => sb.auth.resetPasswordForEmail(email, {
+        redirectTo: new URL("login.html", window.location.href).href
+      })).then(({ error }) => {
+        if (error) throw error;
+        notify("If an account exists for that email, a password reset link has been sent.");
+      }).catch((err) => showFormError(err instanceof Error ? err.message : "Could not send a password reset email."));
+      return;
+    }
+
+    const enableTotp = event.target.closest("[data-enable-totp]");
+    if (enableTotp) {
+      (async () => {
+        const sb = await window.getSupabaseClient();
+        const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Qalamly authenticator" });
+        if (error) throw error;
+        pendingTotpEnrollment = data;
+        const controls = document.getElementById("totpControls");
+        if (controls) {
+          controls.innerHTML = `
+            <p class="form-note">Scan this QR code in your authenticator app, then enter its six-digit code.</p>
+            <img src="${escapeHTML(data.totp.qr_code)}" alt="Authenticator setup QR code" style="width:180px;height:180px;">
+            <p class="form-note">Setup key: <code>${escapeHTML(data.totp.secret)}</code></p>
+            <form id="verifyTotpEnrollmentForm" novalidate>
+              <div class="form-field"><label for="enrollTotpCode">Authentication code</label><input id="enrollTotpCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></div>
+              <button class="primary-button" type="submit">Verify and enable 2FA</button>
+            </form>`;
+        }
+      })().catch((err) => {
+        const status = document.getElementById("totpStatus");
+        if (status) status.textContent = err instanceof Error ? err.message : "Could not start authenticator setup.";
+      });
+      return;
+    }
+
+    const disableTotp = event.target.closest("[data-disable-totp]");
+    if (disableTotp) {
+      if (!window.confirm("Turn off two-factor authentication for this account?")) return;
+      (async () => {
+        const sb = await window.getSupabaseClient();
+        const { error } = await sb.auth.mfa.unenroll({ factorId: disableTotp.dataset.disableTotp });
+        if (error) throw error;
+        pendingTotpEnrollment = null;
+        await loadUserSecurityStatus();
+        notify("Two-factor authentication is disabled.");
+      })().catch((err) => showFormError(err instanceof Error ? err.message : "Could not disable two-factor authentication."));
+      return;
+    }
+
     const passwordToggle = event.target.closest("[data-password-toggle]");
     if (passwordToggle) {
       const inputId = passwordToggle.getAttribute("aria-controls");
@@ -2260,6 +2419,96 @@
   document.addEventListener("submit", async (event) => {
     const form = event.target;
 
+    if (form.id === "passwordRecoveryForm") {
+      event.preventDefault();
+      const password = form.elements.password.value;
+      const confirm = form.elements.confirmPassword.value;
+      if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
+      if (password !== confirm) { showFormError("Passwords do not match."); return; }
+      try {
+        const sb = await window.getSupabaseClient();
+        const recoveryParams = new URLSearchParams(window.location.search);
+        const tokenHash = recoveryParams.get("token_hash");
+        if (tokenHash && recoveryParams.get("type") === "recovery") {
+          const { error: verifyError } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+          if (verifyError) throw verifyError;
+        }
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) throw error;
+        await sb.auth.signOut();
+        writeStore(STORAGE.session, null);
+        window.history.replaceState(null, "", window.location.pathname);
+        notify("Password updated. You can now log in with your new password.");
+        renderAuth("login");
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Could not update password.");
+      }
+      return;
+    }
+
+    if (form.id === "changePasswordForm") {
+      event.preventDefault();
+      const password = form.elements.password.value;
+      const confirm = form.elements.confirmPassword.value;
+      if (password.length < 8) { showFormError("Password must be at least 8 characters.", "securityError"); return; }
+      if (password !== confirm) { showFormError("Passwords do not match.", "securityError"); return; }
+      try {
+        const sb = await window.getSupabaseClient();
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) throw error;
+        form.reset();
+        notify("Your password has been changed.");
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Could not change password.", "securityError");
+      }
+      return;
+    }
+
+    if (form.id === "verifyTotpEnrollmentForm") {
+      event.preventDefault();
+      if (!pendingTotpEnrollment?.id) { showFormError("Authenticator setup expired. Start setup again."); return; }
+      try {
+        const sb = await window.getSupabaseClient();
+        const { data: challenge, error: challengeError } = await sb.auth.mfa.challenge({ factorId: pendingTotpEnrollment.id });
+        if (challengeError) throw challengeError;
+        const { error } = await sb.auth.mfa.verify({
+          factorId: pendingTotpEnrollment.id,
+          challengeId: challenge.id,
+          code: form.elements.code.value.trim()
+        });
+        if (error) throw error;
+        pendingTotpEnrollment = null;
+        await loadUserSecurityStatus();
+        notify("Two-factor authentication is enabled.");
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Could not verify the authenticator code.", "securityError");
+      }
+      return;
+    }
+
+    if (form.id === "userMfaForm") {
+      event.preventDefault();
+      if (!pendingUserMfa) { showFormError("Your verification session expired. Please log in again."); return; }
+      try {
+        const sb = await window.getSupabaseClient();
+        const { data, error } = await sb.auth.mfa.verify({
+          factorId: pendingUserMfa.factorId,
+          challengeId: pendingUserMfa.challengeId,
+          code: form.elements.code.value.trim()
+        });
+        if (error) throw error;
+        const authUser = data.user || (await sb.auth.getUser()).data.user;
+        if (!authUser) throw new Error("Could not verify the signed-in account.");
+        const email = authUser.email || "";
+        const usersList = users();
+        pendingUserMfa = null;
+        completeUserLogin(authUser, email, usersList);
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "That authentication code could not be verified.");
+      }
+      return;
+    }
+
     if (form.id === "contactForm") {
       event.preventDefault();
       const name = form.elements.name?.value.trim() || "";
@@ -2373,26 +2622,16 @@
             showFormError(signInErr?.message || "Invalid email or password.");
             return;
           }
-
-          const sbU = signInData.user;
-          const meta = sbU.user_metadata || {};
-          const loggedInUser = list.find((u) => u.id === sbU.id) || {
-            id: sbU.id,
-            name: meta.full_name || email.split("@")[0],
-            poeticName: meta.poetic_name || meta.peotic_name || meta.full_name || "Writer",
-            email,
-            role: (meta.role || "both").toLowerCase(),
-            handle: `@${email.split("@")[0].replace(/[^a-z0-9_]/gi, "")}`,
-            bio: "Writer and reader on Qalamly.",
-            followers: 0,
-            following: 0
-          };
-
-          writeStore(STORAGE.users, [...list.filter((u) => u.id !== sbU.id), loggedInUser]);
-          writeStore(STORAGE.session, loggedInUser.id);
-          const next = sessionStorage.getItem("qalamly.next") || "dashboard";
-          sessionStorage.removeItem("qalamly.next");
-          navigate(`${next}.html`);
+          const { data: factorData, error: factorError } = await sb.auth.mfa.listFactors();
+          if (factorError) throw factorError;
+          const verifiedFactor = (factorData?.totp || []).find((factor) => factor.status === "verified");
+          if (verifiedFactor) {
+            const { data: challenge, error: challengeError } = await sb.auth.mfa.challenge({ factorId: verifiedFactor.id });
+            if (challengeError) throw challengeError;
+            renderUserMfaChallenge(verifiedFactor.id, challenge.id);
+            return;
+          }
+          completeUserLogin(signInData.user, email, list);
         }
       } catch (err) {
         showFormError(err instanceof Error ? err.message : "Authentication failed. Please try again.");
