@@ -1,10 +1,10 @@
 -- ============================================================================
--- Qalamly (Sunday.wri) — Remove Legacy Broken Triggers on auth.users & Fix All Tables
+-- Qalamly (Sunday.wri) — Complete Schema Alignment, Triggers & Grants
 -- Run this in Supabase SQL Editor:
 -- https://supabase.com/dashboard/project/xjdrqktoeodohyoynphg/sql/new
 -- ============================================================================
 
--- 1. Drop ALL existing custom triggers on `auth.users` (removes legacy `on_auth_user_created` / `handle_new_user` that caused the 500 error)
+-- 1. Drop ALL existing custom triggers on `auth.users` (removes legacy broken triggers)
 do $$
 declare
   trig record;
@@ -23,7 +23,22 @@ begin
 end;
 $$;
 
--- 2. Drop any CHECK constraints on `public.profiles` that might reject values, and ensure safe defaults
+-- 2. Align `public.profiles` columns & permissions with frontend JS (`js/app.js` & `admin-dashboard/app.js`)
+alter table public.profiles
+  add column if not exists full_name text default 'Anonymous Writer',
+  add column if not exists peotic_name text,
+  add column if not exists email text,
+  add column if not exists username text,
+  add column if not exists bio text,
+  add column if not exists avatar_url text,
+  add column if not exists role text default 'both',
+  add column if not exists stories_count integer default 0,
+  add column if not exists followers_count integer default 0,
+  add column if not exists following_count integer default 0,
+  add column if not exists total_likes integer default 0,
+  add column if not exists total_comments integer default 0,
+  add column if not exists created_at timestamptz default now();
+
 do $$
 declare
   con record;
@@ -56,7 +71,25 @@ alter table public.profiles
   alter column total_likes set default 0,
   alter column total_comments set default 0;
 
--- 3. Create a single, fault-tolerant trigger on `auth.users` that NEVER blocks user signup
+grant select on public.profiles to anon, authenticated;
+grant insert, update, delete on public.profiles to authenticated;
+
+-- 3. Align `public.notifications` columns (`type`, `actor_id`, `post_id`, `message`, `is_read`)
+alter table public.notifications
+  add column if not exists actor_id uuid references auth.users (id) on delete set null,
+  add column if not exists post_id uuid,
+  add column if not exists type text default 'general',
+  add column if not exists message text,
+  add column if not exists is_read boolean not null default false;
+
+grant select, insert, update, delete on public.notifications to authenticated;
+
+-- 4. Ensure `public.posts` has `image_path` and `language`
+alter table public.posts
+  add column if not exists image_path text,
+  add column if not exists language text not null default 'English';
+
+-- 5. Create a single, fault-tolerant trigger on `auth.users` that NEVER blocks user signup
 create or replace function public.create_profile_for_new_auth_user()
 returns trigger
 language plpgsql

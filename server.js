@@ -63,6 +63,8 @@ const MIME_TYPES = {
 // --- 3. Route Aliases ---
 const ROUTE_ALIASES = {
   "/": "index.html",
+  "/auth/callback": "auth/callback/index.html",
+  "/auth/callback/": "auth/callback/index.html",
   "/admin": "admin.html",
   "/dashboard": "dashboard.html",
   "/login": "login.html",

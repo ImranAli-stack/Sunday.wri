@@ -118,13 +118,36 @@
     if (typeof window.getSupabaseClient !== "function") return;
     try {
       const sb = await window.getSupabaseClient();
+
+      // If user arrived with an auth confirmation code on any page, exchange it for an active session
+      const urlParams = new URLSearchParams(window.location.search);
+      const authCode = urlParams.get("code");
+      const authType = urlParams.get("type") || "";
+      if (authCode && authType !== "recovery") {
+        const { error: codeErr } = await sb.auth.exchangeCodeForSession(authCode);
+        if (!codeErr) {
+          window.history.replaceState(null, "", window.location.pathname);
+          notify("Email confirmed! Welcome to Qalamly.");
+        }
+      }
+
       const { data: sessionRes } = await sb.auth.getSession();
       const sbUser = sessionRes?.session?.user || null;
 
-      // 1. Fetch public profiles (`profiles`)
-      const { data: profRows } = await sb
+      // 1. Fetch public profiles (`profiles`) with fallback for column-level grants
+      let profRows = null;
+      const { data: fullProfRows, error: profErr } = await sb
         .from("profiles")
         .select("id, full_name, peotic_name, username, bio, avatar_url, role, stories_count, followers_count, following_count");
+
+      if (!profErr && Array.isArray(fullProfRows)) {
+        profRows = fullProfRows;
+      } else {
+        const { data: basicProfRows } = await sb
+          .from("profiles")
+          .select("id, full_name, username, bio, avatar_url, role, stories_count, followers_count, following_count");
+        profRows = basicProfRows;
+      }
 
       if (Array.isArray(profRows)) {
         const mappedUsers = profRows.map((r) => {
@@ -243,7 +266,7 @@
       if (activeUserId && isUUID(activeUserId)) {
         const [{ data: bmRows }, { data: notifRows }] = await Promise.all([
           sb.from("bookmarks").select("post_id, user_id").eq("user_id", activeUserId),
-          sb.from("notifications").select("id, created_at, recipient_id, actor_id, type, post_id, is_read").eq("recipient_id", activeUserId).order("created_at", { ascending: false })
+          sb.from("notifications").select("*").eq("recipient_id", activeUserId).order("created_at", { ascending: false })
         ]);
 
         if (Array.isArray(bmRows)) {
@@ -287,6 +310,10 @@
 
       updateHeader();
       const { path, params } = routeParts();
+      if ((path === "login" || path === "signup") && sbUser && params.get("type") !== "recovery") {
+        navigate("dashboard.html");
+        return;
+      }
       if (path === "home") showHome(params);
       else if (path === "writers") renderWritersPage();
       else if (path === "bookmarks") renderBookmarks();
@@ -396,12 +423,11 @@
   }
 
   async function syncDeleteCommentFromSupabase(commentId) {
-    if (typeof window.getSupabaseClient !== "function") return;
-    const numericId = Number(commentId);
-    if (!Number.isFinite(numericId)) return;
+    if (typeof window.getSupabaseClient !== "function" || !commentId) return;
+    const targetId = /^\d+$/.test(String(commentId)) ? Number(commentId) : String(commentId);
     try {
       const sb = await window.getSupabaseClient();
-      await sb.from("comments").delete().eq("id", numericId);
+      await sb.from("comments").delete().eq("id", targetId);
     } catch {}
   }
 
@@ -412,9 +438,21 @@
       const sb = await window.getSupabaseClient();
       if (isFollowing) {
         await sb.from("follows").insert({ follower_id: user.id, following_id: targetWriterId });
+        await sb.from("notifications").insert({
+          recipient_id: targetWriterId,
+          actor_id: user.id,
+          message: `${displayName(user)} started following your writing.`,
+          is_read: false
+        });
       } else {
         await sb.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetWriterId);
       }
+      const nextFollowersCount = followersCountFor(targetWriterId);
+      const nextFollowingCount = followingList(user.id).length;
+      await Promise.all([
+        sb.from("profiles").update({ followers_count: nextFollowersCount }).eq("id", targetWriterId),
+        sb.from("profiles").update({ following_count: nextFollowingCount }).eq("id", user.id)
+      ]);
     } catch {}
   }
 
@@ -431,15 +469,25 @@
     if (!userObj || !isUUID(userObj.id) || typeof window.getSupabaseClient !== "function") return;
     try {
       const sb = await window.getSupabaseClient();
-      await sb.from("profiles").upsert({
+      const username = (userObj.handle || "").replace(/^@/, "") || `writer-${userObj.id.slice(0, 6)}`;
+      const { error } = await sb.from("profiles").upsert({
         id: userObj.id,
         full_name: userObj.name,
         peotic_name: userObj.poeticName,
         email: userObj.email || "",
-        username: (userObj.handle || "").replace(/^@/, "") || `writer-${userObj.id.slice(0, 6)}`,
+        username,
         bio: userObj.bio || "",
         role: userObj.role || "both"
       });
+      if (error) {
+        await sb.from("profiles").upsert({
+          id: userObj.id,
+          full_name: userObj.name,
+          username,
+          bio: userObj.bio || "",
+          role: userObj.role || "both"
+        });
+      }
     } catch {}
   }
 
@@ -820,14 +868,22 @@
     notify("🎉 Milestone Reached: You are eligible to apply for Creator Monetization!");
 
     if (isUUID(user.id) && typeof window.getSupabaseClient === "function") {
-      window.getSupabaseClient().then((sb) => {
-        sb.from("notifications").insert({
+      window.getSupabaseClient().then(async (sb) => {
+        const { error } = await sb.from("notifications").insert({
           recipient_id: user.id,
           actor_id: null,
-          type: "monetization_eligible",
           message: msg,
           is_read: false
-        }).then(() => {}).catch(() => {});
+        });
+        if (error) {
+          await sb.from("notifications").insert({
+            recipient_id: user.id,
+            actor_id: null,
+            type: "monetization_eligible",
+            message: msg,
+            is_read: false
+          });
+        }
       }).catch(() => {});
     }
   }
@@ -2089,9 +2145,7 @@
 
     if (mode === "login" && (
       recoveryParams.get("type") === "recovery" ||
-      recoveryHash.get("type") === "recovery" ||
-      recoveryParams.has("token_hash") ||
-      recoveryParams.has("code")
+      recoveryHash.get("type") === "recovery"
     )) {
       renderPasswordRecovery();
       return;
@@ -2138,17 +2192,94 @@
     );
   }
 
-  function renderPasswordRecovery(message = "") {
+  function renderForgotPassword(prefilledEmail = "", message = "") {
     setPage(
       `<div class="page-view">
-        ${pageHero("Account recovery", "Choose a new password", "Set a new password for your Qalamly account.")}
+        ${pageHero("Account recovery", "Forgot your password?", "Enter the email address associated with your Qalamly account and we’ll send you a password reset link.")}
+        <section class="page-card page-form">
+          <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
+          <form id="forgotPasswordForm" novalidate>
+            <div class="form-field">
+              <label for="resetEmailInput">Your account email</label>
+              <input id="resetEmailInput" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value="${escapeHTML(prefilledEmail)}">
+            </div>
+            <button class="primary-button" type="submit" id="sendResetLinkBtn" style="width:100%;">Send password reset link →</button>
+          </form>
+          <p class="form-note" style="margin-top:16px;">Remembered your password? <button class="panel-link" type="button" id="backToLoginBtn">← Back to Log in</button></p>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderForgotPasswordSent(email) {
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Reset link sent", "Check your email inbox", "Follow the link in the email to choose a new password.")}
+        <section class="page-card page-form" style="text-align:center;">
+          <div style="width:68px;height:68px;border-radius:20px;background:var(--purple-pale,#f0edff);color:var(--purple,#7458e8);display:grid;place-items:center;margin:0 auto 18px;font-size:30px;box-shadow:0 4px 14px rgba(116,88,232,0.12);">
+            🔑
+          </div>
+          <h2 style="font-size:22px;font-weight:750;margin:0 0 10px;color:var(--ink,#202139);">Password reset email sent</h2>
+          <p style="font-size:13px;color:var(--muted,#666);line-height:1.6;margin:0 0 22px;">
+            If an account exists for <strong style="color:var(--ink,#202139);">${escapeHTML(email)}</strong>, we’ve sent a link to reset your password.<br>
+            Click the link in that email to set a new password.
+          </p>
+          <div style="padding:14px 16px;background:#fafafd;border-radius:12px;border:1px solid #ededf3;font-size:12px;color:#717388;line-height:1.6;margin-bottom:24px;text-align:left;">
+            <strong style="color:var(--ink,#202139);">Didn't receive the reset email?</strong>
+            <ul style="margin:6px 0 0;padding-left:18px;">
+              <li>Check your spam or junk folder.</li>
+              <li>Wait 1–2 minutes for the message to arrive.</li>
+              <li>Or click below to send a fresh reset link.</li>
+            </ul>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="primary-button" type="button" id="resendResetBtn" data-email="${escapeHTML(email)}" style="width:100%;">
+              Resend password reset email
+            </button>
+            <button class="secondary-button" type="button" id="backToLoginBtn" style="width:100%;">
+              ← Back to Log in
+            </button>
+          </div>
+        </section>
+      </div>`,
+      { contentOnly: true }
+    );
+  }
+
+  function renderPasswordRecovery(message = "") {
+    const eyeToggleHTML = (targetId) => `
+      <button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="${targetId}" aria-label="Show password" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"></path>
+          <circle cx="12" cy="12" r="2.5"></circle>
+          <path class="password-eye-slash" d="m4 4 16 16"></path>
+        </svg>
+      </button>`;
+
+    setPage(
+      `<div class="page-view">
+        ${pageHero("Account recovery", "Choose a new password", "Enter and confirm a new password for your Qalamly account.")}
         <section class="page-card page-form">
           <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
           <form id="passwordRecoveryForm" novalidate>
-            <div class="form-field"><label for="recoveryPassword">New password</label><input id="recoveryPassword" name="password" type="password" minlength="8" autocomplete="new-password" required></div>
-            <div class="form-field"><label for="recoveryConfirmPassword">Confirm new password</label><input id="recoveryConfirmPassword" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></div>
-            <button class="primary-button" type="submit">Save new password</button>
+            <div class="form-field">
+              <label for="recoveryPassword">New password</label>
+              <div class="password-input-wrap">
+                <input id="recoveryPassword" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required>
+                ${eyeToggleHTML("recoveryPassword")}
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="recoveryConfirmPassword">Confirm new password</label>
+              <div class="password-input-wrap">
+                <input id="recoveryConfirmPassword" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Re-enter new password" required>
+                ${eyeToggleHTML("recoveryConfirmPassword")}
+              </div>
+            </div>
+            <button class="primary-button" type="submit" id="saveRecoveryPasswordBtn">Save new password</button>
           </form>
+          <p class="form-note" style="margin-top:16px;"><button class="panel-link" type="button" id="backToLoginBtn">← Back to Log in</button></p>
         </section>
       </div>`,
       { contentOnly: true }
@@ -2284,17 +2415,47 @@
   document.addEventListener("click", (event) => {
     const forgotPassword = event.target.closest("#forgotPasswordButton");
     if (forgotPassword) {
-      const email = document.getElementById("authEmail")?.value.trim().toLowerCase() || "";
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        showFormError("Enter your account email first, then choose Forgot password.");
-        return;
-      }
-      window.getSupabaseClient().then((sb) => sb.auth.resetPasswordForEmail(email, {
-        redirectTo: new URL("login.html", window.location.href).href
-      })).then(({ error }) => {
+      const prefilledEmail = document.getElementById("authEmail")?.value.trim().toLowerCase() || "";
+      renderForgotPassword(prefilledEmail);
+      return;
+    }
+
+    const backToLogin = event.target.closest("#backToLoginBtn");
+    if (backToLogin) {
+      window.history.replaceState(null, "", window.location.pathname);
+      renderAuth("login");
+      return;
+    }
+
+    const resendResetBtn = event.target.closest("#resendResetBtn");
+    if (resendResetBtn) {
+      const email = resendResetBtn.dataset.email;
+      if (!email) return;
+      resendResetBtn.disabled = true;
+      const originalText = resendResetBtn.textContent;
+      resendResetBtn.textContent = "Sending reset link...";
+
+      (async () => {
+        const sb = await window.getSupabaseClient();
+        const basePath = window.location.pathname.replace(/[^/]*$/, "");
+        try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
+        const { error } = await sb.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}${basePath}auth/callback`
+        });
         if (error) throw error;
-        notify("If an account exists for that email, a password reset link has been sent.");
-      }).catch((err) => showFormError(err instanceof Error ? err.message : "Could not send a password reset email."));
+        notify("Password reset link sent! Please check your inbox.");
+        resendResetBtn.textContent = "✓ Reset link sent!";
+        setTimeout(() => {
+          if (resendResetBtn) {
+            resendResetBtn.disabled = false;
+            resendResetBtn.textContent = originalText;
+          }
+        }, 20000);
+      })().catch((err) => {
+        notify(err instanceof Error ? err.message : "Could not resend password reset email.");
+        resendResetBtn.disabled = false;
+        resendResetBtn.textContent = originalText;
+      });
       return;
     }
 
@@ -2313,7 +2474,7 @@
           type: "signup",
           email,
           options: {
-            emailRedirectTo: `${window.location.origin}${basePath}login.html`
+            emailRedirectTo: `${window.location.origin}${basePath}auth/callback`
           }
         });
         if (error) throw error;
@@ -2506,17 +2667,58 @@
   document.addEventListener("submit", async (event) => {
     const form = event.target;
 
+    if (form.id === "forgotPasswordForm") {
+      event.preventDefault();
+      const email = form.elements.email.value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFormError("Please enter a valid email address.");
+        return;
+      }
+      const btn = document.getElementById("sendResetLinkBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Sending reset link...";
+      }
+      try {
+        const sb = await window.getSupabaseClient();
+        const basePath = window.location.pathname.replace(/[^/]*$/, "");
+        try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
+        const { error } = await sb.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}${basePath}auth/callback`
+        });
+        if (error) throw error;
+        notify("Password reset link sent to your email.");
+        renderForgotPasswordSent(email);
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Could not send a password reset email.");
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Send password reset link →";
+        }
+      }
+      return;
+    }
+
     if (form.id === "passwordRecoveryForm") {
       event.preventDefault();
       const password = form.elements.password.value;
       const confirm = form.elements.confirmPassword.value;
       if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
       if (password !== confirm) { showFormError("Passwords do not match."); return; }
+      const saveBtn = document.getElementById("saveRecoveryPasswordBtn");
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Updating password...";
+      }
       try {
         const sb = await window.getSupabaseClient();
         const recoveryParams = new URLSearchParams(window.location.search);
+        const code = recoveryParams.get("code");
         const tokenHash = recoveryParams.get("token_hash");
-        if (tokenHash && recoveryParams.get("type") === "recovery") {
+        if (code) {
+          const { error: codeError } = await sb.auth.exchangeCodeForSession(code);
+          if (codeError) throw codeError;
+        } else if (tokenHash && recoveryParams.get("type") === "recovery") {
           const { error: verifyError } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
           if (verifyError) throw verifyError;
         }
@@ -2525,10 +2727,14 @@
         await sb.auth.signOut();
         writeStore(STORAGE.session, null);
         window.history.replaceState(null, "", window.location.pathname);
-        notify("Password updated. You can now log in with your new password.");
+        notify("Password updated! You can now log in with your new password.");
         renderAuth("login");
       } catch (err) {
         showFormError(err instanceof Error ? err.message : "Could not update password.");
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save new password";
+        }
       }
       return;
     }
@@ -2659,12 +2865,13 @@
           if (password !== confirm) { showFormError("Passwords do not match."); return; }
 
           const basePath = window.location.pathname.replace(/[^/]*$/, "");
-          const redirectUrl = `${window.location.origin}${basePath}login.html`;
+          const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
 
           const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
             email,
             password,
             options: {
+              // Redirects the user back to our callback route after clicking the email link
               emailRedirectTo: redirectUrl,
               data: {
                 full_name: name,
@@ -2882,6 +3089,24 @@
       });
     }
   });
+
+  if (typeof window.getSupabaseClient === "function") {
+    window.getSupabaseClient().then((sb) => {
+      sb.auth.onAuthStateChange((event, session) => {
+        if (event === "PASSWORD_RECOVERY") {
+          renderPasswordRecovery();
+          return;
+        }
+        if (event === "SIGNED_IN" && session?.user) {
+          writeStore(STORAGE.session, session.user.id);
+          updateHeader();
+        } else if (event === "SIGNED_OUT") {
+          writeStore(STORAGE.session, null);
+          updateHeader();
+        }
+      });
+    }).catch(() => {});
+  }
 
   renderRoute();
 })();

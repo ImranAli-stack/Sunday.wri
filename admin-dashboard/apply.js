@@ -42,12 +42,14 @@
     const isPending = status === "Pending";
     const icon = isPending ? "◷" : status === "Approved" ? "✓" : "×";
     const heading = isPending ? "Your application is under review" : status === "Approved" ? "You’re approved!" : "Application not approved";
+    const reviewNote = application.review_note || application.reviewNote || "";
     const message = isPending
       ? "An admin will review your Qalamly profile and application. You can check back here for an update."
       : status === "Approved"
         ? "Your application was approved. Welcome to the creator monetization program."
-        : `Your application was declined${application.reviewNote ? `: ${application.reviewNote}` : "."} You may submit a new application when you are ready.`;
-    statusView.innerHTML = `<div class="status-icon${status === "Approved" ? " approved" : status === "Rejected" ? " rejected" : ""}" aria-hidden="true">${icon}</div><div class="eyebrow">APPLICATION ${status.toUpperCase()}</div><h2>${heading}</h2><p>${message}</p><div class="status-details"><strong>${escapeHtml(application.name)}</strong> · ${escapeHtml(application.handle)}<br>Submitted ${escapeHtml(new Date(application.submittedAt).toLocaleDateString())}</div>${status === "Rejected" ? `<button class="button primary" type="button" id="newApplication">Apply again</button>` : ""}<a class="button secondary" href="admindashboard.html">Back to admin dashboard</a><p class="apply-local-note">This is a standalone demo. Status and messages are saved only in this browser.</p>`;
+        : `Your application was declined${reviewNote ? `: ${reviewNote}` : "."} You may submit a new application when you are ready.`;
+    const submittedDate = application.submitted_at || application.submittedAt || new Date().toISOString();
+    statusView.innerHTML = `<div class="status-icon${status === "Approved" ? " approved" : status === "Rejected" ? " rejected" : ""}" aria-hidden="true">${icon}</div><div class="eyebrow">APPLICATION ${status.toUpperCase()}</div><h2>${heading}</h2><p>${message}</p><div class="status-details"><strong>${escapeHtml(application.name)}</strong> · ${escapeHtml(application.handle)}<br>Submitted ${escapeHtml(new Date(submittedDate).toLocaleDateString())}</div>${status === "Rejected" ? `<button class="button primary" type="button" id="newApplication">Apply again</button>` : ""}<a class="button secondary" href="admindashboard.html">Back to admin dashboard</a>`;
     statusView.querySelector("#newApplication")?.addEventListener("click", () => {
       form.reset();
       renderStatus(null);
@@ -60,15 +62,44 @@
     })[char]);
   }
 
-  const existingApplication = loadApplications()
-    .filter(application => application.email)
-    .sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)))[0];
-  if (existingApplication && existingApplication.status !== "Rejected") {
-    activeEmail = String(existingApplication.email).toLowerCase();
-    renderStatus(existingApplication);
+  async function initExistingApplication() {
+    const existingApplication = loadApplications()
+      .filter(application => application.email)
+      .sort((a, b) => String(b.submittedAt || b.submitted_at).localeCompare(String(a.submittedAt || a.submitted_at)))[0];
+
+    if (typeof window.getSupabaseClient === "function") {
+      try {
+        const sb = await window.getSupabaseClient();
+        const { data: sessionRes } = await sb.auth.getSession();
+        const authUser = sessionRes?.session?.user;
+        const targetEmail = authUser?.email || existingApplication?.email;
+        if (targetEmail) {
+          const { data } = await sb
+            .from("monetization_applications")
+            .select("*")
+            .eq("email", targetEmail.toLowerCase())
+            .order("submitted_at", { ascending: false })
+            .limit(1);
+          if (Array.isArray(data) && data[0] && data[0].status !== "Rejected") {
+            activeEmail = String(data[0].email).toLowerCase();
+            renderStatus(data[0]);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase application check notice:", err);
+      }
+    }
+
+    if (existingApplication && existingApplication.status !== "Rejected") {
+      activeEmail = String(existingApplication.email).toLowerCase();
+      renderStatus(existingApplication);
+    }
   }
 
-  form.addEventListener("submit", event => {
+  initExistingApplication();
+
+  form.addEventListener("submit", async event => {
     event.preventDefault();
     if (!form.reportValidity()) return;
     const values = Object.fromEntries(new FormData(form).entries());
@@ -104,11 +135,39 @@
         submittedAt,
         status: "Pending"
       };
+
+      if (typeof window.getSupabaseClient === "function") {
+        try {
+          const sb = await window.getSupabaseClient();
+          const { data: sessionRes } = await sb.auth.getSession();
+          const userId = sessionRes?.session?.user?.id || null;
+          const { data: inserted, error: insertErr } = await sb
+            .from("monetization_applications")
+            .insert({
+              user_id: userId,
+              name: application.name,
+              handle: application.handle,
+              email: application.email,
+              profile_url: application.profileUrl,
+              note: application.note,
+              status: "Pending",
+              submitted_at: submittedAt
+            })
+            .select()
+            .single();
+          if (!insertErr && inserted?.id) {
+            application.id = inserted.id;
+          }
+        } catch (sbErr) {
+          console.warn("Supabase application insert notice:", sbErr);
+        }
+      }
+
       data.applications = [...applications, application];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       activeEmail = email;
       renderStatus(application);
-      showToast("Application submitted for admin review.");
+      showToast("Application submitted to database for admin review.");
     } catch (error) {
       console.error("Could not save the creator monetization application.", error);
       showToast("Could not save your application in this browser.", true);

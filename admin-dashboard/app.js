@@ -130,14 +130,65 @@
     return false;
   }
 
+  async function ensureAdminRecordInDb(user, sb) {
+    if (!user || !sb) return;
+    try {
+      const { data: existing } = await sb
+        .from("admins")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (existing) return;
+
+      const fullName = user.user_metadata?.full_name || user.email?.split("@")[0] || "Admin";
+      const { error: rpcErr } = await sb.rpc("register_initial_admin", {
+        admin_full_name: fullName
+      });
+      if (rpcErr) {
+        await sb.from("admins").insert({
+          id: user.id,
+          email: (user.email || "").toLowerCase(),
+          full_name: fullName,
+          role: "super_admin",
+          is_active: true
+        });
+      }
+    } catch (err) {
+      console.warn("Ensure admin record notice:", err);
+    }
+  }
+
   async function checkAdminAuth() {
     const sb = await getClient();
     if (!sb) return { authenticated: false };
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const isRecovery = urlParams.get("type") === "recovery" || hashParams.get("type") === "recovery";
+    const code = urlParams.get("code");
+    const tokenHash = urlParams.get("token_hash");
+
+    if (code) {
+      const { error: codeErr } = await sb.auth.exchangeCodeForSession(code);
+      if (!codeErr && !isRecovery) {
+        window.history.replaceState(null, "", window.location.pathname);
+        showToast("Administrator email confirmed!");
+      }
+    } else if (tokenHash && isRecovery) {
+      await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+    }
+
+    if (isRecovery) {
+      return { authenticated: false, recoveryRequired: true };
+    }
+
     const { data, error } = await sb.auth.getUser();
     if (error) throw error;
     if (!data?.user) return { authenticated: false };
     const authorized = await isAdminUser(data.user, sb);
     if (!authorized) return { authenticated: false, unauthorized: true };
+
+    await ensureAdminRecordInDb(data.user, sb);
 
     const { data: factors, error: factorsError } = await sb.auth.mfa.listFactors();
     if (factorsError) throw factorsError;
@@ -239,6 +290,75 @@
         </form>
       </div>
     `);
+  }
+
+  function showAdminPasswordRecoveryGate(errorMessage = "") {
+    renderAuthScreen(`
+      <div class="auth-gate-container">
+        <div class="auth-icon-badge">🔑</div>
+        <div class="eyebrow" style="margin-bottom:6px;">ADMINISTRATOR RECOVERY</div>
+        <h1 style="font-size:22px;margin:0 0 10px;">Choose a new password</h1>
+        <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">Set and confirm a new password for your Qalamly Admin Studio account.</p>
+        ${errorMessage ? `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;margin-bottom:14px;font-weight:600;">${esc(errorMessage)}</p>` : `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>`}
+        <form id="adminPasswordRecoveryForm" style="text-align:left;">
+          <div class="auth-field">
+            <label for="adminRecoveryPassword">New admin password</label>
+            <input id="adminRecoveryPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters">
+          </div>
+          <div class="auth-field">
+            <label for="adminRecoveryConfirm">Confirm new password</label>
+            <input id="adminRecoveryConfirm" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="Re-enter new password">
+          </div>
+          <button class="button primary" type="submit" id="adminSaveRecoveryBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">Save New Password →</button>
+          <button class="button secondary" type="button" id="adminCancelRecoveryBtn" style="width:100%;margin-top:10px;">← Back to Sign In</button>
+        </form>
+      </div>
+    `);
+
+    document.getElementById("adminCancelRecoveryBtn")?.addEventListener("click", () => {
+      window.history.replaceState(null, "", window.location.pathname);
+      showAdminAuthGate();
+    });
+
+    document.getElementById("adminPasswordRecoveryForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const password = form.elements.password.value;
+      const confirmPassword = form.elements.confirmPassword.value;
+      const errorEl = document.getElementById("adminAuthError");
+      const saveBtn = document.getElementById("adminSaveRecoveryBtn");
+
+      if (password.length < 8) {
+        if (errorEl) errorEl.textContent = "Password must be at least 8 characters.";
+        return;
+      }
+      if (password !== confirmPassword) {
+        if (errorEl) errorEl.textContent = "Passwords do not match.";
+        return;
+      }
+
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Updating password...";
+      }
+
+      try {
+        const sb = await getClient();
+        if (!sb) throw new Error("Supabase authentication is unavailable.");
+        const { error } = await sb.auth.updateUser({ password });
+        if (error) throw error;
+        await sb.auth.signOut();
+        window.history.replaceState(null, "", window.location.pathname);
+        showToast("Administrator password updated! You can now sign in with your new password.");
+        await showAdminAuthGate("", "signin");
+      } catch (err) {
+        if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not update administrator password.";
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save New Password →";
+        }
+      }
+    });
   }
 
   async function showAdminAuthGate(errorMessage = "", activeTab = "signin") {
@@ -485,7 +605,7 @@
                   const { error: resendErr } = await sbClient.auth.resend({
                     type: "signup",
                     email,
-                    options: { emailRedirectTo: `${window.location.origin}${basePath}admin.html` }
+                    options: { emailRedirectTo: `${window.location.origin}${basePath}auth/callback` }
                   });
                   if (resendErr) throw resendErr;
                   showToast("Confirmation email resent! Please check your inbox.");
@@ -562,13 +682,14 @@
           const basePath = window.location.pathname.includes("/admin-dashboard/")
             ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
             : window.location.pathname.replace(/[^/]*$/, "");
-          const redirectUrl = `${window.location.origin}${basePath}admin.html`;
+          const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
 
           let authUser = null;
           let { data: authData, error: authError } = await sb.auth.signUp({
             email,
             password,
             options: {
+              // Redirects the administrator back to our callback route after clicking the email link
               emailRedirectTo: redirectUrl,
               data: {
                 full_name: fullName,
@@ -594,6 +715,7 @@
           // Check if email confirmation is required
           const requiresConfirmation = !authData?.session || (!authUser.confirmed_at && !authUser.email_confirmed_at);
           if (requiresConfirmation && !authError) {
+            try { localStorage.setItem("qalamly.pending_admin_setup", "1"); } catch {}
             renderAdminEmailConfirmation(email, fullName, redirectUrl);
             return;
           }
@@ -633,26 +755,133 @@
         }
       });
 
-      // Forgot Password Handler
-      document.getElementById("adminForgotPassword")?.addEventListener("click", async () => {
-        const email = document.getElementById("adminEmailInput")?.value.trim().toLowerCase() || "";
+      // Forgot Password Handler (opens dedicated Forgot Password view in Admin Portal)
+      document.getElementById("adminForgotPassword")?.addEventListener("click", () => {
+        const prefilledEmail = document.getElementById("adminEmailInput")?.value.trim().toLowerCase() || "";
+        renderAdminForgotPassword(prefilledEmail);
+      });
+    }
+
+    function renderAdminForgotPassword(prefilledEmail = "", errMsg = "") {
+      renderAuthScreen(`
+        <div class="auth-gate-container">
+          <div class="auth-icon-badge">🔑</div>
+          <div class="eyebrow" style="margin-bottom:6px;">ADMINISTRATOR RECOVERY</div>
+          <h1 style="font-size:22px;margin:0 0 10px;">Forgot your password?</h1>
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">
+            Enter your administrator email address and we'll send you a secure link to reset your password.
+          </p>
+          ${errMsg ? `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;margin-bottom:14px;font-weight:600;">${esc(errMsg)}</p>` : `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>`}
+          <form id="adminForgotForm" style="text-align:left;">
+            <div class="auth-field">
+              <label for="adminResetEmail">Administrator email</label>
+              <input id="adminResetEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com" value="${esc(prefilledEmail)}">
+            </div>
+            <button class="button primary" type="submit" id="adminSendResetBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">
+              Send Password Reset Link →
+            </button>
+            <button class="button secondary" type="button" id="adminBackFromForgotBtn" style="width:100%;margin-top:10px;">
+              ← Back to Administrator Sign In
+            </button>
+          </form>
+        </div>
+      `);
+
+      document.getElementById("adminBackFromForgotBtn")?.addEventListener("click", () => renderGate("signin"));
+
+      document.getElementById("adminForgotForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = e.currentTarget.elements.email.value.trim().toLowerCase();
         const errorEl = document.getElementById("adminAuthError");
+        const sendBtn = document.getElementById("adminSendResetBtn");
+
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          if (errorEl) errorEl.textContent = "Enter your administrator email first.";
+          if (errorEl) errorEl.textContent = "Please enter a valid administrator email address.";
           return;
         }
+
+        if (sendBtn) {
+          sendBtn.disabled = true;
+          sendBtn.textContent = "Sending reset link...";
+        }
+
         try {
           const sb = await getClient();
           const basePath = window.location.pathname.includes("/admin-dashboard/")
             ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
             : window.location.pathname.replace(/[^/]*$/, "");
+          const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
+          try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
           const { error } = await sb.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}${basePath}login.html`
+            redirectTo: redirectUrl
           });
           if (error) throw error;
-          showToast("If that account exists, a password reset link has been sent.");
+          showToast("Password reset link sent! Please check your email.");
+          renderAdminForgotPasswordSent(email, redirectUrl);
         } catch (err) {
-          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not send a reset email.";
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not send a password reset email.";
+          if (sendBtn) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = "Send Password Reset Link →";
+          }
+        }
+      });
+    }
+
+    function renderAdminForgotPasswordSent(email, redirectUrl) {
+      renderAuthScreen(`
+        <div class="auth-gate-container">
+          <div class="auth-icon-badge">📬</div>
+          <div class="eyebrow" style="margin-bottom:6px;">RESET LINK SENT</div>
+          <h1 style="font-size:22px;margin:0 0 10px;">Check your email</h1>
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">
+            If an administrator account exists for <strong style="color:var(--ink);">${esc(email)}</strong>, we've sent a password reset link.<br>
+            Click the link in that email to set a new administrator password.
+          </p>
+          <div class="auth-banner info" style="text-align:left;">
+            <span style="font-size:18px;">💡</span>
+            <div>
+              <strong>Didn't receive the email?</strong>
+              <p style="margin:4px 0 0;font-size:11px;">
+                Check your spam or junk folder, wait 1–2 minutes, or click below to resend the reset link.
+              </p>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <button class="button secondary" type="button" id="resendAdminResetBtn" style="width:100%;height:42px;font-size:12px;">
+              Resend password reset email
+            </button>
+            <button class="button primary" type="button" id="adminResetBackToSignIn" style="width:100%;height:42px;font-size:12px;">
+              ← Back to Administrator Sign In
+            </button>
+          </div>
+        </div>
+      `);
+
+      document.getElementById("adminResetBackToSignIn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("resendAdminResetBtn")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        btn.textContent = "Sending...";
+        try {
+          const sbClient = await getClient();
+          try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
+          const { error: resendErr } = await sbClient.auth.resetPasswordForEmail(email, {
+            redirectTo: redirectUrl
+          });
+          if (resendErr) throw resendErr;
+          showToast("Password reset link resent! Check your inbox.");
+          btn.textContent = "✓ Reset link sent!";
+          setTimeout(() => {
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = "Resend password reset email";
+            }
+          }, 20000);
+        } catch (resendEx) {
+          showToast(resendEx instanceof Error ? resendEx.message : "Could not resend email.", true);
+          btn.disabled = false;
+          btn.textContent = "Resend password reset email";
         }
       });
     }
@@ -698,7 +927,15 @@
       state.admins = Array.isArray(adminRows) ? adminRows : [];
 
       if (postErr) console.warn("Posts fetch error:", postErr);
-      if (profErr) console.warn("Profiles fetch error:", profErr);
+      let resolvedProfileRows = profileRows;
+      if (profErr) {
+        console.warn("Profiles fetch notice, trying public columns:", profErr);
+        const { data: fallbackProfiles } = await sb
+          .from("profiles")
+          .select("id, username, full_name, bio, avatar_url, role, stories_count, followers_count, following_count, total_likes, total_comments, created_at")
+          .order("created_at", { ascending: false });
+        if (Array.isArray(fallbackProfiles)) resolvedProfileRows = fallbackProfiles;
+      }
 
       // Map Posts
       const likesByPost = new Map();
@@ -731,7 +968,7 @@
       })) : [];
 
       // Map Profiles / Users
-      state.users = Array.isArray(profileRows) ? profileRows.map(u => ({
+      state.users = Array.isArray(resolvedProfileRows) ? resolvedProfileRows.map(u => ({
         id: u.id,
         name: u.full_name || "Writer",
         handle: u.username ? `@${u.username}` : `@writer-${u.id.slice(0, 6)}`,
@@ -1949,7 +2186,8 @@
     if (action === "delete-comment") {
       if (!confirm("Delete this comment from the database?")) return;
       if (sb) {
-        await sb.from("comments").delete().eq("id", Number(id));
+        const targetId = /^\d+$/.test(String(id)) ? Number(id) : String(id);
+        await sb.from("comments").delete().eq("id", targetId);
       }
       state.comments = state.comments.filter(c => c.id !== id);
       showToast("Comment deleted from database.");
@@ -1979,13 +2217,22 @@
 
         // Send congratulatory notification to the applicant
         if (app.userId) {
-          await sb.from("notifications").insert({
+          const msg = "🎉 Your Creator Monetization application has been APPROVED! Welcome to the Qalamly Creator Program.";
+          const { error: notifErr } = await sb.from("notifications").insert({
             recipient_id: app.userId,
             actor_id: null,
-            type: "monetization",
-            message: "🎉 Your Creator Monetization application has been APPROVED! Welcome to the Qalamly Creator Program.",
+            message: msg,
             is_read: false
           });
+          if (notifErr) {
+            await sb.from("notifications").insert({
+              recipient_id: app.userId,
+              actor_id: null,
+              type: "monetization",
+              message: msg,
+              is_read: false
+            });
+          }
         }
       }
       app.status = "Approved";
@@ -2008,13 +2255,22 @@
         }).eq("id", id);
 
         if (app.userId) {
-          await sb.from("notifications").insert({
+          const msg = `Your Creator Monetization application was not approved: ${reason}`;
+          const { error: notifErr } = await sb.from("notifications").insert({
             recipient_id: app.userId,
             actor_id: null,
-            type: "monetization",
-            message: `Your Creator Monetization application was not approved: ${reason}`,
+            message: msg,
             is_read: false
           });
+          if (notifErr) {
+            await sb.from("notifications").insert({
+              recipient_id: app.userId,
+              actor_id: null,
+              type: "monetization",
+              message: msg,
+              is_read: false
+            });
+          }
         }
       }
       app.status = "Rejected";
@@ -2140,6 +2396,7 @@
 
       if (sb) {
         const { data } = await sb.from("posts").insert({
+          user_id: adminUser?.id || null,
           title,
           author_name: author,
           category,
@@ -2180,7 +2437,7 @@
       const bio = String(formData.get("bio") || "").trim();
 
       if (sb) {
-        await sb.from("profiles").update({
+        const { error: upErr } = await sb.from("profiles").update({
           full_name: name,
           username: handle,
           peotic_name: peoticName,
@@ -2188,6 +2445,15 @@
           role,
           bio
         }).eq("id", editing.id);
+
+        if (upErr) {
+          await sb.from("profiles").update({
+            full_name: name,
+            username: handle,
+            role,
+            bio
+          }).eq("id", editing.id);
+        }
       }
 
       const u = state.users.find(item => item.id === editing.id);
@@ -2210,7 +2476,8 @@
       const text = String(formData.get("text") || "").trim();
 
       if (sb) {
-        await sb.from("comments").update({ author_name: author, content: text }).eq("id", Number(editing.id));
+        const targetId = /^\d+$/.test(String(editing.id)) ? Number(editing.id) : String(editing.id);
+        await sb.from("comments").update({ author_name: author, content: text }).eq("id", targetId);
       }
 
       const c = state.comments.find(item => item.id === editing.id);
@@ -2478,6 +2745,44 @@
   });
 
   document.addEventListener("submit", async event => {
+    if (event.target.id === "replyForm") {
+      event.preventDefault();
+      const form = event.target;
+      const msgId = form.dataset.id;
+      const replyText = form.elements.reply?.value.trim() || "";
+      if (!replyText) return;
+
+      const selected = state.messages.find(m => String(m.id) === String(msgId));
+      if (selected) {
+        selected.status = "Replied";
+        selected.messages.push({
+          from: "admin",
+          text: replyText,
+          time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        });
+
+        try {
+          const sb = await getClient();
+          const matchedUser = state.users.find(u => (u.email || "").toLowerCase() === (selected.email || "").toLowerCase());
+          if (sb && matchedUser?.id) {
+            await sb.from("notifications").insert({
+              recipient_id: matchedUser.id,
+              actor_id: adminUser?.id || null,
+              message: `Admin reply regarding "${selected.subject}": ${replyText}`,
+              is_read: false
+            });
+          }
+        } catch (err) {
+          console.warn("Could not send reply notification:", err);
+        }
+      }
+      form.reset();
+      updateNavCounters();
+      render();
+      showToast("Reply recorded and sent to user notifications.");
+      return;
+    }
+
     if (event.target.id === "adminChangePasswordForm") {
       event.preventDefault();
       const form = event.target;
@@ -2616,7 +2921,8 @@
       if (!auth.authenticated) {
         const shell = document.getElementById("adminDashboardShell");
         if (shell) shell.style.display = "none";
-        if (auth.mfaRequired) showAdminMfaGate();
+        if (auth.recoveryRequired) showAdminPasswordRecoveryGate();
+        else if (auth.mfaRequired) showAdminMfaGate();
         else showAdminAuthGate(auth.unauthorized ? "This account is not authorized to access the admin dashboard." : "");
         return;
       }
