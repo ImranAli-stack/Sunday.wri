@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f7f8fc">
   <title>Verifying Email · Qalamly</title>
-  <link rel="stylesheet" href="../../css/styles.css">
-  <link rel="icon" type="image/png" href="../../logo/icon.png">
-  <script src="../../js/supabase.js"></script>
+  <link rel="stylesheet" href="/css/styles.css" onerror="this.href='../../css/styles.css'">
+  <link rel="icon" type="image/png" href="/logo/icon.png">
+  <script src="/js/supabase.js" onerror="var s=document.createElement('script');s.src='../../js/supabase.js';document.head.appendChild(s);"></script>
   <style>
     body {
       min-height: 100vh;
@@ -114,7 +114,37 @@
           throw new Error(decodeURIComponent(errorDesc.replace(/\+/g, " ")));
         }
 
-        const supabase = await window.getSupabaseClient();
+        // Initialize Supabase client with NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY
+        async function initCallbackSupabaseClient() {
+          if (typeof window.getSupabaseClient === "function") {
+            return await window.getSupabaseClient();
+          }
+          let supabaseUrl = window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
+          let supabaseAnonKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+          try {
+            const cfgRes = await fetch("/api/config", { cache: "no-store" });
+            if (cfgRes.ok) {
+              const cfg = await cfgRes.json();
+              supabaseUrl = cfg.NEXT_PUBLIC_SUPABASE_URL || cfg.supabaseUrl || supabaseUrl;
+              supabaseAnonKey = cfg.NEXT_PUBLIC_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || supabaseAnonKey;
+            }
+          } catch {}
+          if (!window.supabase?.createClient) {
+            await new Promise((resolve, reject) => {
+              const s = document.createElement("script");
+              s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+              s.onload = resolve;
+              s.onerror = reject;
+              document.head.appendChild(s);
+            });
+          }
+          return window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+            global: { headers: { apikey: supabaseAnonKey } }
+          });
+        }
+
+        const supabase = await initCallbackSupabaseClient();
         const code = urlParams.get("code");
         const tokenHash = urlParams.get("token_hash");
         let type = urlParams.get("type") || hashParams.get("type") || "";

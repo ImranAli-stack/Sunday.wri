@@ -84,15 +84,27 @@
   let toastTimeout;
 
   // --- SUPABASE CLIENT HELPER ---
+  let cachedAdminSbClient = null;
   async function getClient() {
     if (window.getSupabaseClient) {
       try { return await window.getSupabaseClient(); } catch {}
     }
-    if (window.supabase?.createClient) {
-      return window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    if (cachedAdminSbClient) return cachedAdminSbClient;
+
+    let supabaseUrl = window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL || SUPABASE_URL;
+    let supabaseAnonKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || SUPABASE_PUBLISHABLE_KEY;
+    if (window.location.protocol.startsWith("http")) {
+      try {
+        const cfgRes = await fetch("/api/config", { cache: "no-store" });
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          supabaseUrl = cfg.NEXT_PUBLIC_SUPABASE_URL || cfg.supabaseUrl || supabaseUrl;
+          supabaseAnonKey = cfg.NEXT_PUBLIC_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || supabaseAnonKey;
+        }
+      } catch {}
     }
-    // Load script dynamically if needed
-    if (!window.supabase) {
+
+    if (!window.supabase?.createClient) {
       await new Promise((resolve, reject) => {
         const s = document.createElement("script");
         s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
@@ -100,7 +112,13 @@
         s.onerror = reject;
         document.head.appendChild(s);
       });
-      return window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    }
+    if (window.supabase?.createClient) {
+      cachedAdminSbClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+        global: { headers: { apikey: supabaseAnonKey } }
+      });
+      return cachedAdminSbClient;
     }
     return null;
   }

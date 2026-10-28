@@ -9,34 +9,43 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 
-// --- 1. Simple Environment Variable Loader (.env) ---
+// --- 1. Simple Environment Variable Loader (.env.local & .env) ---
 function loadEnv() {
-  const envPath = path.join(__dirname, ".env");
-  if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, "utf-8");
-    content.split(/\r?\n/).forEach(line => {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) return;
-      const match = trimmed.match(/^([^=]+)=(.*)$/);
-      if (match) {
-        const key = match[1].trim();
-        let value = match[2].trim();
-        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-          value = value.slice(1, -1);
+  const envFiles = [".env.local", ".env"];
+  for (const file of envFiles) {
+    const envPath = path.join(__dirname, file);
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, "utf-8");
+      content.split(/\r?\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) return;
+        const match = trimmed.match(/^([^=]+)=(.*)$/);
+        if (match) {
+          const key = match[1].trim();
+          let value = match[2].trim();
+          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          if (!process.env[key]) {
+            process.env[key] = value;
+          }
         }
-        if (!process.env[key]) {
-          process.env[key] = value;
-        }
-      }
-    });
+      });
+    }
   }
 }
 loadEnv();
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "0.0.0.0";
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+const SUPABASE_URL =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  "https://xjdrqktoeodohyoynphg.supabase.co";
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
 const ADMIN_REGISTRATION_ENABLED = process.env.ADMIN_REGISTRATION_ENABLED !== "false";
 const ADMIN_SETUP_SECRET = process.env.ADMIN_SETUP_SECRET || "";
 
@@ -132,6 +141,8 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({
         supabaseUrl: SUPABASE_URL,
         supabaseAnonKey: SUPABASE_ANON_KEY,
+        NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL,
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
         adminRegistrationEnabled: ADMIN_REGISTRATION_ENABLED,
         hasSetupSecret: Boolean(ADMIN_SETUP_SECRET)
       }));
