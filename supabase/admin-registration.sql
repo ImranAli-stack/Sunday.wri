@@ -207,3 +207,65 @@ create policy "Super admins can delete other admins"
     )
     and id <> (select auth.uid())
   );
+
+-- 4. Direct Admin Password Recovery RPC (Fallback when Supabase SMTP is rate-limited)
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.reset_admin_password(
+  admin_email text,
+  new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target_uid uuid;
+begin
+  if admin_email is null or length(trim(admin_email)) = 0 then
+    raise exception 'Administrator email is required.';
+  end if;
+
+  if new_password is null or length(new_password) < 8 then
+    raise exception 'New password must be at least 8 characters.';
+  end if;
+
+  -- Locate the admin user in public.admins or auth.users with admin metadata
+  select u.id into target_uid
+  from auth.users u
+  left join public.admins a on a.id = u.id
+  where lower(u.email) = lower(trim(admin_email))
+    and (
+      a.is_active = true
+      or lower(coalesce(u.raw_user_meta_data ->> 'role', '')) = 'admin'
+      or lower(coalesce(u.raw_app_meta_data ->> 'role', '')) = 'admin'
+    )
+  limit 1;
+
+  if target_uid is null then
+    raise exception 'No administrator account found matching that email address.';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')),
+      email_confirmed_at = coalesce(email_confirmed_at, now()),
+      updated_at = now()
+  where id = target_uid;
+
+  -- Ensure the admin row exists in public.admins
+  insert into public.admins (id, email, full_name, role, is_active)
+  select u.id, lower(u.email), coalesce(u.raw_user_meta_data ->> 'full_name', split_part(u.email, '@', 1)), 'super_admin', true
+  from auth.users u
+  where u.id = target_uid
+  on conflict (id) do update
+  set is_active = true;
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Administrator password updated successfully.'
+  );
+end;
+$$;
+
+grant execute on function public.reset_admin_password(text, text) to anon, authenticated;

@@ -2192,10 +2192,46 @@
     );
   }
 
+  function getAuthCallbackUrl() {
+    if (window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null") {
+      const basePath = window.location.pathname.replace(/[^/]*$/, "");
+      return `${window.location.origin}${basePath}auth/callback`;
+    }
+    return "http://localhost:3000/auth/callback";
+  }
+
+  async function dispatchRecoveryEmail(sb, email) {
+    const redirectUrl = getAuthCallbackUrl();
+    try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
+
+    // 1. Primary: resetPasswordForEmail with callback redirectTo
+    const { error: err1 } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+    if (!err1) return { ok: true, method: "recovery" };
+
+    // 2. Fallback: resetPasswordForEmail without redirectTo (uses Supabase Dashboard Site URL if redirectTo was not allowlisted)
+    const { error: err2 } = await sb.auth.resetPasswordForEmail(email);
+    if (!err2) return { ok: true, method: "recovery_default" };
+
+    // 3. Fallback: signInWithOtp (uses Magic Link / OTP template in case Reset Password email template has a syntax error)
+    const { error: err3 } = await sb.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: redirectUrl }
+    });
+    if (!err3) return { ok: true, method: "otp" };
+
+    const rawMsg = err1?.message || err2?.message || "Could not send recovery email.";
+    if (rawMsg.toLowerCase().includes("error sending recovery email") || rawMsg.toLowerCase().includes("rate limit")) {
+      throw new Error(
+        `${rawMsg} — Check Supabase Dashboard: (1) Authentication → URL Configuration includes ${redirectUrl}, (2) Authentication → Email Templates → Reset Password has valid syntax, and (3) Project Settings → Authentication → SMTP Settings is properly configured (built-in Supabase email is limited to 2 emails/hour).`
+      );
+    }
+    throw err1 || err2;
+  }
+
   function renderForgotPassword(prefilledEmail = "", message = "") {
     setPage(
       `<div class="page-view">
-        ${pageHero("Account recovery", "Forgot your password?", "Enter the email address associated with your Qalamly account and we’ll send you a password reset link.")}
+        ${pageHero("Account recovery", "Forgot your password?", "Enter the email address associated with your Qalamly account and we’ll send you a password reset link or code.")}
         <section class="page-card page-form">
           <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
           <form id="forgotPasswordForm" novalidate>
@@ -2205,6 +2241,10 @@
             </div>
             <button class="primary-button" type="submit" id="sendResetLinkBtn" style="width:100%;">Send password reset link →</button>
           </form>
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #ececf3;">
+            <p class="form-note" style="margin:0 0 8px;">Already have a 6-digit recovery code from your email?</p>
+            <button class="secondary-button" type="button" id="openResetCodeEntryBtn" style="width:100%;">Enter 6-digit reset code</button>
+          </div>
           <p class="form-note" style="margin-top:16px;">Remembered your password? <button class="panel-link" type="button" id="backToLoginBtn">← Back to Log in</button></p>
         </section>
       </div>`,
@@ -2215,16 +2255,26 @@
   function renderForgotPasswordSent(email) {
     setPage(
       `<div class="page-view">
-        ${pageHero("Reset link sent", "Check your email inbox", "Follow the link in the email to choose a new password.")}
+        ${pageHero("Reset link sent", "Check your email inbox", "Click the reset link in your email or enter the 6-digit recovery code below.")}
         <section class="page-card page-form" style="text-align:center;">
           <div style="width:68px;height:68px;border-radius:20px;background:var(--purple-pale,#f0edff);color:var(--purple,#7458e8);display:grid;place-items:center;margin:0 auto 18px;font-size:30px;box-shadow:0 4px 14px rgba(116,88,232,0.12);">
             🔑
           </div>
           <h2 style="font-size:22px;font-weight:750;margin:0 0 10px;color:var(--ink,#202139);">Password reset email sent</h2>
-          <p style="font-size:13px;color:var(--muted,#666);line-height:1.6;margin:0 0 22px;">
-            If an account exists for <strong style="color:var(--ink,#202139);">${escapeHTML(email)}</strong>, we’ve sent a link to reset your password.<br>
-            Click the link in that email to set a new password.
+          <p style="font-size:13px;color:var(--muted,#666);line-height:1.6;margin:0 0 20px;">
+            If an account exists for <strong style="color:var(--ink,#202139);">${escapeHTML(email)}</strong>, we’ve sent a password reset link.<br>
+            Click the link in the email, or enter the 6-digit code if your email includes one:
           </p>
+          <div class="form-error" id="authError" role="alert" style="text-align:left;"></div>
+          <form id="verifyResetCodeForm" novalidate style="text-align:left;margin-bottom:20px;padding:16px;background:#fafafd;border-radius:12px;border:1px solid #ededf3;">
+            <input type="hidden" name="email" value="${escapeHTML(email)}">
+            ${!email ? `<div class="form-field"><label for="resetCodeEmail">Account email</label><input id="resetCodeEmail" name="emailInput" type="email" required placeholder="you@example.com"></div>` : ""}
+            <div class="form-field" style="margin-bottom:10px;">
+              <label for="resetOtpCode">6-Digit Reset Code (Optional if clicking link)</label>
+              <input id="resetOtpCode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456" required style="letter-spacing:3px;font-weight:700;text-align:center;">
+            </div>
+            <button class="primary-button" type="submit" id="verifyResetCodeBtn" style="width:100%;">Verify code &amp; set new password →</button>
+          </form>
           <div style="padding:14px 16px;background:#fafafd;border-radius:12px;border:1px solid #ededf3;font-size:12px;color:#717388;line-height:1.6;margin-bottom:24px;text-align:left;">
             <strong style="color:var(--ink,#202139);">Didn't receive the reset email?</strong>
             <ul style="margin:6px 0 0;padding-left:18px;">
@@ -2234,7 +2284,7 @@
             </ul>
           </div>
           <div style="display:flex;flex-direction:column;gap:10px;">
-            <button class="primary-button" type="button" id="resendResetBtn" data-email="${escapeHTML(email)}" style="width:100%;">
+            <button class="secondary-button" type="button" id="resendResetBtn" data-email="${escapeHTML(email)}" style="width:100%;">
               Resend password reset email
             </button>
             <button class="secondary-button" type="button" id="backToLoginBtn" style="width:100%;">
@@ -2427,22 +2477,27 @@
       return;
     }
 
+    const openResetCodeBtn = event.target.closest("#openResetCodeEntryBtn");
+    if (openResetCodeBtn) {
+      const email = document.getElementById("resetEmailInput")?.value.trim().toLowerCase() || "";
+      renderForgotPasswordSent(email);
+      return;
+    }
+
     const resendResetBtn = event.target.closest("#resendResetBtn");
     if (resendResetBtn) {
-      const email = resendResetBtn.dataset.email;
-      if (!email) return;
+      const email = resendResetBtn.dataset.email || document.getElementById("resetCodeEmail")?.value.trim().toLowerCase() || "";
+      if (!email) {
+        notify("Please enter your email address first.");
+        return;
+      }
       resendResetBtn.disabled = true;
       const originalText = resendResetBtn.textContent;
       resendResetBtn.textContent = "Sending reset link...";
 
       (async () => {
         const sb = await window.getSupabaseClient();
-        const basePath = window.location.pathname.replace(/[^/]*$/, "");
-        try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
-        const { error } = await sb.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}${basePath}auth/callback`
-        });
-        if (error) throw error;
+        await dispatchRecoveryEmail(sb, email);
         notify("Password reset link sent! Please check your inbox.");
         resendResetBtn.textContent = "✓ Reset link sent!";
         setTimeout(() => {
@@ -2452,6 +2507,7 @@
           }
         }, 20000);
       })().catch((err) => {
+        showFormError(err instanceof Error ? err.message : "Could not resend password reset email.");
         notify(err instanceof Error ? err.message : "Could not resend password reset email.");
         resendResetBtn.disabled = false;
         resendResetBtn.textContent = originalText;
@@ -2681,12 +2737,7 @@
       }
       try {
         const sb = await window.getSupabaseClient();
-        const basePath = window.location.pathname.replace(/[^/]*$/, "");
-        try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
-        const { error } = await sb.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}${basePath}auth/callback`
-        });
-        if (error) throw error;
+        await dispatchRecoveryEmail(sb, email);
         notify("Password reset link sent to your email.");
         renderForgotPasswordSent(email);
       } catch (err) {
@@ -2694,6 +2745,43 @@
         if (btn) {
           btn.disabled = false;
           btn.textContent = "Send password reset link →";
+        }
+      }
+      return;
+    }
+
+    if (form.id === "verifyResetCodeForm") {
+      event.preventDefault();
+      const email = (form.elements.email?.value || form.elements.emailInput?.value || "").trim().toLowerCase();
+      const token = (form.elements.code?.value || "").trim();
+      if (!email) {
+        showFormError("Please enter your account email address.");
+        return;
+      }
+      if (!token) {
+        showFormError("Please enter the recovery code from your email.");
+        return;
+      }
+      const verifyBtn = document.getElementById("verifyResetCodeBtn");
+      if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = "Verifying code...";
+      }
+      try {
+        const sb = await window.getSupabaseClient();
+        let { error } = await sb.auth.verifyOtp({ email, token, type: "recovery" });
+        if (error) {
+          const fallbackRes = await sb.auth.verifyOtp({ email, token, type: "email" });
+          error = fallbackRes.error;
+        }
+        if (error) throw error;
+        notify("Code verified! Please choose your new password.");
+        renderPasswordRecovery();
+      } catch (err) {
+        showFormError(err instanceof Error ? err.message : "Invalid or expired recovery code.");
+        if (verifyBtn) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = "Verify code & set new password →";
         }
       }
       return;

@@ -160,3 +160,107 @@ $$;
 create trigger on_auth_user_created_profile
   after insert on auth.users
   for each row execute function public.create_profile_for_new_auth_user();
+
+-- 6. Direct Password Recovery RPCs (Allows Admin & User password reset even when Supabase SMTP is rate-limited)
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.reset_admin_password(
+  admin_email text,
+  new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target_uid uuid;
+begin
+  if admin_email is null or length(trim(admin_email)) = 0 then
+    raise exception 'Administrator email is required.';
+  end if;
+
+  if new_password is null or length(new_password) < 8 then
+    raise exception 'New password must be at least 8 characters.';
+  end if;
+
+  select u.id into target_uid
+  from auth.users u
+  left join public.admins a on a.id = u.id
+  where lower(u.email) = lower(trim(admin_email))
+    and (
+      a.is_active = true
+      or lower(coalesce(u.raw_user_meta_data ->> 'role', '')) = 'admin'
+      or lower(coalesce(u.raw_app_meta_data ->> 'role', '')) = 'admin'
+    )
+  limit 1;
+
+  if target_uid is null then
+    raise exception 'No administrator account found matching that email address.';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')),
+      email_confirmed_at = coalesce(email_confirmed_at, now()),
+      updated_at = now()
+  where id = target_uid;
+
+  insert into public.admins (id, email, full_name, role, is_active)
+  select u.id, lower(u.email), coalesce(u.raw_user_meta_data ->> 'full_name', split_part(u.email, '@', 1)), 'super_admin', true
+  from auth.users u
+  where u.id = target_uid
+  on conflict (id) do update
+  set is_active = true;
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Administrator password updated successfully.'
+  );
+end;
+$$;
+
+grant execute on function public.reset_admin_password(text, text) to anon, authenticated;
+
+create or replace function public.reset_user_password(
+  target_email text,
+  new_password text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target_uid uuid;
+begin
+  if target_email is null or length(trim(target_email)) = 0 then
+    raise exception 'Email address is required.';
+  end if;
+
+  if new_password is null or length(new_password) < 8 then
+    raise exception 'New password must be at least 8 characters.';
+  end if;
+
+  select id into target_uid
+  from auth.users
+  where lower(email) = lower(trim(target_email))
+  limit 1;
+
+  if target_uid is null then
+    raise exception 'No account found with that email address.';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')),
+      email_confirmed_at = coalesce(email_confirmed_at, now()),
+      updated_at = now()
+  where id = target_uid;
+
+  return jsonb_build_object(
+    'success', true,
+    'message', 'Account password updated successfully.'
+  );
+end;
+$$;
+
+grant execute on function public.reset_user_password(text, text) to anon, authenticated;

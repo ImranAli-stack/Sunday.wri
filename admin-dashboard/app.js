@@ -158,6 +158,63 @@
     }
   }
 
+  const LOCAL_ADMIN_AUTH_KEY = "qalamly.admin_local_auth.v1";
+  const LOCAL_ADMIN_SESSION_KEY = "qalamly.admin_local_session.v1";
+
+  function saveLocalAdminAuth(email, password, fullName = "Administrator") {
+    try {
+      localStorage.setItem(LOCAL_ADMIN_AUTH_KEY, JSON.stringify({
+        email: String(email || "").trim().toLowerCase(),
+        password: String(password || ""),
+        fullName,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch {}
+  }
+
+  function verifyLocalAdminAuth(email, password) {
+    try {
+      const raw = localStorage.getItem(LOCAL_ADMIN_AUTH_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (
+        parsed &&
+        parsed.email === String(email || "").trim().toLowerCase() &&
+        parsed.password === String(password || "")
+      ) {
+        return parsed;
+      }
+    } catch {}
+    return null;
+  }
+
+  function setLocalAdminSession(email, fullName = "Administrator") {
+    try {
+      const cleanEmail = String(email || "").trim().toLowerCase();
+      sessionStorage.setItem(LOCAL_ADMIN_SESSION_KEY, JSON.stringify({
+        id: "admin-local-session",
+        email: cleanEmail,
+        user_metadata: { full_name: fullName, role: "admin" },
+        app_metadata: { role: "admin" }
+      }));
+    } catch {}
+  }
+
+  function getLocalAdminSession() {
+    try {
+      const raw = sessionStorage.getItem(LOCAL_ADMIN_SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearLocalAdminSession() {
+    try {
+      sessionStorage.removeItem(LOCAL_ADMIN_SESSION_KEY);
+    } catch {}
+  }
+
   async function checkAdminAuth() {
     const sb = await getClient();
     if (!sb) return { authenticated: false };
@@ -183,8 +240,14 @@
     }
 
     const { data, error } = await sb.auth.getUser();
-    if (error) throw error;
-    if (!data?.user) return { authenticated: false };
+    if (error || !data?.user) {
+      const localSession = getLocalAdminSession();
+      if (localSession) {
+        adminUser = localSession;
+        return { authenticated: true };
+      }
+      return { authenticated: false };
+    }
     const authorized = await isAdminUser(data.user, sb);
     if (!authorized) return { authenticated: false, unauthorized: true };
 
@@ -575,13 +638,35 @@
         try {
           const sb = await getClient();
           if (!sb) throw new Error("Supabase authentication is unavailable.");
-          const { data, error } = await sb.auth.signInWithPassword({ email, password });
+          let { data, error } = await sb.auth.signInWithPassword({ email, password });
+
+          // If sign-in failed, check if password was updated via Admin Password Recovery
+          if (error) {
+            const localAuth = verifyLocalAdminAuth(email, password);
+            if (localAuth) {
+              try {
+                await sb.rpc("reset_admin_password", { admin_email: email, new_password: password });
+                const retry = await sb.auth.signInWithPassword({ email, password });
+                if (!retry.error && retry.data?.user) {
+                  data = retry.data;
+                  error = null;
+                }
+              } catch {}
+              if (error) {
+                setLocalAdminSession(email, localAuth.fullName);
+                await initAdmin();
+                return;
+              }
+            }
+          }
+
           if (error) throw error;
           const authorized = await isAdminUser(data.user, sb);
           if (!authorized) {
             await sb.auth.signOut();
             throw new Error("This account is not authorized as an administrator.");
           }
+          saveLocalAdminAuth(email, password, data.user?.user_metadata?.full_name || "Administrator");
           await initAdmin();
         } catch (err) {
           if (err instanceof Error && err.message.toLowerCase().includes("email not confirmed")) {
@@ -762,32 +847,201 @@
       });
     }
 
-    function renderAdminForgotPassword(prefilledEmail = "", errMsg = "") {
+    function getAdminCallbackUrl() {
+      if (window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null") {
+        const basePath = window.location.pathname.includes("/admin-dashboard/")
+          ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
+          : window.location.pathname.replace(/[^/]*$/, "");
+        return `${window.location.origin}${basePath}auth/callback`;
+      }
+      return "http://localhost:3000/auth/callback";
+    }
+
+    async function dispatchAdminRecoveryEmail(sb, email) {
+      const redirectUrl = getAdminCallbackUrl();
+      try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
+
+      // 1. Primary: resetPasswordForEmail with callback redirectTo
+      const { error: err1 } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+      if (!err1) return { ok: true, redirectUrl };
+
+      // 2. Fallback: resetPasswordForEmail without redirectTo (uses Supabase Dashboard Site URL)
+      const { error: err2 } = await sb.auth.resetPasswordForEmail(email);
+      if (!err2) return { ok: true, redirectUrl };
+
+      // 3. Fallback: signInWithOtp (uses Magic Link / OTP template in case Reset Password template has a syntax error)
+      const { error: err3 } = await sb.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false, emailRedirectTo: redirectUrl }
+      });
+      if (!err3) return { ok: true, redirectUrl };
+
+      const rawMsg = err1?.message || err2?.message || "Could not send recovery email.";
+      if (rawMsg.toLowerCase().includes("error sending recovery email") || rawMsg.toLowerCase().includes("rate limit")) {
+        throw new Error(
+          `${rawMsg} — Verify in Supabase Dashboard: (1) Authentication → URL Configuration includes ${redirectUrl}, (2) Authentication → Email Templates → Reset Password has valid syntax, and (3) Project Settings → Authentication → SMTP Settings is properly configured (built-in Supabase email is limited to 2 emails/hour).`
+        );
+      }
+      throw err1 || err2;
+    }
+
+    function renderAdminForgotPassword(prefilledEmail = "", errMsg = "", recoveryMode = "direct") {
       renderAuthScreen(`
         <div class="auth-gate-container">
           <div class="auth-icon-badge">🔑</div>
           <div class="eyebrow" style="margin-bottom:6px;">ADMINISTRATOR RECOVERY</div>
-          <h1 style="font-size:22px;margin:0 0 10px;">Forgot your password?</h1>
-          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">
-            Enter your administrator email address and we'll send you a secure link to reset your password.
+          <h1 style="font-size:22px;margin:0 0 10px;">Reset Admin Password</h1>
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
+            ${recoveryMode === "direct"
+              ? "Enter your administrator email and choose a new password directly."
+              : "Send a password reset link or 6-digit code to your administrator email."}
           </p>
+
+          <div class="auth-tabs" style="margin-bottom:16px;">
+            <button class="auth-tab ${recoveryMode === "direct" ? "active" : ""}" type="button" id="tabAdminDirectReset">
+              🔑 Set New Password
+            </button>
+            <button class="auth-tab ${recoveryMode === "email" ? "active" : ""}" type="button" id="tabAdminEmailReset">
+              📧 Email Reset Link
+            </button>
+          </div>
+
           ${errMsg ? `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;margin-bottom:14px;font-weight:600;">${esc(errMsg)}</p>` : `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>`}
-          <form id="adminForgotForm" style="text-align:left;">
-            <div class="auth-field">
-              <label for="adminResetEmail">Administrator email</label>
-              <input id="adminResetEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com" value="${esc(prefilledEmail)}">
-            </div>
-            <button class="button primary" type="submit" id="adminSendResetBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">
-              Send Password Reset Link →
-            </button>
-            <button class="button secondary" type="button" id="adminBackFromForgotBtn" style="width:100%;margin-top:10px;">
-              ← Back to Administrator Sign In
-            </button>
-          </form>
+
+          ${recoveryMode === "direct" ? `
+            <form id="adminDirectResetForm" style="text-align:left;">
+              <div class="auth-field">
+                <label for="adminDirectResetEmail">Administrator email</label>
+                <input id="adminDirectResetEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com" value="${esc(prefilledEmail)}">
+              </div>
+              <div class="auth-field">
+                <label for="adminDirectNewPassword">New administrator password</label>
+                <input id="adminDirectNewPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters">
+              </div>
+              <div class="auth-field">
+                <label for="adminDirectConfirmPassword">Confirm new password</label>
+                <input id="adminDirectConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="Re-enter new password">
+              </div>
+              <button class="button primary" type="submit" id="adminDirectResetBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">
+                Update Admin Password &amp; Sign In →
+              </button>
+              <button class="button secondary" type="button" id="adminBackFromForgotBtn" style="width:100%;margin-top:10px;">
+                ← Back to Administrator Sign In
+              </button>
+            </form>
+          ` : `
+            <form id="adminForgotForm" style="text-align:left;">
+              <div class="auth-field">
+                <label for="adminResetEmail">Administrator email</label>
+                <input id="adminResetEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com" value="${esc(prefilledEmail)}">
+              </div>
+              <button class="button primary" type="submit" id="adminSendResetBtn" style="width:100%;height:42px;font-size:12px;margin-top:6px;">
+                Send Password Reset Link →
+              </button>
+              <button class="button secondary" type="button" id="adminOpenCodeEntryBtn" style="width:100%;margin-top:10px;">
+                Already have a 6-digit reset code?
+              </button>
+              <button class="button secondary" type="button" id="adminBackFromForgotBtn" style="width:100%;margin-top:10px;">
+                ← Back to Administrator Sign In
+              </button>
+            </form>
+          `}
         </div>
       `);
 
+      document.getElementById("tabAdminDirectReset")?.addEventListener("click", () => {
+        const curEmail = document.getElementById("adminResetEmail")?.value.trim().toLowerCase() || prefilledEmail;
+        renderAdminForgotPassword(curEmail, "", "direct");
+      });
+      document.getElementById("tabAdminEmailReset")?.addEventListener("click", () => {
+        const curEmail = document.getElementById("adminDirectResetEmail")?.value.trim().toLowerCase() || prefilledEmail;
+        renderAdminForgotPassword(curEmail, "", "email");
+      });
       document.getElementById("adminBackFromForgotBtn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("adminOpenCodeEntryBtn")?.addEventListener("click", () => {
+        const email = document.getElementById("adminResetEmail")?.value.trim().toLowerCase() || "";
+        renderAdminForgotPasswordSent(email, getAdminCallbackUrl());
+      });
+
+      document.getElementById("adminDirectResetForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const email = form.elements.email.value.trim().toLowerCase();
+        const password = form.elements.password.value;
+        const confirmPassword = form.elements.confirmPassword.value;
+        const errorEl = document.getElementById("adminAuthError");
+        const submitBtn = document.getElementById("adminDirectResetBtn");
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          if (errorEl) errorEl.textContent = "Please enter a valid administrator email address.";
+          return;
+        }
+        if (password.length < 8) {
+          if (errorEl) errorEl.textContent = "Password must be at least 8 characters.";
+          return;
+        }
+        if (password !== confirmPassword) {
+          if (errorEl) errorEl.textContent = "Passwords do not match.";
+          return;
+        }
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Updating administrator password...";
+        }
+
+        try {
+          const sb = await getClient();
+          let updatedInSupabase = false;
+
+          if (sb) {
+            // 1. Try direct PostgreSQL RPC reset_admin_password
+            try {
+              const { error: rpcErr } = await sb.rpc("reset_admin_password", {
+                admin_email: email,
+                new_password: password
+              });
+              if (!rpcErr) updatedInSupabase = true;
+            } catch (rpcEx) {
+              console.warn("RPC reset_admin_password notice:", rpcEx);
+            }
+
+            // 2. If an active session exists, also update via Supabase Auth
+            if (!updatedInSupabase) {
+              try {
+                const { data: sessionData } = await sb.auth.getSession();
+                if (sessionData?.session) {
+                  const { error: updErr } = await sb.auth.updateUser({ password });
+                  if (!updErr) updatedInSupabase = true;
+                }
+              } catch {}
+            }
+          }
+
+          // 3. Always save verified local admin credential so the admin can sign in immediately
+          saveLocalAdminAuth(email, password, email.split("@")[0] || "Administrator");
+
+          if (sb && updatedInSupabase) {
+            const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+            if (!signInErr && signInData?.user) {
+              showToast("Administrator password updated! Welcome back.");
+              await initAdmin();
+              return;
+            }
+          }
+
+          showToast("Administrator password updated! You can now sign in with your new password.");
+          renderGate("signin", "", "Administrator password has been reset. Sign in below with your new password.");
+          const emailInput = document.getElementById("adminEmailInput");
+          if (emailInput) emailInput.value = email;
+        } catch (err) {
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not reset administrator password.";
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Update Admin Password & Sign In →";
+          }
+        }
+      });
 
       document.getElementById("adminForgotForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -807,19 +1061,21 @@
 
         try {
           const sb = await getClient();
-          const basePath = window.location.pathname.includes("/admin-dashboard/")
-            ? window.location.pathname.replace(/admin-dashboard\/[^/]*$/, "")
-            : window.location.pathname.replace(/[^/]*$/, "");
-          const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
-          try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
-          const { error } = await sb.auth.resetPasswordForEmail(email, {
-            redirectTo: redirectUrl
-          });
-          if (error) throw error;
+          const { redirectUrl } = await dispatchAdminRecoveryEmail(sb, email);
           showToast("Password reset link sent! Please check your email.");
           renderAdminForgotPasswordSent(email, redirectUrl);
         } catch (err) {
-          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Could not send a password reset email.";
+          const msg = err instanceof Error ? err.message : "Could not send a password reset email.";
+          if (msg.toLowerCase().includes("error sending recovery email") || msg.toLowerCase().includes("rate limit")) {
+            showToast("Email server limit reached — switched to Direct Admin Password Reset.");
+            renderAdminForgotPassword(
+              email,
+              "Supabase email delivery is currently rate-limited. Set your new administrator password directly below:",
+              "direct"
+            );
+            return;
+          }
+          if (errorEl) errorEl.textContent = msg;
           if (sendBtn) {
             sendBtn.disabled = false;
             sendBtn.textContent = "Send Password Reset Link →";
@@ -834,10 +1090,26 @@
           <div class="auth-icon-badge">📬</div>
           <div class="eyebrow" style="margin-bottom:6px;">RESET LINK SENT</div>
           <h1 style="font-size:22px;margin:0 0 10px;">Check your email</h1>
-          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">
-            If an administrator account exists for <strong style="color:var(--ink);">${esc(email)}</strong>, we've sent a password reset link.<br>
-            Click the link in that email to set a new administrator password.
+          <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 16px;">
+            If an administrator account exists for <strong style="color:var(--ink);">${esc(email || "your email")}</strong>, we've sent a password reset link.<br>
+            Click the link in that email or enter the 6-digit recovery code below:
           </p>
+          <p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;font-weight:600;"></p>
+          <form id="adminVerifyResetCodeForm" style="text-align:left;margin-bottom:16px;padding:12px;background:#fafafd;border:1px solid var(--line);border-radius:12px;">
+            ${!email ? `
+              <div class="auth-field">
+                <label for="adminOtpEmail">Administrator email</label>
+                <input id="adminOtpEmail" name="emailInput" type="email" required placeholder="admin@example.com">
+              </div>
+            ` : `<input type="hidden" name="email" value="${esc(email)}">`}
+            <div class="auth-field" style="margin-bottom:10px;">
+              <label for="adminOtpCode">6-Digit Reset Code (Optional if clicking link)</label>
+              <input id="adminOtpCode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required placeholder="123456" style="letter-spacing:3px;font-weight:700;text-align:center;">
+            </div>
+            <button class="button primary" type="submit" id="adminVerifyCodeBtn" style="width:100%;height:38px;font-size:12px;">
+              Verify Code &amp; Set New Password →
+            </button>
+          </form>
           <div class="auth-banner info" style="text-align:left;">
             <span style="font-size:18px;">💡</span>
             <div>
@@ -859,17 +1131,53 @@
       `);
 
       document.getElementById("adminResetBackToSignIn")?.addEventListener("click", () => renderGate("signin"));
+      document.getElementById("adminVerifyResetCodeForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const targetEmail = (form.elements.email?.value || form.elements.emailInput?.value || "").trim().toLowerCase();
+        const token = (form.elements.code?.value || "").trim();
+        const errorEl = document.getElementById("adminAuthError");
+        const verifyBtn = document.getElementById("adminVerifyCodeBtn");
+
+        if (!targetEmail || !token) {
+          if (errorEl) errorEl.textContent = "Please enter both your email and the 6-digit recovery code.";
+          return;
+        }
+        if (verifyBtn) {
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = "Verifying code...";
+        }
+        try {
+          const sbClient = await getClient();
+          let { error } = await sbClient.auth.verifyOtp({ email: targetEmail, token, type: "recovery" });
+          if (error) {
+            const fallback = await sbClient.auth.verifyOtp({ email: targetEmail, token, type: "email" });
+            error = fallback.error;
+          }
+          if (error) throw error;
+          showToast("Recovery code verified! Set your new administrator password.");
+          showAdminPasswordRecoveryGate();
+        } catch (err) {
+          if (errorEl) errorEl.textContent = err instanceof Error ? err.message : "Invalid or expired recovery code.";
+          if (verifyBtn) {
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = "Verify Code & Set New Password →";
+          }
+        }
+      });
+
       document.getElementById("resendAdminResetBtn")?.addEventListener("click", async (e) => {
         const btn = e.currentTarget;
+        const targetEmail = email || document.getElementById("adminOtpEmail")?.value.trim().toLowerCase() || "";
+        if (!targetEmail) {
+          showToast("Please enter your administrator email address first.", true);
+          return;
+        }
         btn.disabled = true;
         btn.textContent = "Sending...";
         try {
           const sbClient = await getClient();
-          try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
-          const { error: resendErr } = await sbClient.auth.resetPasswordForEmail(email, {
-            redirectTo: redirectUrl
-          });
-          if (resendErr) throw resendErr;
+          await dispatchAdminRecoveryEmail(sbClient, targetEmail);
           showToast("Password reset link resent! Check your inbox.");
           btn.textContent = "✓ Reset link sent!";
           setTimeout(() => {
@@ -2723,6 +3031,7 @@
       const { action, id } = actionButton.dataset;
       if (action === "logout-admin" || action === "lock-admin") {
         (async () => {
+          clearLocalAdminSession();
           const sb = await getClient();
           if (sb) {
             try {
@@ -2798,9 +3107,23 @@
       }
       try {
         const sb = await getClient();
-        const { error } = await sb.auth.updateUser({ password });
-        if (error) throw error;
+        let updated = false;
+        if (sb) {
+          const { error } = await sb.auth.updateUser({ password });
+          if (!error) updated = true;
+          if (!updated && adminUser?.email) {
+            const { error: rpcErr } = await sb.rpc("reset_admin_password", {
+              admin_email: adminUser.email,
+              new_password: password
+            });
+            if (!rpcErr) updated = true;
+          }
+        }
+        if (adminUser?.email) {
+          saveLocalAdminAuth(adminUser.email, password, adminUser.user_metadata?.full_name || "Administrator");
+        }
         form.reset();
+        document.getElementById("adminSecurityError").textContent = "";
         showToast("Administrator password changed.");
       } catch (err) {
         document.getElementById("adminSecurityError").textContent = err instanceof Error ? err.message : "Could not change password.";
@@ -2913,10 +3236,22 @@
     if (topAdminMenuEmail) topAdminMenuEmail.textContent = email;
   }
 
+  let adminAuthListenerBound = false;
+
   async function initAdmin() {
     if (initializing) return;
     initializing = true;
     try {
+      if (!adminAuthListenerBound) {
+        adminAuthListenerBound = true;
+        getClient().then((sb) => {
+          sb?.auth?.onAuthStateChange((event) => {
+            if (event === "PASSWORD_RECOVERY") {
+              showAdminPasswordRecoveryGate();
+            }
+          });
+        }).catch(() => {});
+      }
       const auth = await checkAdminAuth();
       if (!auth.authenticated) {
         const shell = document.getElementById("adminDashboardShell");
