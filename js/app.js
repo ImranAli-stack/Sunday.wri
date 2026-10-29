@@ -2138,9 +2138,14 @@
       message = "Email confirmed successfully! You can now log in to your account.";
       window.history.replaceState(null, "", window.location.pathname);
     } else if (recoveryParams.get("error_description") || recoveryHash.get("error_description")) {
+      const errCode = recoveryParams.get("error_code") || recoveryHash.get("error_code") || "";
       const errDesc = decodeURIComponent(recoveryParams.get("error_description") || recoveryHash.get("error_description") || "");
-      message = errDesc || "Email verification link has expired or is invalid.";
       window.history.replaceState(null, "", window.location.pathname);
+      if (errCode === "otp_expired" || errDesc.toLowerCase().includes("expired")) {
+        renderPasswordRecovery("Your email reset link was already opened—enter your email and choose your new password below:");
+        return;
+      }
+      message = errDesc || "Email verification link has expired or is invalid.";
     }
 
     if (mode === "login" && (
@@ -2202,7 +2207,10 @@
 
   async function dispatchRecoveryEmail(sb, email) {
     const redirectUrl = getAuthCallbackUrl();
-    try { localStorage.setItem("qalamly.recovery_target", "user"); } catch {}
+    try {
+      localStorage.setItem("qalamly.recovery_target", "user");
+      localStorage.setItem("qalamly.recovery_email", email);
+    } catch {}
 
     // 1. Primary: resetPasswordForEmail with callback redirectTo
     const { error: err1 } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
@@ -2298,6 +2306,8 @@
   }
 
   function renderPasswordRecovery(message = "") {
+    let savedRecoveryEmail = "";
+    try { savedRecoveryEmail = localStorage.getItem("qalamly.recovery_email") || ""; } catch {}
     const eyeToggleHTML = (targetId) => `
       <button class="password-visibility-toggle" type="button" data-password-toggle aria-controls="${targetId}" aria-label="Show password" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -2313,6 +2323,10 @@
         <section class="page-card page-form">
           <div class="form-error ${message ? "visible" : ""}" id="authError" role="alert">${escapeHTML(message)}</div>
           <form id="passwordRecoveryForm" novalidate>
+            <div class="form-field">
+              <label for="recoveryEmail">Account email</label>
+              <input id="recoveryEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" value="${escapeHTML(savedRecoveryEmail)}" required>
+            </div>
             <div class="form-field">
               <label for="recoveryPassword">New password</label>
               <div class="password-input-wrap">
@@ -2789,6 +2803,7 @@
 
     if (form.id === "passwordRecoveryForm") {
       event.preventDefault();
+      const email = (form.elements.email?.value || "").trim().toLowerCase();
       const password = form.elements.password.value;
       const confirm = form.elements.confirmPassword.value;
       if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
@@ -2803,15 +2818,34 @@
         const recoveryParams = new URLSearchParams(window.location.search);
         const code = recoveryParams.get("code");
         const tokenHash = recoveryParams.get("token_hash");
-        if (code) {
-          const { error: codeError } = await sb.auth.exchangeCodeForSession(code);
-          if (codeError) throw codeError;
-        } else if (tokenHash && recoveryParams.get("type") === "recovery") {
-          const { error: verifyError } = await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
-          if (verifyError) throw verifyError;
+        const { data: currentSession } = await sb.auth.getSession();
+
+        if (!currentSession?.session && code) {
+          await sb.auth.exchangeCodeForSession(code);
+        } else if (!currentSession?.session && tokenHash && recoveryParams.get("type") === "recovery") {
+          await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
         }
-        const { error } = await sb.auth.updateUser({ password });
-        if (error) throw error;
+
+        let updated = false;
+        const { error: updateErr } = await sb.auth.updateUser({ password });
+        if (!updateErr) {
+          updated = true;
+        } else if (email) {
+          // Fallback to direct PostgreSQL RPC if the email link token was already consumed (otp_expired)
+          const { error: rpcErr } = await sb.rpc("reset_user_password", {
+            target_email: email,
+            new_password: password
+          });
+          if (!rpcErr) {
+            updated = true;
+          } else {
+            throw updateErr;
+          }
+        } else {
+          throw updateErr;
+        }
+
+        try { localStorage.removeItem("qalamly.recovery_email"); } catch {}
         await sb.auth.signOut();
         writeStore(STORAGE.session, null);
         window.history.replaceState(null, "", window.location.pathname);

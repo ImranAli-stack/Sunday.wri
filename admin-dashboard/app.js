@@ -239,17 +239,22 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.slice(1));
-    const isRecovery = urlParams.get("type") === "recovery" || hashParams.get("type") === "recovery";
+    const errCode = urlParams.get("error_code") || hashParams.get("error_code") || "";
+    const isRecovery =
+      urlParams.get("type") === "recovery" ||
+      hashParams.get("type") === "recovery" ||
+      errCode === "otp_expired";
     const code = urlParams.get("code");
     const tokenHash = urlParams.get("token_hash");
 
-    if (code) {
+    const { data: currentSession } = await sb.auth.getSession();
+    if (!currentSession?.session && code) {
       const { error: codeErr } = await sb.auth.exchangeCodeForSession(code);
       if (!codeErr && !isRecovery) {
         window.history.replaceState(null, "", window.location.pathname);
         showToast("Administrator email confirmed!");
       }
-    } else if (tokenHash && isRecovery) {
+    } else if (!currentSession?.session && tokenHash && isRecovery) {
       await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
     }
 
@@ -374,6 +379,8 @@
   }
 
   function showAdminPasswordRecoveryGate(errorMessage = "") {
+    let savedAdminEmail = "";
+    try { savedAdminEmail = localStorage.getItem("qalamly.recovery_email") || ""; } catch {}
     renderAuthScreen(`
       <div class="auth-gate-container">
         <div class="auth-icon-badge">🔑</div>
@@ -382,6 +389,10 @@
         <p style="font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 20px;">Set and confirm a new password for your Qalamly Admin Studio account.</p>
         ${errorMessage ? `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;margin-bottom:14px;font-weight:600;">${esc(errorMessage)}</p>` : `<p id="adminAuthError" role="alert" style="color:var(--red);font-size:11px;"></p>`}
         <form id="adminPasswordRecoveryForm" style="text-align:left;">
+          <div class="auth-field">
+            <label for="adminRecoveryEmail">Administrator email</label>
+            <input id="adminRecoveryEmail" name="email" type="email" autocomplete="email" required placeholder="admin@example.com" value="${esc(savedAdminEmail)}">
+          </div>
           <div class="auth-field">
             <label for="adminRecoveryPassword">New admin password</label>
             <input id="adminRecoveryPassword" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters">
@@ -404,6 +415,7 @@
     document.getElementById("adminPasswordRecoveryForm")?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
+      const email = (form.elements.email?.value || "").trim().toLowerCase();
       const password = form.elements.password.value;
       const confirmPassword = form.elements.confirmPassword.value;
       const errorEl = document.getElementById("adminAuthError");
@@ -426,8 +438,24 @@
       try {
         const sb = await getClient();
         if (!sb) throw new Error("Supabase authentication is unavailable.");
-        const { error } = await sb.auth.updateUser({ password });
-        if (error) throw error;
+        let updated = false;
+        const { error: updateErr } = await sb.auth.updateUser({ password });
+        if (!updateErr) {
+          updated = true;
+        }
+        if (email) {
+          try {
+            const { error: rpcErr } = await sb.rpc("reset_admin_password", {
+              admin_email: email,
+              new_password: password
+            });
+            if (!rpcErr) updated = true;
+          } catch {}
+          saveLocalAdminAuth(email, password, email.split("@")[0] || "Administrator");
+          updated = true;
+        }
+        if (!updated && updateErr) throw updateErr;
+        try { localStorage.removeItem("qalamly.recovery_email"); } catch {}
         await sb.auth.signOut();
         window.history.replaceState(null, "", window.location.pathname);
         showToast("Administrator password updated! You can now sign in with your new password.");
@@ -877,7 +905,10 @@
 
     async function dispatchAdminRecoveryEmail(sb, email) {
       const redirectUrl = getAdminCallbackUrl();
-      try { localStorage.setItem("qalamly.recovery_target", "admin"); } catch {}
+      try {
+        localStorage.setItem("qalamly.recovery_target", "admin");
+        localStorage.setItem("qalamly.recovery_email", email);
+      } catch {}
 
       // 1. Primary: resetPasswordForEmail with callback redirectTo
       const { error: err1 } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });

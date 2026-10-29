@@ -107,12 +107,12 @@
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.slice(1));
-
-        // 1. Check for any explicit error from Supabase redirect
-        const errorDesc = urlParams.get("error_description") || hashParams.get("error_description") || urlParams.get("error") || hashParams.get("error");
-        if (errorDesc) {
-          throw new Error(decodeURIComponent(errorDesc.replace(/\+/g, " ")));
-        }
+        const code = urlParams.get("code");
+        const tokenHash = urlParams.get("token_hash");
+        let type = urlParams.get("type") || hashParams.get("type") || "";
+        const recoveryTarget = localStorage.getItem("qalamly.recovery_target") || "";
+        const errorCode = urlParams.get("error_code") || hashParams.get("error_code") || "";
+        const errorDesc = urlParams.get("error_description") || hashParams.get("error_description") || urlParams.get("error") || hashParams.get("error") || "";
 
         // Initialize Supabase client with NEXT_PUBLIC_SUPABASE_URL & NEXT_PUBLIC_SUPABASE_ANON_KEY
         async function initCallbackSupabaseClient() {
@@ -145,10 +145,6 @@
         }
 
         const supabase = await initCallbackSupabaseClient();
-        const code = urlParams.get("code");
-        const tokenHash = urlParams.get("token_hash");
-        let type = urlParams.get("type") || hashParams.get("type") || "";
-        const recoveryTarget = localStorage.getItem("qalamly.recovery_target") || "";
 
         // Listen for PASSWORD_RECOVERY event during code exchange
         let isPasswordRecovery = type === "recovery" || Boolean(recoveryTarget);
@@ -158,22 +154,50 @@
           }
         });
 
-        // 2. Exchange temporary code for an active user session (PKCE flow)
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-        } else if (tokenHash && type) {
-          // 3. Support token_hash OTP verification if configured in email template
-          const { error } = await supabase.auth.verifyOtp({
+        // Check if detectSessionInUrl already exchanged the code automatically
+        let { data: sessionData } = await supabase.auth.getSession();
+
+        // Exchange temporary code only if session wasn't already established by detectSessionInUrl
+        if (!sessionData?.session && code) {
+          const { data: exchData, error: exchError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchData?.session) {
+            sessionData = exchData;
+          } else if (exchError) {
+            const recheck = await supabase.auth.getSession();
+            if (recheck.data?.session) {
+              sessionData = recheck.data;
+            } else if (!isPasswordRecovery) {
+              throw exchError;
+            }
+          }
+        } else if (!sessionData?.session && tokenHash && type) {
+          const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
             type
           });
-          if (error) throw error;
+          if (otpData?.session) {
+            sessionData = otpData;
+          } else if (otpError && !isPasswordRecovery) {
+            throw otpError;
+          }
         }
 
-        // 4. Verify active session (also handles implicit #access_token flow)
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
+        // If Supabase returned otp_expired in URL params, still route recovery users to set their new password
+        if (errorDesc && !sessionData?.session && !isPasswordRecovery) {
+          if (errorCode === "otp_expired" || errorDesc.toLowerCase().includes("expired")) {
+            showResult({
+              icon: "🔑",
+              title: "Link Already Used or Expired",
+              message: "If you were resetting a password, click below to set your new password directly, or sign in if your email is already confirmed.",
+              primaryHref: `${rootPath}login.html?type=recovery`,
+              primaryLabel: "Reset Website Password →",
+              secondaryHref: `${rootPath}admin.html?type=recovery`,
+              secondaryLabel: "Reset Admin Studio Password →"
+            });
+            return;
+          }
+          throw new Error(decodeURIComponent(errorDesc.replace(/\+/g, " ")));
+        }
 
         const user = sessionData?.session?.user || (await supabase.auth.getUser()).data?.user || null;
 
