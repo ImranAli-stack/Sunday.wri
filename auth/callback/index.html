@@ -202,19 +202,17 @@
         const user = sessionData?.session?.user || (await supabase.auth.getUser()).data?.user || null;
 
         if (isPasswordRecovery) {
-          localStorage.removeItem("qalamly.recovery_target");
-          const isAdminRecovery = recoveryTarget === "admin" || user?.user_metadata?.role === "admin" || user?.app_metadata?.role === "admin";
-          const targetPage = isAdminRecovery ? `${rootPath}admin.html?type=recovery` : `${rootPath}login.html?type=recovery`;
+          const targetPage = `${rootPath}update-password`;
           showResult({
             icon: "🔑",
             title: "Password Reset Verified",
-            message: "Redirecting you to set your new password...",
+            message: "Redirecting you to the Update Password page...",
             primaryHref: targetPage,
             primaryLabel: "Set New Password →"
           });
           setTimeout(() => {
             window.location.replace(targetPage);
-          }, 600);
+          }, 500);
           return;
         }
 

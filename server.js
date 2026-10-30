@@ -74,6 +74,8 @@ const ROUTE_ALIASES = {
   "/": "index.html",
   "/auth/callback": "auth/callback/index.html",
   "/auth/callback/": "auth/callback/index.html",
+  "/update-password": "update-password.html",
+  "/update-password/": "update-password.html",
   "/admin": "admin.html",
   "/dashboard": "dashboard.html",
   "/login": "login.html",

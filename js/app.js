@@ -2189,7 +2189,15 @@
             ${signup ? '<div class="form-field"><label for="accountRole">I am here as a</label><select id="accountRole" name="role"><option value="reader">Reader</option><option value="writer">Writer</option><option value="both" selected>Reader and writer</option></select></div>' : ""}
             <button class="primary-button" type="submit">${signup ? "Create account" : "Log in"}</button>
           </form>
-          ${!signup ? '<button class="panel-link" id="forgotPasswordButton" type="button" style="margin-top:14px;">Forgot password?</button>' : ""}
+          ${!signup ? `
+            <div style="display:flex;align-items:center;margin:16px 0 12px;gap:10px;">
+              <hr style="flex:1;border:0;border-top:1px solid #ececf3;">
+              <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">or passwordless</span>
+              <hr style="flex:1;border:0;border-top:1px solid #ececf3;">
+            </div>
+            <button class="secondary-button" id="sendMagicLinkBtn" type="button" style="width:100%;text-align:center;">✨ Sign in with Magic Link</button>
+            <button class="panel-link" id="forgotPasswordButton" type="button" style="margin-top:14px;">Forgot password?</button>
+          ` : ""}
           <p class="form-note">${signup ? 'Already registered? <a class="panel-link" href="login.html">Log in</a>.' : 'New to Qalamly? <a class="panel-link" href="signup.html">Create an account</a>.'}</p>
         </section>
       </div>`,
@@ -2197,33 +2205,54 @@
     );
   }
 
+  const CANONICAL_CALLBACK_URL = "https://qalamly.vercel.app/auth/callback";
+
   function getAuthCallbackUrl() {
-    if (window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null") {
+    if (typeof window !== "undefined" && window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null") {
+      if (window.location.hostname.includes("vercel.app") || window.location.hostname.includes("qalamly")) {
+        return CANONICAL_CALLBACK_URL;
+      }
       const basePath = window.location.pathname.replace(/[^/]*$/, "");
       return `${window.location.origin}${basePath}auth/callback`;
     }
-    return "http://localhost:3000/auth/callback";
+    return CANONICAL_CALLBACK_URL;
+  }
+
+  function getUpdatePasswordUrl() {
+    if (typeof window !== "undefined" && window.location.protocol.startsWith("http") && window.location.origin && window.location.origin !== "null") {
+      if (window.location.hostname.includes("vercel.app") || window.location.hostname.includes("qalamly")) {
+        return "https://qalamly.vercel.app/update-password";
+      }
+      const basePath = window.location.pathname.replace(/[^/]*$/, "");
+      return `${window.location.origin}${basePath}update-password`;
+    }
+    return "https://qalamly.vercel.app/update-password";
   }
 
   async function dispatchRecoveryEmail(sb, email) {
-    const redirectUrl = getAuthCallbackUrl();
+    const redirectUrl = getUpdatePasswordUrl();
+    const callbackUrl = getAuthCallbackUrl();
     try {
       localStorage.setItem("qalamly.recovery_target", "user");
       localStorage.setItem("qalamly.recovery_email", email);
     } catch {}
 
-    // 1. Primary: resetPasswordForEmail with callback redirectTo
+    // 1. Primary: resetPasswordForEmail routed directly to /update-password
     const { error: err1 } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
     if (!err1) return { ok: true, method: "recovery" };
 
-    // 2. Fallback: resetPasswordForEmail without redirectTo (uses Supabase Dashboard Site URL if redirectTo was not allowlisted)
+    // 2. Fallback: resetPasswordForEmail with /auth/callback (if only /auth/callback is allowlisted in Supabase)
+    const { error: errCallback } = await sb.auth.resetPasswordForEmail(email, { redirectTo: callbackUrl });
+    if (!errCallback) return { ok: true, method: "recovery_callback" };
+
+    // 3. Fallback: resetPasswordForEmail without redirectTo (uses Supabase Dashboard Site URL)
     const { error: err2 } = await sb.auth.resetPasswordForEmail(email);
     if (!err2) return { ok: true, method: "recovery_default" };
 
-    // 3. Fallback: signInWithOtp (uses Magic Link / OTP template in case Reset Password email template has a syntax error)
+    // 4. Fallback: signInWithOtp (uses Magic Link / OTP template routed to /auth/callback)
     const { error: err3 } = await sb.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: redirectUrl }
+      options: { shouldCreateUser: false, emailRedirectTo: callbackUrl }
     });
     if (!err3) return { ok: true, method: "otp" };
 
@@ -2529,6 +2558,49 @@
       return;
     }
 
+    const sendMagicLinkBtn = event.target.closest("#sendMagicLinkBtn");
+    if (sendMagicLinkBtn) {
+      const email = document.getElementById("authEmail")?.value.trim().toLowerCase() || "";
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFormError("Please enter a valid email address in the Email field above.");
+        return;
+      }
+      sendMagicLinkBtn.disabled = true;
+      const originalText = sendMagicLinkBtn.textContent;
+      sendMagicLinkBtn.textContent = "Sending magic link...";
+
+      (async () => {
+        const sb = await window.getSupabaseClient();
+        const callbackUrl = getAuthCallbackUrl();
+        const { data, error } = await sb.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: callbackUrl
+          }
+        });
+        if (error) throw error;
+        notify("Magic link sent! Check your email to sign in.");
+        const errEl = document.getElementById("authError");
+        if (errEl) {
+          errEl.innerHTML = `<span style="color:#1c7c4d;font-weight:600;">✓ Magic link sent to <strong>${escapeHTML(email)}</strong>.<br><small style="color:#4b5563;font-weight:normal;">Click the link in that email to log in directly to your dashboard.</small></span>`;
+          errEl.classList.add("visible");
+        }
+        sendMagicLinkBtn.textContent = "✓ Magic link sent!";
+        setTimeout(() => {
+          if (sendMagicLinkBtn) {
+            sendMagicLinkBtn.disabled = false;
+            sendMagicLinkBtn.textContent = originalText;
+          }
+        }, 20000);
+      })().catch((err) => {
+        showFormError(err instanceof Error ? err.message : "Could not send magic link.");
+        notify(err instanceof Error ? err.message : "Could not send magic link.", true);
+        sendMagicLinkBtn.disabled = false;
+        sendMagicLinkBtn.textContent = originalText;
+      });
+      return;
+    }
+
     const resendBtn = event.target.closest("#resendConfirmationBtn, #resendFromLogin");
     if (resendBtn) {
       const email = resendBtn.dataset.email;
@@ -2539,12 +2611,11 @@
 
       (async () => {
         const sb = await window.getSupabaseClient();
-        const basePath = window.location.pathname.replace(/[^/]*$/, "");
         const { error } = await sb.auth.resend({
           type: "signup",
           email,
           options: {
-            emailRedirectTo: `${window.location.origin}${basePath}auth/callback`
+            emailRedirectTo: getAuthCallbackUrl()
           }
         });
         if (error) throw error;
@@ -2826,23 +2897,9 @@
           await sb.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
         }
 
-        let updated = false;
         const { error: updateErr } = await sb.auth.updateUser({ password });
-        if (!updateErr) {
-          updated = true;
-        } else if (email) {
-          // Fallback to direct PostgreSQL RPC if the email link token was already consumed (otp_expired)
-          const { error: rpcErr } = await sb.rpc("reset_user_password", {
-            target_email: email,
-            new_password: password
-          });
-          if (!rpcErr) {
-            updated = true;
-          } else {
-            throw updateErr;
-          }
-        } else {
-          throw updateErr;
+        if (updateErr) {
+          throw new Error("Password reset session has expired or is invalid. Please request a new recovery link.");
         }
 
         try { localStorage.removeItem("qalamly.recovery_email"); } catch {}
@@ -2986,8 +3043,7 @@
           if (password.length < 8) { showFormError("Password must be at least 8 characters."); return; }
           if (password !== confirm) { showFormError("Passwords do not match."); return; }
 
-          const basePath = window.location.pathname.replace(/[^/]*$/, "");
-          const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
+          const redirectUrl = getAuthCallbackUrl();
 
           const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
             email,

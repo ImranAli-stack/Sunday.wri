@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc">
+  <title>Update Password · Qalamly</title>
+  <link rel="stylesheet" href="/css/styles.css" onerror="this.href='../css/styles.css'">
+  <link rel="icon" type="image/png" href="/logo/icon.png">
+  <script src="/js/supabase.js" onerror="var s=document.createElement('script');s.src='../js/supabase.js';document.head.appendChild(s);"></script>
+  <style>
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f6f7fb;
+      margin: 0;
+      padding: 20px;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .reset-card {
+      width: min(460px, 100%);
+      background: #ffffff;
+      border: 1px solid #e6e7f0;
+      border-radius: 20px;
+      padding: 36px 32px;
+      box-shadow: 0 20px 50px rgba(32, 33, 57, 0.08);
+    }
+    .reset-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .reset-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 18px;
+      background: #f0edff;
+      color: #7458e8;
+      display: grid;
+      place-items: center;
+      font-size: 26px;
+      margin: 0 auto 14px;
+    }
+    .reset-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #7458e8;
+      margin-bottom: 6px;
+    }
+    .reset-header h1 {
+      font-size: 22px;
+      margin: 0 0 8px;
+      color: #202139;
+    }
+    .reset-header p {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #66687a;
+      margin: 0;
+    }
+    .session-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 12px;
+      margin-bottom: 18px;
+      background: #f4f2ff;
+      color: #4b38b3;
+      border: 1px solid #e1dcff;
+    }
+    .session-pill.ready {
+      background: #ebf9f1;
+      color: #1c7c4d;
+      border-color: #c8eed9;
+    }
+    .session-pill.warn {
+      background: #fff8eb;
+      color: #9a6312;
+      border-color: #fae2b8;
+    }
+    .reset-error {
+      display: none;
+      padding: 11px 14px;
+      border-radius: 10px;
+      background: #fff1f2;
+      color: #be123c;
+      border: 1px solid #fecdd3;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .reset-error.visible {
+      display: block;
+    }
+    .reset-success {
+      display: none;
+      padding: 16px;
+      border-radius: 12px;
+      background: #ebf9f1;
+      color: #1c7c4d;
+      border: 1px solid #c8eed9;
+      font-size: 13px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .reset-success.visible {
+      display: block;
+    }
+    .form-field {
+      margin-bottom: 16px;
+    }
+    .form-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: #202139;
+      margin-bottom: 6px;
+    }
+    .password-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-wrap input,
+    .form-field > input {
+      width: 100%;
+      height: 42px;
+      padding: 0 42px 0 12px;
+      border-radius: 10px;
+      border: 1px solid #dcdde8;
+      font-size: 13px;
+      color: #202139;
+      background: #ffffff;
+      box-sizing: border-box;
+    }
+    .password-wrap input:focus,
+    .form-field > input:focus {
+      outline: none;
+      border-color: #7458e8;
+      box-shadow: 0 0 0 3px rgba(116, 88, 232, 0.14);
+    }
+    .toggle-eye {
+      position: absolute;
+      right: 10px;
+      background: none;
+      border: 0;
+      color: #717388;
+      cursor: pointer;
+      padding: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .reset-submit {
+      width: 100%;
+      height: 44px;
+      border: 0;
+      border-radius: 11px;
+      background: #7458e8;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .reset-submit:hover {
+      background: #6144d9;
+    }
+    .reset-submit:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+    .reset-footer {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid #ececf3;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+    .reset-footer a {
+      color: #7458e8;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .reset-footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <main class="reset-card">
+    <div class="reset-header">
+      <div class="reset-icon">🔑</div>
+      <div class="reset-kicker">Password Recovery</div>
+      <h1>Set a New Password</h1>
+      <p>Enter your new password below to complete your Qalamly account recovery.</p>
+    </div>
+
+    <div class="session-pill" id="sessionStatusBanner" role="status">
+      <span id="sessionStatusIcon">⏳</span>
+      <span id="sessionStatusText">Establishing secure recovery session from your email link...</span>
+    </div>
+
+    <div class="reset-error" id="updatePasswordError" role="alert"></div>
+    <div class="reset-success" id="updatePasswordSuccess" role="status"></div>
+
+    <form id="updatePasswordForm" novalidate>
+      <div class="form-field">
+        <label for="newPasswordInput">New Password</label>
+        <div class="password-wrap">
+          <input id="newPasswordInput" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required>
+          <button type="button" class="toggle-eye" data-toggle-password="newPasswordInput" aria-label="Show password">Show</button>
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label for="confirmPasswordInput">Confirm New Password</label>
+        <div class="password-wrap">
+          <input id="confirmPasswordInput" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Re-enter your new password" required>
+          <button type="button" class="toggle-eye" data-toggle-password="confirmPasswordInput" aria-label="Show password">Show</button>
+        </div>
+      </div>
+
+      <button type="submit" class="reset-submit" id="updatePasswordSubmitBtn">Update Password →</button>
+    </form>
+
+    <div class="reset-footer">
+      <a href="/login.html" id="backToUserLoginLink">← Website Log In</a>
+      <a href="/admin.html" id="backToAdminLoginLink">Admin Studio →</a>
+    </div>
+  </main>
+
+  <script>
+    (async () => {
+      "use strict";
+
+      const rootPath = window.location.pathname.replace(/\/update-password\/?(index\.html|\.html)?$/i, "/");
+      const statusBanner = document.getElementById("sessionStatusBanner");
+      const statusIcon = document.getElementById("sessionStatusIcon");
+      const statusText = document.getElementById("sessionStatusText");
+      const errorEl = document.getElementById("updatePasswordError");
+      const successEl = document.getElementById("updatePasswordSuccess");
+      const form = document.getElementById("updatePasswordForm");
+      const emailFieldWrap = document.getElementById("emailFallbackField");
+      const emailInput = document.getElementById("recoveryEmailInput");
+      const submitBtn = document.getElementById("updatePasswordSubmitBtn");
+
+      document.getElementById("backToUserLoginLink").href = `${rootPath}login.html`;
+      document.getElementById("backToAdminLoginLink").href = `${rootPath}admin.html`;
+
+      document.querySelectorAll("[data-toggle-password]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const input = document.getElementById(btn.dataset.togglePassword);
+          if (!input) return;
+          const show = input.type === "password";
+          input.type = show ? "text" : "password";
+          btn.textContent = show ? "Hide" : "Show";
+        });
+      });
+
+      function showError(msg) {
+        if (!errorEl) return;
+        errorEl.textContent = msg;
+        errorEl.classList.add("visible");
+      }
+
+      function clearError() {
+        if (!errorEl) return;
+        errorEl.textContent = "";
+        errorEl.classList.remove("visible");
+      }
+
+      function setSessionBanner(state, text) {
+        if (!statusBanner || !statusText || !statusIcon) return;
+        statusBanner.className = `session-pill ${state}`;
+        statusIcon.textContent = state === "ready" ? "✅" : state === "warn" ? "🔑" : "⏳";
+        statusText.textContent = text;
+      }
+
+      const savedEmail = localStorage.getItem("qalamly.recovery_email") || "";
+      if (emailInput && savedEmail) {
+        emailInput.value = savedEmail;
+      }
+
+      async function initSupabase() {
+        if (typeof window.getSupabaseClient === "function") {
+          return await window.getSupabaseClient();
+        }
+        let supabaseUrl = window.NEXT_PUBLIC_SUPABASE_URL || window.SUPABASE_URL || "https://xjdrqktoeodohyoynphg.supabase.co";
+        let supabaseAnonKey = window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.SUPABASE_ANON_KEY || "sb_publishable_LzIX4TdfqXDldsfjnsO8sQ_zYs4di_B";
+        try {
+          const cfgRes = await fetch("/api/config", { cache: "no-store" });
+          if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            supabaseUrl = cfg.NEXT_PUBLIC_SUPABASE_URL || cfg.supabaseUrl || supabaseUrl;
+            supabaseAnonKey = cfg.NEXT_PUBLIC_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || supabaseAnonKey;
+          }
+        } catch {}
+        if (!window.supabase?.createClient) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+            s.onload = resolve;
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        return window.supabase.createClient(supabaseUrl, supabaseAnonKey, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+          global: { headers: { apikey: supabaseAnonKey } }
+        });
+      }
+
+      let supabase = null;
+      let activeSessionUser = null;
+
+      try {
+        supabase = await initSupabase();
+
+        supabase.auth.onAuthStateChange((event, session) => {
+          if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") && session?.user) {
+            activeSessionUser = session.user;
+            if (emailInput && session.user.email) emailInput.value = session.user.email;
+            setSessionBanner("ready", `Secure recovery session active for ${session.user.email}`);
+            if (emailFieldWrap) emailFieldWrap.hidden = true;
+          }
+        });
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get("code");
+        const tokenHash = urlParams.get("token_hash");
+        const type = urlParams.get("type") || "recovery";
+
+        let { data: sessionData } = await supabase.auth.getSession();
+
+        if (!sessionData?.session && code) {
+          const { data: exchData } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchData?.session) sessionData = exchData;
+        } else if (!sessionData?.session && tokenHash) {
+          const { data: otpData } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+          if (otpData?.session) sessionData = otpData;
+        }
+
+        if (!sessionData?.session) {
+          const recheck = await supabase.auth.getSession();
+          sessionData = recheck.data;
+        }
+
+        if (sessionData?.session?.user) {
+          activeSessionUser = sessionData.session.user;
+          if (emailInput && activeSessionUser.email) emailInput.value = activeSessionUser.email;
+          setSessionBanner("ready", `Secure recovery session active for ${activeSessionUser.email}`);
+          window.history.replaceState(null, "", window.location.pathname);
+        } else {
+          setSessionBanner("warn", "No active recovery session found. Please open the reset link sent to your email.");
+        }
+      } catch (err) {
+        setSessionBanner("warn", "Could not establish recovery session. Please open the reset link sent to your email.");
+      }
+
+      form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        clearError();
+
+        const newPassword = document.getElementById("newPasswordInput")?.value || "";
+        const confirmPassword = document.getElementById("confirmPasswordInput")?.value || "";
+
+        if (newPassword.length < 8) {
+          showError("New password must be at least 8 characters long.");
+          return;
+        }
+        if (newPassword !== confirmPassword) {
+          showError("Passwords do not match. Please re-enter carefully.");
+          return;
+        }
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Updating password...";
+        }
+
+        try {
+          if (!supabase) supabase = await initSupabase();
+
+          const { data, error } = await supabase.auth.updateUser({
+            password: newPassword
+          });
+
+          if (error) {
+            throw new Error(
+              error.message ||
+              "Password reset session is invalid or has expired. Please request a new recovery link from the login page."
+            );
+          }
+
+          const updatedUser = data?.user || activeSessionUser;
+          const recoveryTarget = localStorage.getItem("qalamly.recovery_target") || "";
+          const isAdmin =
+            recoveryTarget === "admin" ||
+            updatedUser?.user_metadata?.role === "admin" ||
+            updatedUser?.app_metadata?.role === "admin";
+
+          try {
+            localStorage.removeItem("qalamly.recovery_target");
+            localStorage.removeItem("qalamly.recovery_email");
+          } catch {}
+
+          const destination = isAdmin ? `${rootPath}admin.html` : `${rootPath}login.html`;
+
+          if (form) form.hidden = true;
+          setSessionBanner("ready", "Password updated in Supabase database!");
+          if (successEl) {
+            successEl.innerHTML = `
+              <strong>✓ Your password has been updated!</strong>
+              <p style="margin:6px 0 0;">Redirecting you to ${isAdmin ? "Admin Studio" : "Log In"}...</p>
+            `;
+            successEl.classList.add("visible");
+          }
+
+          setTimeout(() => {
+            window.location.replace(destination);
+          }, 1200);
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Could not update password.");
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Update Password →";
+          }
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
+
